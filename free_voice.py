@@ -508,43 +508,95 @@ def installed_apps() -> list[str]:
     return _app_cache
 
 
-def resolve_app(spoken: str) -> str | None:
-    """Turn 'chrome' / 'notes' / 'system settings' into a real app name.
+def _clean_name(s: str) -> str:
+    """Normalize names: strip non-alphanumeric chars for matching (e.g. 'es de' -> 'esde', 'ES-DE' -> 'esde')."""
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
-    Fuzzy: aliases, singulars, exact installed names, then substring.
+
+def resolve_app(spoken: str) -> str | None:
+    """Turn 'chrome' / 'notes' / 'es de' into a real app name.
+
+    Fuzzy: aliases, singulars, exact installed names, normalized alphanumeric,
+    substring, then difflib similarity.
     Used for FINAL transcripts, where acting on a best guess is fine.
     """
+    import difflib
+
     s = spoken.strip().lower()
     if s in _APP_ALIASES:
         return _APP_ALIASES[s]
     singular = s[:-1] if s.endswith("s") else s
     if singular in _APP_ALIASES:
         return _APP_ALIASES[singular]
+
+    clean_s = _clean_name(s)
+    clean_singular = _clean_name(singular)
+    clean_aliases = {_clean_name(k): v for k, v in _APP_ALIASES.items()}
+    if clean_s in clean_aliases:
+        return clean_aliases[clean_s]
+
     apps = installed_apps()
     low = {a.lower(): a for a in apps}
+    clean_map = {_clean_name(a): a for a in apps}
+
+    # 1. Exact raw or normalized match
     for key in (s, singular):
         if key in low:
             return low[key]
+    for key in (clean_s, clean_singular):
+        if key in clean_map:
+            return clean_map[key]
+
+    # 2. Substring matching (raw first, then clean if >= 4 chars)
     for key in (s, singular):
         cands = [a for a in apps if key in a.lower()]
         if cands:
             cands.sort(key=len)
             return cands[0]
+
+    if len(clean_s) >= 4:
+        cands = [a for a in apps if clean_s in _clean_name(a)]
+        if cands:
+            cands.sort(key=len)
+            return cands[0]
+
+    # 3. Fuzzy similarity matching on normalized strings
+    matches = difflib.get_close_matches(clean_s, list(clean_map.keys()), n=1, cutoff=0.75)
+    if matches:
+        return clean_map[matches[0]]
+
     return None
 
 
 def resolve_app_exact(spoken: str) -> str | None:
-    """Strict resolver for PARTIAL transcripts: alias or exact installed
-    name only — no substring matching. This is the completion gate that
-    stops 'open no' from firing as 'open Notes' mid-sentence."""
+    """Strict resolver for PARTIAL transcripts: alias, exact installed name,
+    or normalized alphanumeric match — no substring/fuzzy guessing. This is the
+    completion gate that stops 'open no' from firing as 'open Notes' mid-sentence."""
     s = spoken.strip().lower()
     if s in _APP_ALIASES:
         return _APP_ALIASES[s]
     singular = s[:-1] if s.endswith("s") else s
     if singular in _APP_ALIASES:
         return _APP_ALIASES[singular]
-    low = {a.lower(): a for a in installed_apps()}
-    return low.get(s) or low.get(singular)
+
+    clean_s = _clean_name(s)
+    clean_singular = _clean_name(singular)
+    clean_aliases = {_clean_name(k): v for k, v in _APP_ALIASES.items()}
+    if clean_s in clean_aliases:
+        return clean_aliases[clean_s]
+
+    apps = installed_apps()
+    low = {a.lower(): a for a in apps}
+    for key in (s, singular):
+        if key in low:
+            return low[key]
+
+    clean_map = {_clean_name(a): a for a in apps}
+    for key in (clean_s, clean_singular):
+        if key in clean_map:
+            return clean_map[key]
+
+    return None
 
 
 # ---------------------------------------------------------------- actions
@@ -858,10 +910,9 @@ _p(r"^open (.+) settings$", "settings", True)
 _p(r"^open trash$", "open_trash", True)
 _p(r"^(open|launch|start) the (.+?) (app|application)$", "open_app", True)
 _p(r"^(open|launch|start) (.+)$", "open_app", True)
-_p(r"^quit( the)? (.+)$", "quit_app", True)
-_p(r"^close the app (.+)$", "quit_app", True)
-# --- windows / tabs
+# --- windows / tabs / quit
 _p(r"^close( the)? (window|tab)$", "close_window", True)
+_p(r"^(quit|close)( the)? (app |application )?(.+)$", "quit_app", True)
 _p(r"^(minimize|minimise)( the)? (.+?)( window| app)?$", "minimize_app", True)
 _p(r"^(minimize|minimise)( the window)?$", "minimize", True)
 _p(r"^(fullscreen|full screen|make it full screen)$", "fullscreen", True)
