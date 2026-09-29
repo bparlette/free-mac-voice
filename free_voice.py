@@ -425,6 +425,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 3.0) -> None:
             vad = VoiceActivityDetector(sensitivity=sensitivity)
             capturing: list[np.ndarray] = []
             log(f"microphone: {describe_input_device()} — listening")
+            play_chime("Tink.aiff")
             try:
                 with sd.RawInputStream(samplerate=16000, channels=1, dtype="int16",
                                        blocksize=frame_len,
@@ -513,11 +514,42 @@ def _clean_name(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
+def _soundex(token: str) -> str:
+    """Standard American Soundex algorithm for phonetic indexing."""
+    token = re.sub(r"[^a-zA-Z]", "", token).upper()
+    if not token:
+        return ""
+    mapping = {
+        "B": "1", "F": "1", "P": "1", "V": "1",
+        "C": "2", "G": "2", "J": "2", "K": "2", "Q": "2", "S": "2", "X": "2", "Z": "2",
+        "D": "3", "T": "3",
+        "L": "4",
+        "M": "5", "N": "5",
+        "R": "6",
+    }
+    encoded = token[0]
+    last = mapping.get(token[0], "")
+    for char in token[1:]:
+        code = mapping.get(char, "")
+        if code and code != last:
+            encoded += code
+            last = code
+        elif not code:
+            last = ""
+    return (encoded + "000")[:4]
+
+
+def _phonetic_key(s: str) -> str:
+    """Compute concatenated Soundex representation for all tokens in a phrase."""
+    tokens = [t for t in re.findall(r"[a-zA-Z0-9]+", s) if t]
+    return "".join(_soundex(t) for t in tokens)
+
+
 def resolve_app(spoken: str) -> str | None:
     """Turn 'chrome' / 'notes' / 'es de' into a real app name.
 
     Fuzzy: aliases, singulars, exact installed names, normalized alphanumeric,
-    substring, then difflib similarity.
+    substring, phonetic Soundex, then difflib similarity.
     Used for FINAL transcripts, where acting on a best guess is fine.
     """
     import difflib
@@ -560,7 +592,14 @@ def resolve_app(spoken: str) -> str | None:
             cands.sort(key=len)
             return cands[0]
 
-    # 3. Fuzzy similarity matching on normalized strings
+    # 3. Phonetic matching via Soundex (handles STT phonetic misspellings)
+    phone_s = _phonetic_key(s)
+    if phone_s:
+        phone_map = {_phonetic_key(a): a for a in apps if _phonetic_key(a)}
+        if phone_s in phone_map:
+            return phone_map[phone_s]
+
+    # 4. Fuzzy similarity matching on normalized strings
     matches = difflib.get_close_matches(clean_s, list(clean_map.keys()), n=1, cutoff=0.75)
     if matches:
         return clean_map[matches[0]]
@@ -649,6 +688,77 @@ def act_hide(name: str = "") -> None:
         return
     act_keystroke("h", "command down")
     say("Hidden")
+
+
+def act_switch_app(name: str) -> None:
+    """Focus or switch to an already running or installed app."""
+    app = resolve_app(name)
+    if not app:
+        say(f"I couldn't find an app called {name}")
+        return
+    applescript(f'tell application "{esc(app)}" to activate')
+    say(f"Switched to {app}")
+
+
+def act_close_all_windows() -> None:
+    """Close all open windows of the active application (Option-Command-W)."""
+    act_keystroke("w", "option down, command down")
+    say("Closed all windows")
+
+
+def get_screen_bounds() -> tuple[int, int, int, int]:
+    """Return visible screen bounds (x, y, w, h) taking menu bar and dock into account."""
+    try:
+        from AppKit import NSScreen
+        screen = NSScreen.mainScreen()
+        total_h = screen.frame().size.height
+        f = screen.visibleFrame()
+        x = int(f.origin.x)
+        y = int(total_h - (f.origin.y + f.size.height))
+        w = int(f.size.width)
+        h = int(f.size.height)
+        return x, y, w, h
+    except Exception:
+        return 0, 30, 1920, 1050
+
+
+def act_snap_window(side: str) -> None:
+    """Snap frontmost window to left half, right half, maximize, or center."""
+    x, y, w, h = get_screen_bounds()
+    if side == "left":
+        pos = (x, y)
+        size = (w // 2, h)
+        label = "Snapped left"
+    elif side == "right":
+        pos = (x + w // 2, y)
+        size = (w - w // 2, h)
+        label = "Snapped right"
+    elif side in ("maximize", "max"):
+        pos = (x, y)
+        size = (w, h)
+        label = "Maximized"
+    elif side == "center":
+        pos = (x + w // 6, y + h // 12)
+        size = (2 * w // 3, 5 * h // 6)
+        label = "Centered"
+    else:
+        say("I don't know that position")
+        return
+    applescript(
+        'tell application "System Events" to tell (first application process whose frontmost is true) to '
+        f'tell window 1 to set {{position, size}} to {{{{{pos[0]}, {pos[1]}}}, {{{size[0]}, {size[1]}}}}}'
+    )
+    say(label)
+
+
+def play_chime(sound_name: str = "Tink.aiff") -> None:
+    """Play a short macOS audio notification sound non-blockingly."""
+    path = f"/System/Library/Sounds/{sound_name}"
+    if os.path.exists(path):
+        try:
+            subprocess.Popen(["afplay", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
 
 def act_keystroke(keys: str, using: str = "") -> None:
@@ -910,14 +1020,25 @@ _p(r"^open (.+) settings$", "settings", True)
 _p(r"^open trash$", "open_trash", True)
 _p(r"^(open|launch|start) the (.+?) (app|application)$", "open_app", True)
 _p(r"^(open|launch|start) (.+)$", "open_app", True)
+_p(r"^(switch to|focus|bring up) (.+)$", "switch_app", True)
 # --- windows / tabs / quit
+_p(r"^close all windows$", "close_all_windows", True)
 _p(r"^close( the)? (window|tab)$", "close_window", True)
+_p(r"^close$", "close_window", True)
 _p(r"^(quit|close)( the)? (app |application )?(.+)$", "quit_app", True)
 _p(r"^(minimize|minimise)( the)? (.+?)( window| app)?$", "minimize_app", True)
 _p(r"^(minimize|minimise)( the window)?$", "minimize", True)
 _p(r"^(fullscreen|full screen|make it full screen)$", "fullscreen", True)
 _p(r"^hide( the)? (.+?)( app| application)?$", "hide_app", True)
 _p(r"^hide( the app)?$", "hide", True)
+# --- window snapping / tiling
+_p(r"^(snap|tile)( the)? window left$", "snap_left", True)
+_p(r"^(snap|tile) left$", "snap_left", True)
+_p(r"^(snap|tile)( the)? window right$", "snap_right", True)
+_p(r"^(snap|tile) right$", "snap_right", True)
+_p(r"^(maximize|zoom)( the)? window$", "maximize_window", True)
+_p(r"^(maximize|zoom)$", "maximize_window", True)
+_p(r"^center( the)? window$", "center_window", True)
 # --- typing & keys (type/dictate carry free text: final-only)
 _p(r"^type (.+)$", "type_text")
 _p(r"^dictate (.+)$", "type_text")
@@ -985,8 +1106,8 @@ def _partial_complete(name: str, m: re.Match) -> bool:
     - everything else partial-safe: the regex consumed the whole partial,
       which for closed enums is enough.
     """
-    if name in ("open_app", "quit_app", "minimize_app", "hide_app"):
-        if name == "open_app":
+    if name in ("open_app", "quit_app", "minimize_app", "hide_app", "switch_app"):
+        if name in ("open_app", "switch_app"):
             phrase = m.group(2)
         elif name == "minimize_app":
             phrase = m.group(3)
@@ -1057,8 +1178,12 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         if name == "open_app":
             # both "open X" patterns keep the app phrase in group 2
             act_open_app(m.group(2))
+        elif name == "switch_app":
+            act_switch_app(m.group(2))
         elif name == "quit_app":
             act_quit_app(m.group(m.lastindex))
+        elif name == "close_all_windows":
+            act_close_all_windows()
         elif name == "close_window":
             act_keystroke("w", "command down"); say("Closed")
         elif name == "minimize":
@@ -1071,6 +1196,14 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_hide()
         elif name == "hide_app":
             act_hide(m.group(2))
+        elif name == "snap_left":
+            act_snap_window("left")
+        elif name == "snap_right":
+            act_snap_window("right")
+        elif name == "maximize_window":
+            act_snap_window("maximize")
+        elif name == "center_window":
+            act_snap_window("center")
         elif name == "type_text":
             act_type_text(m.group(1)); say("Typed")
         elif name == "press_key":
@@ -1191,7 +1324,10 @@ _TIER1_SYSTEM = (
     "You route voice commands to Mac actions. Reply with ONLY JSON, no other text: "
     '{"action": "<name>", "params": {...}, "confidence": 0.0-1.0}. '
     "Valid actions and params: "
-    "open_app {app: name}, quit_app {app: name}, minimize {app: optional name}, hide {app: optional name}, "
+    "open_app {app: name}, quit_app {app: name}, switch_app {app: name}, "
+    "minimize {app: optional name}, hide {app: optional name}, "
+    "close_window {}, close_all_windows {}, "
+    "snap_left {}, snap_right {}, maximize_window {}, center_window {}, "
     "type_text {text: string}, web_search {query: string}, open_url {url: string}, "
     "set_volume {level: 0-100}, volume_up {}, volume_down {}, mute_toggle {}, "
     "media {op: playpause|next|previous}, lock {}, sleep {}, "
@@ -1204,7 +1340,10 @@ _TIER1_SYSTEM = (
 )
 
 _TIER1_ACTIONS = {
-    "open_app", "quit_app", "minimize", "hide", "type_text", "web_search", "open_url",
+    "open_app", "quit_app", "switch_app", "minimize", "hide",
+    "close_window", "close_all_windows",
+    "snap_left", "snap_right", "maximize_window", "center_window",
+    "type_text", "web_search", "open_url",
     "set_volume", "volume_up", "volume_down", "mute_toggle", "media",
     "lock", "sleep", "brightness_up", "brightness_down", "screenshot",
     "dark_mode", "wifi", "timer", "calculate", "click_button", "click_link",
@@ -1226,8 +1365,8 @@ def ollama_route(text: str):
     body = {
         "model": OLLAMA_MODEL,
         "format": "json",
-        "keep_alive": "30m",  # stay resident: no 20s cold start mid-session
-        "options": {"temperature": 0, "num_predict": 80},
+        "keep_alive": "60m",  # stay resident: no cold starts
+        "options": {"temperature": 0, "num_predict": 64},
         "messages": [
             {"role": "system", "content": _TIER1_SYSTEM},
             {"role": "user", "content": text},
@@ -1275,10 +1414,24 @@ def dispatch_tier1(action: str, params: dict) -> None:
         act_open_app(str(p("app", "")))
     elif action == "quit_app":
         act_quit_app(str(p("app", "")))
+    elif action == "switch_app":
+        act_switch_app(str(p("app", "")))
+    elif action == "close_window":
+        act_keystroke("w", "command down"); say("Closed")
+    elif action == "close_all_windows":
+        act_close_all_windows()
     elif action == "minimize":
         act_minimize(str(p("app", "")))
     elif action == "hide":
         act_hide(str(p("app", "")))
+    elif action == "snap_left":
+        act_snap_window("left")
+    elif action == "snap_right":
+        act_snap_window("right")
+    elif action == "maximize_window":
+        act_snap_window("maximize")
+    elif action == "center_window":
+        act_snap_window("center")
     elif action == "type_text":
         act_type_text(str(p("text", ""))); say("Typed")
     elif action == "web_search":
@@ -1414,8 +1567,10 @@ def cmd_list() -> None:
     print("free_voice.py — say any of these (examples):\n")
     examples = [
         "open notes / open chrome / open system settings",
-        "quit spotify",
-        "close window · minimize · fullscreen · hide",
+        "switch to safari / focus terminal / bring up notes",
+        "quit spotify / close safari",
+        "close · close window · close all windows · minimize · fullscreen · hide",
+        "snap left · snap right · maximize · center window",
         "type hello world / dictate dear mom,",
         "press enter / copy / paste / undo / save / select all",
         "click the Reply button / click the Docs link  (needs xa11y + perms)",
