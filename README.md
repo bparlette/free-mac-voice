@@ -80,6 +80,12 @@ pre-warm at startup so the first command doesn't stall, screenshot caching for
 describe-then-click, two-pass vision click refinement, confirmation now covers
 "quit …" and "close all windows" (plus shut down / restart / log out / empty
 trash), and Gemini failures of any kind fall back to the on-device model.
+Browser and desktop control: "new tab" / "close tab" / "reopen tab" / "refresh" /
+"go back" / "go forward" / "page down" / "page up" / "find on page", "next space"
+/ "previous space" for virtual desktops, and "move to next display". Speech
+confirmations no longer block: acknowledgments play fire-and-forget so actions
+feel instant, and vision queries send an 800px sips-downscaled copy (~60%
+faster inference) while click refinement still crops the full-res shot.
 
 ## How it stays free (30-second version)
 

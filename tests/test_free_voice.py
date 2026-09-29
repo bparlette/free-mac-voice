@@ -810,5 +810,113 @@ class TestBrowserAndSpaces(Base):
         self.assertIn((124, "control down"), dispatched)
 
 
+# --------------------------------------------- non-blocking say + vision speed
+class TestSayNonBlocking(Base):
+    def setUp(self):
+        super().setUp()
+        self.real_say = self._say  # Base swapped fv.say for a list.append
+        fv.DRY_RUN = False
+        fv._say_proc = None
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        self.addCleanup(setattr, fv, "_say_proc", None)
+
+    def test_default_is_nonblocking(self):
+        with mock.patch.object(fv.subprocess, "Popen") as popen, \
+             mock.patch.object(fv.subprocess, "run") as run:
+            self.real_say("hello")
+            popen.assert_called_once()
+            self.assertEqual(popen.call_args[0][0], ["say", "hello"])
+            run.assert_not_called()
+
+    def test_blocking_waits(self):
+        with mock.patch.object(fv.subprocess, "Popen") as popen, \
+             mock.patch.object(fv.subprocess, "run") as run:
+            self.real_say("confirm this", blocking=True)
+            run.assert_called_once()
+            self.assertEqual(run.call_args[0][0], ["say", "confirm this"])
+            popen.assert_not_called()
+
+    def test_new_speech_cuts_off_old(self):
+        old = mock.Mock()
+        old.poll.return_value = None  # still talking
+        fv._say_proc = old
+        with mock.patch.object(fv.subprocess, "Popen"):
+            self.real_say("next")
+            old.terminate.assert_called_once()
+
+    def test_finished_proc_not_terminated(self):
+        old = mock.Mock()
+        old.poll.return_value = 0  # already done
+        fv._say_proc = old
+        with mock.patch.object(fv.subprocess, "Popen"):
+            self.real_say("next")
+            old.terminate.assert_not_called()
+
+    def test_dry_run_stays_silent(self):
+        fv.DRY_RUN = True
+        with mock.patch.object(fv.subprocess, "Popen") as popen, \
+             mock.patch.object(fv.subprocess, "run") as run:
+            self.real_say("hello")
+            popen.assert_not_called()
+            run.assert_not_called()
+
+
+class TestVisionPrefill(Base):
+    def _ask(self, **kw):
+        captured = {}
+
+        class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {"message": {"content": "a test screen"}}).encode()
+
+        def fake_urlopen(req, timeout=None):
+            captured["body"] = json.loads(req.data.decode())
+            return Resp()
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            tmp.write(b"fakepng")
+            tmp.flush()
+            with mock.patch("urllib.request.urlopen",
+                            side_effect=fake_urlopen):
+                out = fv.vision_ask("q?", tmp.name, **kw)
+        return out, captured["body"]
+
+    def test_prefill_adds_assistant_message(self):
+        out, body = self._ask(prefill="The screen shows ")
+        self.assertEqual(out, "a test screen")
+        self.assertEqual(body["messages"][0]["role"], "user")
+        self.assertEqual(body["messages"][1],
+                         {"role": "assistant", "content": "The screen shows "})
+
+    def test_no_prefill_single_message(self):
+        _out, body = self._ask()
+        self.assertEqual(len(body["messages"]), 1)
+
+    def test_num_ctx_4096(self):
+        _out, body = self._ask()
+        self.assertEqual(body["options"]["num_ctx"], 4096)
+
+    def test_default_downscale_is_800px(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            tmp.write(b"fakepng")
+            tmp.flush()
+            opt = tmp.name + ".opt.jpg"
+            self.assertFalse(os.path.exists(opt))
+            with mock.patch("subprocess.run") as mock_run:
+                mock_run.return_value = mock.MagicMock(returncode=1)
+                # returncode != 0 -> falls back to the original path
+                self.assertEqual(fv.prepare_vision_image(tmp.name), tmp.name)
+            args = mock_run.call_args[0][0]
+            self.assertIn("sips", args[0])
+            self.assertIn("800", args)
+
+
 if __name__ == "__main__":
     unittest.main()
