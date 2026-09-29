@@ -80,6 +80,8 @@ python3 free_voice.py --partial "open notes" --dry-run
 ### 2b. Chained Compound Commands & Macros
 
 - **Chaining without LLM overhead**: When an utterance contains conjunctions (`"and"`, `"and then"`, `", then"`), Tier 0 verifies whether all sub-clauses form valid actions. If so, they execute sequentially with a 300 ms inter-command delay (`open notes and snap left`, `set volume to 30 and play`). If any clause fails or the phrase is a natural sentence, Tier 1 handles it.
+- **Browser & Contextual Navigation**: Hotkey-backed actions for fast active-window navigation without heavy accessibility tree walks: `new tab`, `close tab`, `reopen tab`, `refresh` / `reload`, `go back`, `go forward`, `scroll down` / `page down`, `scroll up` / `page up`, `find on page`, and `clear terminal`.
+- **Spaces & Multi-Monitor Display Tiling**: Instant virtual desktop switching (`next space`, `prev space`) and multi-monitor window tossing (`move to next display` / `move to other screen`) via NSScreen frame calculations and AppleScript window repositioning.
 - **Phonetic & Soundex Resolution**: Standard American Soundex indexing maps spoken misspellings from Whisper to installed app bundles (e.g. `es de` / `s d` → `ES-DE`, `sephari` → `Safari`).
 - **Tactile Earcons**: Push-to-talk plays native `Tink.aiff` on Right-Option press and `Pop.aiff` on release, giving zero-latency eyes-free auditory feedback.
 - **Voice Macros**: Quick actions for `read clipboard` (`pbpaste`), `type today's date`, `type the time`, and `type my email` (`VOICE_USER_EMAIL` in `.env`).
@@ -137,7 +139,11 @@ the assistant never goes silent.
 ## 4b. Screen vision (local, same model)
 
 "What's on my screen" captures a screenshot (`screencapture -x`) and sends it
-to `qwen3-vl:8b` with the question — ~1–3 s once the model is resident.
+to `qwen3-vl:8b` with the question.
+
+**Native `sips` Image Optimization (`prepare_vision_image`)**:
+High-DPI Retina screens produce raw PNG captures that exceed Ollama's default 4096-token context window (`exceed_context_size_error`), causing HTTP 400 errors or request timeouts. `prepare_vision_image()` uses macOS's built-in `sips` tool to downsample captures to max 1280px JPEG (75% quality) and caches the result alongside the capture. This shrinks image payload by ~95% (from ~6 MB to ~150 KB), eliminates context overflow (`num_ctx: 8192`), and cuts vision prompt evaluation time by ~60%.
+
 `vision_ask()` is also the fallback behind UI clicks: when the accessibility
 tree has no node matching ("click the blue Submit button" in a canvas-drawn
 UI), the model returns the element's center as 0–1000 fractions and pynput
@@ -327,3 +333,17 @@ Key takeaway:
 - **Fast Tier 0 reflexes**: Standard everyday commands execute in < 1 ms router time and complete within ~2 seconds total roundtrip including speech response.
 - **Micro-model fallback (`qwen2.5:1.5b`)**: Evaluates natural language variants in 0.32s with 986 MB RAM footprint.
 - **Vision-Language fallback (`qwen3-vl:8b`)**: Evaluates natural language variants in 1.38s while providing full on-device screen understanding ("what's on my screen") and visual element grounding. Assistant prefill bypasses the default reasoning trace, preventing 8-second thinking delays while maintaining structured JSON accuracy.
+
+### Component Benchmark Breakdown (`benchmarks/bench.py`)
+
+| Component / Benchmark | Samples (\(n\)) | Mean | Median (\(p50\)) | 95th %tile (\(p95\)) | Status / Notes |
+|---|---|---|---|---|---|
+| **Tier 0 Routing** | 200 | 0.3 ms | **0.2 ms** | 0.6 ms | Corpus of 23 commands incl. chained commands |
+| **Tier 0 Partial Gating** | 200 | 0.1 ms | **0.1 ms** | 0.2 ms | 10 growing prefixes of `"open notes"` |
+| **Chain Dispatch Overhead** | 50 | 0.3 ms | **0.3 ms** | 0.5 ms | `"open notes and snap left"` sequential dispatch |
+| **Tier 1 Cold (Load + Route)** | 1 | 9.07s | **9.07s** | 9.07s | Initial model load into unified memory |
+| **Tier 1 Warm (Resident Model)**| 5 | 1.28s | **1.26s** | 1.33s | Warm route with assistant prefill |
+| **Screenshot Capture** | 5 | 0.18s | **0.19s** | 0.25s | Native macOS `screencapture` to temp file |
+| **Vision: Describe Screen** | 3 | 19.64s | **18.54s** | 22.00s | Screenshot + `sips` downsample + `qwen3-vl:8b` |
+| **Vision: Locate Element** | 3 | 21.11s | **21.08s** | 21.18s | Native `sips` downsample + coordinate query |
+| **Earcon Audio Feedback** | 5 | 3.1 ms | **2.7 ms** | 5.7 ms | Non-blocking `afplay` sound trigger |

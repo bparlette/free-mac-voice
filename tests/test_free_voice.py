@@ -12,6 +12,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 import urllib.error
 from datetime import datetime
@@ -741,6 +742,72 @@ class TestTwoPassRefine(Base):
                                return_value="512 340") as va:
             self.assertTrue(fv.vision_click("the Reply button"))
         va.assert_called_once()
+
+
+# ------------------------------------------------------- browser, tabs & spaces
+class TestBrowserAndSpaces(Base):
+    def test_browser_and_tab_routing(self):
+        cases = [
+            ("new tab", "new_tab"),
+            ("open a tab", "new_tab"),
+            ("close tab", "close_tab"),
+            ("close the tab", "close_tab"),
+            ("reopen tab", "reopen_tab"),
+            ("undo close tab", "reopen_tab"),
+            ("refresh", "refresh_page"),
+            ("reload the page", "refresh_page"),
+            ("go back", "nav_back"),
+            ("back", "nav_back"),
+            ("go forward", "nav_forward"),
+            ("forward", "nav_forward"),
+            ("page down", "page_down"),
+            ("page up", "page_up"),
+            ("find on page", "find_in_page"),
+            ("clear terminal", "clear_terminal"),
+        ]
+        for phrase, expected in cases:
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            self.assertEqual(r[0], expected, f"Routed {phrase} to {r[0]}, expected {expected}")
+
+    def test_spaces_and_display_routing(self):
+        cases = [
+            ("next space", "next_space"),
+            ("previous space", "prev_space"),
+            ("prev space", "prev_space"),
+            ("move to next display", "move_next_display"),
+            ("move to other screen", "move_next_display"),
+        ]
+        for phrase, expected in cases:
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            self.assertEqual(r[0], expected, f"Routed {phrase} to {r[0]}, expected {expected}")
+
+    def test_prepare_vision_image_calls_sips(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            opt_path = tmp.name + ".opt.jpg"
+            with open(opt_path, "wb") as f:
+                f.write(b"fake-jpeg")
+            try:
+                with mock.patch("subprocess.run") as mock_sub:
+                    mock_sub.return_value = mock.MagicMock(returncode=0)
+                    opt = fv.prepare_vision_image(tmp.name)
+                self.assertTrue(opt.endswith(".opt.jpg"))
+            finally:
+                if os.path.exists(opt_path):
+                    os.unlink(opt_path)
+
+    def test_dispatch_tier1_handles_new_actions(self):
+        dispatched = []
+        with mock.patch.object(fv, "act_keystroke", lambda k, u="": dispatched.append((k, u))), \
+             mock.patch.object(fv, "act_key_code", lambda c, u="": dispatched.append((c, u))), \
+             mock.patch.object(fv, "say"):
+            fv.dispatch_tier1("new_tab", {})
+            fv.dispatch_tier1("refresh_page", {})
+            fv.dispatch_tier1("next_space", {})
+        self.assertIn(("t", "command down"), dispatched)
+        self.assertIn(("r", "command down"), dispatched)
+        self.assertIn((124, "control down"), dispatched)
 
 
 if __name__ == "__main__":

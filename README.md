@@ -21,6 +21,11 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | “open notes” | Opens Notes |
 | “open notes and snap left” | Chained: opens app and tiles it to half screen |
 | “snap left” / “maximize” | Window layout and tiling |
+| “next space” / “prev space” | Switches macOS Spaces / virtual desktops |
+| “move to next display” | Moves active window to adjacent monitor |
+| “new tab” / “close tab” | Browser / terminal tab management |
+| “reopen tab” / “refresh” | Reopens closed tab or reloads current page |
+| “scroll down” / “scroll up” | Smooth scrolling or page navigation |
 | “switch to safari” | Focuses background application |
 | “read clipboard” | Reads your copied text aloud |
 | “type today's date” | Types formatted date macro |
@@ -104,7 +109,7 @@ Measured end-to-end execution times on an Apple M4 Mac mini (including process s
 No mic, model, or Mac required — the suite stubs all hardware:
 
 ```bash
-python3 -m unittest discover -s tests   # 37 unit tests, stdlib only
+python3 -m unittest discover -s tests   # 60 unit tests, stdlib only
 ```
 
 Component benchmarks (Tier 0 routing, Tier 1 cold vs warm, screenshot,
