@@ -218,6 +218,16 @@ a screenshot (dialog #3), then verifies Accessibility via
 Monitoring — the one permission Apple offers no dialog API for. Previously
 denied permissions never re-prompt; those must be flipped by hand.
 
+`prime_permissions.sh` also handles the microphone: it installs the
+`switchaudio-osx` CLI (Homebrew) if missing, looks for the iPhone among
+audio inputs, and selects it as the system input when present. Either way
+it writes `VOICE_MIC=iPhone` to `~/.free-voice/.env`, which `free_voice.py`
+honors via substring matching (`resolve_input_device()`) in all three
+recording paths — so the iPhone mic is used whenever it's in range, with
+fallback to the system default otherwise. `--mic NAME` overrides per run.
+The one thing no script can do: make the iPhone *appear* — that needs
+Continuity (same Apple ID, Wi-Fi + Bluetooth, nearby/unlocked).
+
 ## 7b. Updating
 
 `upgrade.sh` exists because most users will install from the zip, not a
