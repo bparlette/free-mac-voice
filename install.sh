@@ -97,15 +97,10 @@ else
 fi
 
 # --- 7. Permissions -------------------------------------------------------------------
-step "macOS permissions (one-time, 60 seconds)"
-note "Your terminal app needs these ON, or nothing will work:"
-note "  1. Microphone      2. Accessibility      3. Input Monitoring"
-note "On macOS 26+, 'click the … button' also needs: 4. Screen Recording"
-read -rp "Open Privacy & Security settings now? [Y/n] " ans || true
-if [[ ! "${ans:-Y}" =~ ^[Nn] ]]; then
-  open "x-apple.systempreferences:com.apple.settings.PrivacySecurity" || true
-  note "Flip the rows above ON for your terminal (Terminal, iTerm…), then restart it."
-fi
+step "macOS permissions (one-time, ~60 seconds)"
+note "This pops macOS's own Allow dialogs — just click through them."
+note "Run this from the terminal app you'll use for Voice Control."
+bash "$REPO_DIR/prime_permissions.sh"
 
 # --- 8. Smoke test ----------------------------------------------------------------------
 step "Smoke test (no mic needed)…"
