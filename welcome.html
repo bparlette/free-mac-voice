@@ -39,14 +39,14 @@
 
 <div class="step">
   <h2>Step 1 — Permissions <span class="dim">(one time)</span></h2>
-  <p>macOS blocks every app until you say OK. Open <b>System Settings → Privacy &amp; Security</b> and switch these <b>on</b> for your terminal app (Terminal, iTerm, …):</p>
+  <p>macOS blocks every app until you say OK — no installer can skip this, it's the OS itself. The installer already popped the <b>Allow</b> dialogs for you; if you missed one, run <span class="mono">bash prime_permissions.sh</span> from the terminal app you'll use.</p>
   <ol>
-    <li><b>Microphone</b></li>
-    <li><b>Accessibility</b></li>
-    <li><b>Input Monitoring</b> <span class="dim">— lets it hear the push-to-talk key</span></li>
-    <li><b>Screen Recording</b> <span class="dim">— macOS 26+, only needed for “click the … button”</span></li>
+    <li><b>Microphone</b> <span class="dim">— click Allow in the popup</span></li>
+    <li><b>Accessibility</b> <span class="dim">— click Allow in the popup</span></li>
+    <li><b>Input Monitoring</b> <span class="dim">— the one manual toggle: System Settings → Privacy &amp; Security → flip it on for your terminal app (Apple offers no popup for this one)</span></li>
+    <li><b>Screen Recording</b> <span class="dim">— macOS 26+, click Allow in the popup; only needed for “click the … button”</span></li>
   </ol>
-  <p class="dim">Restart your terminal after flipping these on.</p>
+  <p class="dim">If you previously denied one, no popup re-appears — flip it by hand in Settings. Restart your terminal after.</p>
 </div>
 
 <div class="step">
