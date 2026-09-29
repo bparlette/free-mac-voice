@@ -227,6 +227,186 @@ class TestVisionClick(Base):
         self.assertFalse(self._vision(None))
 
 
+# ------------------------------------------------------- mouse control (new)
+class TestMouseControl(Base):
+    def test_mouse_to_routing(self):
+        name, m = self.route_name("move the mouse to the toggle")
+        self.assertEqual(name, "mouse_to")
+        self.assertEqual(m.group(3), "toggle")
+
+    def test_mouse_move_routing(self):
+        name, m = self.route_name("move mouse up")
+        self.assertEqual(name, "mouse_move")
+        self.assertEqual(m.group(2), "up")
+        self.assertIsNone(m.group(4))
+        name, m = self.route_name("move mouse left 200")
+        self.assertEqual(name, "mouse_move")
+        self.assertEqual(m.group(2), "left")
+        self.assertEqual(m.group(4), "200")
+
+    def test_scroll_routing(self):
+        name, m = self.route_name("scroll down")
+        self.assertEqual(name, "scroll")
+        self.assertEqual(m.group(1), "down")
+        self.assertIsNone(m.group(3))
+        name, m = self.route_name("scroll up 3")
+        self.assertEqual(m.group(1), "up")
+        self.assertEqual(m.group(3), "3")
+
+    def test_click_here_routing(self):
+        self.assertEqual(self.route_name("click")[0], "click_here")
+        # longer click commands still route elsewhere
+        self.assertEqual(self.route_name("click the Reply button")[0],
+                         "click_button")
+        self.assertEqual(self.route_name("click the Docs link")[0],
+                         "click_link")
+
+    def test_mouse_move_dry_run(self):
+        fv.act_mouse_move("up", None)
+        self.assertEqual(self.said, ["Moving mouse up"])
+        self.said.clear()
+        fv.act_mouse_move("left", "200")
+        self.assertEqual(self.said, ["Moving mouse left"])
+
+    def test_scroll_dry_run(self):
+        fv.act_scroll("down", None)
+        self.assertEqual(self.said, ["Scrolling down"])
+
+    def test_click_here_dry_run(self):
+        fv.act_click_here()
+        self.assertEqual(self.said, ["Clicked"])
+
+    def test_mouse_move_relative(self):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake():
+            fv.DRY_RUN = False
+            self.addCleanup(setattr, fv, "DRY_RUN", True)
+            mouse, button = mock.Mock(), mock.Mock()
+            with mock.patch.object(fv, "_mouse",
+                                   return_value=(mouse, button)):
+                yield mouse
+        with fake() as mouse:
+            fv.act_mouse_move("up", None)     # default 100px
+            mouse.move.assert_called_with(0, -100)
+            fv.act_mouse_move("left", "200")
+            mouse.move.assert_called_with(-200, 0)
+            fv.act_mouse_move("down", "50")
+            mouse.move.assert_called_with(0, 50)
+
+    def test_scroll_steps(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        mouse, _button = mock.Mock(), mock.Mock()
+        with mock.patch.object(fv, "_mouse", return_value=(mouse, None)):
+            fv.act_scroll("up", None)     # one base step
+            mouse.scroll.assert_called_with(0, 4)
+            fv.act_scroll("down", "3")    # multiplied
+            mouse.scroll.assert_called_with(0, -12)
+            fv.act_scroll("left", "2")
+            mouse.scroll.assert_called_with(8, 0)
+
+    def test_click_here_clicks_at_cursor(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        mouse, button = mock.Mock(), mock.Mock()
+        button.left = "LEFT"
+        with mock.patch.object(fv, "_mouse", return_value=(mouse, button)):
+            fv.act_click_here()
+            mouse.click.assert_called_with("LEFT", 1)
+        self.assertEqual(self.said, ["Clicked"])
+
+    def test_mouse_to_moves_to_tree_target(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        mouse = mock.Mock()
+
+        class Cfg:  # fake pynput Controller: position is a plain attribute
+            pass
+        ctl = Cfg()
+        with mock.patch.object(fv, "_locate_first", return_value=(100, 200)), \
+             mock.patch.object(fv, "_mouse", return_value=(ctl, None)), \
+             mock.patch.object(fv, "frontmost_app", return_value="Safari"):
+            fv.act_mouse_to("the toggle")
+            self.assertEqual(ctl.position, (100, 200))
+        self.assertEqual(self.said, ["Mouse is on the toggle"])
+
+    def test_mouse_to_falls_back_to_vision(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+
+        class Cfg:
+            pass
+        ctl = Cfg()
+        with mock.patch.object(fv, "_locate_first", return_value=None), \
+             mock.patch.object(fv, "vision_locate", return_value=(7, 9)), \
+             mock.patch.object(fv, "_mouse", return_value=(ctl, None)), \
+             mock.patch.object(fv, "frontmost_app", return_value="Safari"):
+            fv.act_mouse_to("the weird widget")
+            self.assertEqual(ctl.position, (7, 9))
+        self.assertEqual(self.said, ["Mouse is on the weird widget"])
+
+    def test_mouse_to_not_found(self):
+        with mock.patch.object(fv, "_locate_first", return_value=None), \
+             mock.patch.object(fv, "vision_locate", return_value=None), \
+             mock.patch.object(fv, "frontmost_app", return_value="Safari"):
+            fv.act_mouse_to("the thing that isn't there")
+        self.assertEqual(self.said,
+                         ["I couldn't find the thing that isn't there on screen"])
+
+    def test_locate_first_uses_element_center(self):
+        from types import SimpleNamespace
+
+        class Bounds:
+            x, y, width, height = 10, 20, 100, 40
+
+        class El:
+            bounds = Bounds()
+
+        class Locator:
+            def elements(self):
+                return [El()]
+
+        class App:
+            def locator(self, selector):
+                self.seen = selector
+                return Locator()
+
+        class AppNs:
+            def by_name(self, name):
+                app = App()
+                AppNs.last = app
+                return app
+
+        fake_xa = SimpleNamespace(App=AppNs())
+        old = fv._xa11y_mod
+        fv._xa11y_mod = fake_xa
+        self.addCleanup(setattr, fv, "_xa11y_mod", old)
+        loc = fv._locate_first("Safari", ["button", "link"], "toggle")
+        self.assertEqual(loc, (60, 40))  # center of 10,20,100x40
+        self.assertIn("button", AppNs.last.seen)
+
+    def test_vision_locate_returns_pixels(self):
+        real_import = __import__
+
+        def no_pil(name, *a, **k):
+            if name == "PIL" or name.startswith("PIL."):
+                raise ImportError("no PIL")
+            return real_import(name, *a, **k)
+
+        with mock.patch("builtins.__import__", side_effect=no_pil), \
+             mock.patch.object(fv, "capture_screenshot",
+                               return_value="/tmp/fake.png"), \
+             mock.patch.object(fv, "vision_ask", return_value="512 340"):
+            # 512/1000*1920=983, 340/1000*1080=367 (no AppKit on Linux)
+            self.assertEqual(fv.vision_locate("the toggle"), (983, 367))
+        with mock.patch.object(fv, "capture_screenshot",
+                               return_value="/tmp/fake.png"), \
+             mock.patch.object(fv, "vision_ask", return_value="NONE"):
+            self.assertIsNone(fv.vision_locate("nope"))
+
+
 # ------------------------------------------------------- Tier 1 / Ollama
 class TestOllama(Base):
     def _fake_urlopen(self, payload_text):
