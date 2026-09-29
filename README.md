@@ -83,6 +83,23 @@ Measured end-to-end execution times on an Apple M4 Mac mini (including process s
 
 *Note: Disabling reasoning traces (`"think": false`) on local Ollama models reduces Tier 1 decision latency from 0.40s down to **0.32s** (a ~20% speedup).*
 
+## Tests & benchmarks
+
+No mic, model, or Mac required — the suite stubs all hardware:
+
+```bash
+python3 -m unittest discover -s tests   # 37 unit tests, stdlib only
+```
+
+Component benchmarks (Tier 0 routing, Tier 1 cold vs warm, screenshot,
+vision describe/locate, whisper transcription, earcon latency) — anything the
+machine can't do is reported SKIPPED with a reason instead of failing:
+
+```bash
+python3 benchmarks/bench.py            # full run, appends to benchmarks/results.jsonl
+python3 benchmarks/bench.py --quick    # smoke run, fewer iterations
+```
+
 ## Requirements
 
 - Apple Silicon Mac (M1/M2/M3/M4)
