@@ -570,6 +570,35 @@ def act_quit_app(name: str) -> None:
     say(f"Quitting {app}")
 
 
+def act_minimize(name: str = "") -> None:
+    if name:
+        app = resolve_app(name)
+        if not app:
+            say(f"I couldn't find an app called {name}")
+            return
+        applescript(
+            f'tell application "System Events" to tell process "{esc(app)}" to '
+            'set value of attribute "AXMinimized" of every window to true'
+        )
+        say(f"Minimizing {app}")
+        return
+    act_keystroke("m", "command down")
+    say("Minimized")
+
+
+def act_hide(name: str = "") -> None:
+    if name:
+        app = resolve_app(name)
+        if not app:
+            say(f"I couldn't find an app called {name}")
+            return
+        applescript(f'tell application "System Events" to set visible of process "{esc(app)}" to false')
+        say(f"Hiding {app}")
+        return
+    act_keystroke("h", "command down")
+    say("Hidden")
+
+
 def act_keystroke(keys: str, using: str = "") -> None:
     mod = f" using {{{using}}}" if using else ""
     applescript(f'tell application "System Events" to keystroke "{esc(keys)}"{mod}')
@@ -833,8 +862,10 @@ _p(r"^quit( the)? (.+)$", "quit_app", True)
 _p(r"^close the app (.+)$", "quit_app", True)
 # --- windows / tabs
 _p(r"^close( the)? (window|tab)$", "close_window", True)
+_p(r"^(minimize|minimise)( the)? (.+?)( window| app)?$", "minimize_app", True)
 _p(r"^(minimize|minimise)( the window)?$", "minimize", True)
 _p(r"^(fullscreen|full screen|make it full screen)$", "fullscreen", True)
+_p(r"^hide( the)? (.+?)( app| application)?$", "hide_app", True)
 _p(r"^hide( the app)?$", "hide", True)
 # --- typing & keys (type/dictate carry free text: final-only)
 _p(r"^type (.+)$", "type_text")
@@ -903,10 +934,15 @@ def _partial_complete(name: str, m: re.Match) -> bool:
     - everything else partial-safe: the regex consumed the whole partial,
       which for closed enums is enough.
     """
-    if name in ("open_app", "quit_app"):
-        # open_app patterns keep the app phrase in group 2 in both variants;
-        # quit_app variants keep it in the last group.
-        phrase = m.group(2) if name == "open_app" else m.group(m.lastindex)
+    if name in ("open_app", "quit_app", "minimize_app", "hide_app"):
+        if name == "open_app":
+            phrase = m.group(2)
+        elif name == "minimize_app":
+            phrase = m.group(3)
+        elif name == "hide_app":
+            phrase = m.group(2)
+        else:
+            phrase = m.group(m.lastindex)
         return resolve_app_exact(phrase) is not None
     if name == "settings":
         return m.group(1).strip().lower() in _SETTINGS_PANES
@@ -975,11 +1011,15 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         elif name == "close_window":
             act_keystroke("w", "command down"); say("Closed")
         elif name == "minimize":
-            act_keystroke("m", "command down")
+            act_minimize()
+        elif name == "minimize_app":
+            act_minimize(m.group(3))
         elif name == "fullscreen":
             act_key_code(3, "control down, command down")  # Ctrl-Cmd-F
         elif name == "hide":
-            act_keystroke("h", "command down")
+            act_hide()
+        elif name == "hide_app":
+            act_hide(m.group(2))
         elif name == "type_text":
             act_type_text(m.group(1)); say("Typed")
         elif name == "press_key":
@@ -1100,7 +1140,7 @@ _TIER1_SYSTEM = (
     "You route voice commands to Mac actions. Reply with ONLY JSON, no other text: "
     '{"action": "<name>", "params": {...}, "confidence": 0.0-1.0}. '
     "Valid actions and params: "
-    "open_app {app: name}, quit_app {app: name}, "
+    "open_app {app: name}, quit_app {app: name}, minimize {app: optional name}, hide {app: optional name}, "
     "type_text {text: string}, web_search {query: string}, open_url {url: string}, "
     "set_volume {level: 0-100}, volume_up {}, volume_down {}, mute_toggle {}, "
     "media {op: playpause|next|previous}, lock {}, sleep {}, "
@@ -1113,7 +1153,7 @@ _TIER1_SYSTEM = (
 )
 
 _TIER1_ACTIONS = {
-    "open_app", "quit_app", "type_text", "web_search", "open_url",
+    "open_app", "quit_app", "minimize", "hide", "type_text", "web_search", "open_url",
     "set_volume", "volume_up", "volume_down", "mute_toggle", "media",
     "lock", "sleep", "brightness_up", "brightness_down", "screenshot",
     "dark_mode", "wifi", "timer", "calculate", "click_button", "click_link",
@@ -1184,6 +1224,10 @@ def dispatch_tier1(action: str, params: dict) -> None:
         act_open_app(str(p("app", "")))
     elif action == "quit_app":
         act_quit_app(str(p("app", "")))
+    elif action == "minimize":
+        act_minimize(str(p("app", "")))
+    elif action == "hide":
+        act_hide(str(p("app", "")))
     elif action == "type_text":
         act_type_text(str(p("text", ""))); say("Typed")
     elif action == "web_search":
