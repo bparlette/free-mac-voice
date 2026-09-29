@@ -80,7 +80,8 @@
 
 <div class="step">
   <h2>Use your iPhone as the mic <span class="dim">(Mac mini has none built in)</span></h2>
-  <p><b>Option A — built-in, free, no app:</b> on your iPhone and Mac, sign into the same Apple ID with Wi-Fi and Bluetooth on, keep the iPhone nearby. Then on the Mac: <b>System Settings → Sound → Input → choose your iPhone</b>. Done.</p>
+  <p>The installer already tried to set this up for you: if your iPhone was nearby with the same Apple ID, Wi-Fi and Bluetooth on, it set your iPhone as the Mac's input and saved <span class="mono">VOICE_MIC=iPhone</span> — the app then prefers your iPhone whenever it's in range and falls back to the Mac default otherwise. To re-run it any time: <span class="mono">bash prime_permissions.sh</span>. You can also force a mic per run with <span class="mono">--mic NAME</span> (e.g. <span class="mono">--mic iPhone</span>).</p>
+  <p><b>Option A — built-in, free, no app:</b> on your iPhone and Mac, sign into the same Apple ID with Wi-Fi and Bluetooth on, keep the iPhone nearby and unlocked. Then on the Mac: <b>System Settings → Sound → Input → choose your iPhone</b>. Done.</p>
   <p><b>Option B — WO Mic (free app):</b> install <b>WO Mic</b> from the iOS App Store plus the free Mac client from wolicheng.com, connect over Wi-Fi, then pick “WO Mic” as the input. Works fine; the app is ad-supported and reviews are mixed, so try Option A first.</p>
 </div>
 
