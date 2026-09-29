@@ -113,7 +113,27 @@ python "$REPO_DIR/free_voice.py" --text "open notes" --dry-run
 python "$REPO_DIR/free_voice.py" --partial "open notes" --dry-run >/dev/null
 note "router + completion gating OK"
 
-# --- 9. Welcome guide ----------------------------------------------------------------------
+# --- 9. Optional: start at login (always-listening) ---------------------------------------
+step "Start automatically at login?"
+note "This keeps voice control always listening, even after a reboot."
+note "It restarts itself if it ever crashes."
+read -rp "Enable always-listening at login? [y/N] " login_ans || true
+if [[ "${login_ans:-N}" =~ ^[Yy] ]]; then
+  PLIST="$HOME/Library/LaunchAgents/com.free-mac-voice.plist"
+  mkdir -p "$HOME/Library/LaunchAgents"
+  sed -e "s#__VENV__#$VENV#g" -e "s#__REPO__#$REPO_DIR#g" \
+    "$REPO_DIR/com.free-mac-voice.plist" > "$PLIST"
+  launchctl unload "$PLIST" >/dev/null 2>&1 || true
+  launchctl load -w "$PLIST"
+  note "installed — voice control is now listening and starts at every login"
+  note "first run will ask for Microphone permission for Python — allow it"
+  note "logs: /tmp/free-mac-voice.log"
+  note "to remove later: launchctl unload -w \"$PLIST\""
+else
+  note "skipped — double-click 'Voice Control (Always On).command' to start manually"
+fi
+
+# --- 10. Welcome guide ----------------------------------------------------------------------
 step "Opening your 60-second start guide…"
 open "$REPO_DIR/welcome.html" || true
 
@@ -124,10 +144,15 @@ cat <<'EOF'
 
   Or just double-click "Voice Control.command" anytime — no terminal needed.
 
+  For always-listening: double-click "Voice Control (Always On).command".
+  (Or re-run install.sh and say yes to start-at-login.)
+
   Try saying:
     "open notes" · "set volume to 30" · "play"
     "set a timer for 5 minutes" · "click the Reply button"
     "search best pizza near me" · "what time is it"
 
   Say "help" anytime to hear everything it understands.
+
+  To update later: bash upgrade.sh
 EOF
