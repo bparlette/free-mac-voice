@@ -58,8 +58,8 @@ Works whether you installed from `git clone` or the zip download. It pulls the l
 Three tiers, fastest first. The system only uses a slower tier when the faster one can't help:
 
 1. **Tier 0 — the reflex (<1 ms).** Pattern matching on your words. Handles every standard command instantly — even mid-sentence, but only when the command is complete (“open notes” fires; “open no” never misfires).
-2. **Tier 1 — the local fallback (~1 s).** A tiny AI (Qwen 1.5B) running on your Mac translates unusual phrasing (“could you be a dear and open my browser thing”) into the same commands. Still $0, still on your Mac.
-3. **Tier 2 — the answerer (optional).** Google's free API tier answers open-ended questions aloud. Needs a free API key; skip it and Tier 2 just stays quiet.
+2. **Tier 1 — the local fallback (~1–2 s).** A vision-language AI (Qwen3-VL 8B) running on your Mac translates unusual phrasing (“could you be a dear and open my browser thing”) into the same commands — and understands your screen (“what's on my screen”). Still $0, still on your Mac.
+3. **Tier 2 — the answerer (optional).** Google's free API tier answers open-ended questions aloud, with live web search for fresh answers. Needs a free API key; skip it and Tier 2 just stays quiet. If the free quota runs out mid-day, it falls back to the on-device model automatically.
 
 Full implementation details, latency math, and honest limits: **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
