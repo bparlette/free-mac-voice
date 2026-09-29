@@ -26,7 +26,16 @@ step "Checking Xcode Command Line Tools…"
 if ! xcode-select -p >/dev/null 2>&1; then
   note "Installing — a macOS popup will ask you to confirm."
   xcode-select --install || true
-  read -rp "Press Enter once the Command Line Tools install has finished… " _ || true
+  if [[ -t 0 ]]; then
+    read -rp "Press Enter once the Command Line Tools install has finished… " _ || true
+  else
+    # non-interactive (automation): poll instead of blocking on read forever
+    note "non-interactive — waiting up to ~10 min for the install to finish…"
+    for _ in $(seq 1 60); do
+      xcode-select -p >/dev/null 2>&1 && break
+      sleep 10
+    done
+  fi
 else
   note "already installed"
 fi
@@ -112,7 +121,11 @@ note "router + completion gating OK"
 step "Start automatically at login?"
 note "This keeps voice control always listening, even after a reboot."
 note "It restarts itself if it ever crashes."
-read -rp "Enable always-listening at login? [y/N] " login_ans || true
+if [[ -t 0 ]]; then
+  read -rp "Enable always-listening at login? [y/N] " login_ans || true
+else
+  login_ans="N"  # non-interactive: default to no, re-run install.sh to enable
+fi
 if [[ "${login_ans:-N}" =~ ^[Yy] ]]; then
   PLIST="$HOME/Library/LaunchAgents/com.free-mac-voice.plist"
   mkdir -p "$HOME/Library/LaunchAgents"
