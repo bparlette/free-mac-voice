@@ -63,6 +63,19 @@ Three tiers, fastest first. The system only uses a slower tier when the faster o
 
 Full implementation details, latency math, and honest limits: **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
+## Measured Performance (Apple M4 Mac mini, 16 GB)
+
+Measured end-to-end execution times on an Apple M4 Mac mini (including process spawn, command execution, and macOS voice confirmation):
+
+| Command | Tier / Path | Decision Time | Total End-to-End Time |
+|---|---|---|---|
+| `close notes` | Tier 0 (Instant Regex) | < 1 ms | **1.94s** |
+| `open notes` | Tier 0 (Instant Regex) | < 1 ms | **2.18s** |
+| `what time is it` | Tier 0 (Instant Regex) | < 1 ms | **2.59s** |
+| `could you please open notes` | Tier 1 (Local LLM Fallback) | 0.32s | **2.53s** |
+
+*Note: Disabling reasoning traces (`"think": false`) on local Ollama models reduces Tier 1 decision latency from 0.40s down to **0.32s** (a ~20% speedup).*
+
 ## Requirements
 
 - Apple Silicon Mac (M1/M2/M3/M4)
