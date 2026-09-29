@@ -10,9 +10,9 @@ Nothing here costs money.
 mic (16 kHz PCM)
   ─► faster-whisper tiny.en, Metal, int8          ~100–300 ms   (local)
   ─► Tier 0: regex router + completion gating    <1 ms         (local)
-  ─► Tier 1: Ollama qwen2.5:1.5b, JSON mode      ~0.7–1 s warm (local, Tier 0 miss only)
-  ─► Tier 2: Gemini API free tier                2–5+ s        (Tier 1 miss/unsure only)
-  ─► execution: AppleScript / shell / xa11y      ~50–100 ms   (local)
+  ─► Tier 1: Ollama qwen3-vl:8b, JSON mode      ~1–2 s warm   (local, Tier 0 miss only)
+  ─► Tier 2: Gemini API free tier, search-grounded 2–5+ s       (Tier 1 miss/unsure only)
+  ─► execution: AppleScript / shell / xa11y (+ vision fallback) ~50–100 ms (local)
   ─► macOS `say` confirmation                                  (local)
 ```
 
@@ -20,23 +20,27 @@ Design principle: **a cascade, not a committee.** Each tier only wakes when
 every faster tier failed. The common path (a standard command) never touches
 anything slower than a millisecond.
 
-### Why not a 7B model as the router?
+### Why one 8B vision-language model instead of a tiny router?
 
-A 7B LLM on a base M4 Mac mini decodes at roughly **~24 tokens/second**
-(reported across community benchmarks) — a routing decision over a few-hundred-token
-prompt plus JSON output lands at **~2–4 seconds**. Running that on every
-streaming speech chunk permanently lags behind the speaker and destroys the
-mid-sentence execution effect. The 1.5B model runs ~3× faster (≈60–70 tok/s);
-a community benchmark of `qwen2.5:1.5b` via Ollama on Apple Silicon measured
-**median 703 ms, mean ~1 s end-to-end** per request
-([source](https://github.com/chrismckee1/scribe/blob/HEAD/macos/CLEANUP-MODEL-BENCHMARK.md)).
-That is still too slow to run per-chunk — which is exactly why it is Tier 1
-(fallback), never the primary router. Measure on your own machine with:
+The local model is `qwen3-vl:8b` — one model for routing, Q&A, *and* screen
+understanding, instead of a small text-only router plus a separate vision
+model. Two reasons:
+
+1. **One resident model, no swap penalty.** Two models fight over unified
+   memory; one 8B (~5 GB) stays warm via `keep_alive: 60m` and serves every
+   local need. 8 GB minis use `qwen3-vl:4b` via `OLLAMA_MODEL`.
+2. **`think: false`.** Qwen3-family models reason by default — a reasoning
+   trace before every answer is death for voice latency. Non-thinking mode
+   returns the answer directly. Routing JSON is short (64 tokens), so even at
+   ~30–60 tok/s on Apple Silicon it lands in ~1–2 s — acceptable for a Tier 1
+   fallback that only fires on Tier 0 misses, never per speech chunk.
+
+Measure on your own machine with:
 
 ```bash
 time curl -s http://localhost:11434/api/chat -d '{
-  "model": "qwen2.5:1.5b", "format": "json", "stream": false,
-  "options": {"temperature": 0, "num_predict": 60},
+  "model": "qwen3-vl:8b", "format": "json", "stream": false, "think": false,
+  "options": {"temperature": 0, "num_predict": 64},
   "messages": [{"role": "user", "content": "open my notes app please"}]}' | head -c 200
 ```
 
@@ -73,16 +77,17 @@ complete. Demo it without a mic:
 python3 free_voice.py --partial "open notes" --dry-run
 ```
 
-## 3. Tier 1 — local 1.5B fallback (JSON mode)
+## 3. Tier 1 — local vision-language model (JSON mode)
 
 Fires **only** on a Tier 0 miss. `ollama_route()` POSTs to
 `http://localhost:11434/api/chat` with:
 
-- `model`: `qwen2.5:1.5b` (override with `OLLAMA_MODEL`)
+- `model`: `qwen3-vl:8b` (override with `OLLAMA_MODEL`; `qwen3-vl:4b` on 8 GB minis)
 - `format: "json"` — Ollama's structured output
-- `keep_alive: "30m"` — the model stays resident in unified memory, dodging
-  the **20–30 s cold-start** penalty on first use
-- `options: {temperature: 0, num_predict: 80}` — deterministic, short output
+- `think: false` — no reasoning trace; voice needs the answer now
+- `keep_alive: "60m"` — the model stays resident in unified memory, dodging
+  the cold-start penalty on first use
+- `options: {temperature: 0, num_predict: 64}` — deterministic, short output
 
 The system prompt constrains the model to a fixed action enum
 (`open_app`, `quit_app`, `type_text`, `web_search`, `set_volume`, `media`,
@@ -111,6 +116,26 @@ Fires only when Tier 1 misses or abstains. A short, spoken-style answer via
 consumer subscription; those are separate products. Key lives in
 `~/.free-voice/.env` (`GEMINI_API_KEY`), never in the repo. No key → Tier 2
 is skipped silently.
+
+**Search grounding** (`tools: [{"google_search": {}}]`) is enabled so fresh
+questions ("who won last night") get live answers — still on the free tier,
+still $0. The model only searches when it judges the question needs it.
+
+**Quota fallback:** on HTTP 429 (free-tier limit hit), `gemini_answer()`
+falls back to `ollama_answer()` — the local model answers instead, and says
+so out loud ("Google's free limit is hit, answering from the on-device
+model"). The local answer is lower quality and knowledge-cutoff-bound, but
+the assistant never goes silent.
+
+## 4b. Screen vision (local, same model)
+
+"What's on my screen" captures a screenshot (`screencapture -x`) and sends it
+to `qwen3-vl:8b` with the question — ~1–3 s once the model is resident.
+`vision_ask()` is also the fallback behind UI clicks: when the accessibility
+tree has no node matching ("click the blue Submit button" in a canvas-drawn
+UI), the model returns the element's center as 0–1000 fractions and pynput
+clicks there. Tree-first ordering keeps coordinates approximate-only; vision
+clicks are never used for destructive or sensitive actions.
 
 ## 5. Execution
 
@@ -141,8 +166,9 @@ one-line install hint instead of crashing.
 
 **Safety:** shutdown, restart, logout, and empty-trash always ask for a spoken
 "yes" first (bypassable with `--yes` in `--text` mode only). Apps that don't
-expose accessibility data are invisible to xa11y — documented, not worked
-around.
+expose accessibility data are invisible to xa11y — the vision fallback
+(§4b) can still locate their controls on a screenshot, but coordinate clicks
+are approximate and never used for destructive or sensitive actions.
 
 ## 6. Audio path (current) and the streaming upgrade
 
