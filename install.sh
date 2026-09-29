@@ -83,8 +83,8 @@ if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
   done
 fi
 if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
-  step "Pulling qwen2.5:1.5b (~1 GB, one-time download)…"
-  ollama pull qwen2.5:1.5b
+  step "Pulling qwen3-vl:8b (~5 GB, one-time download)…"
+  ollama pull qwen3-vl:8b
 else
   warn "Ollama isn't responding — Tier 1 fallback will be skipped until you run 'ollama serve'."
 fi
@@ -97,8 +97,9 @@ if [[ ! -f "$HOME/.free-voice/.env" ]]; then
 # Optional: Gemini API free tier powers Tier 2 (open-ended questions).
 # Get a key at https://aistudio.google.com/apikey — leave blank to skip.
 GEMINI_API_KEY=
-# Tier 1 local model (Ollama). Change only if you know what you're doing.
-OLLAMA_MODEL=qwen2.5:1.5b
+# Tier 1 local model (Ollama): vision-language model for routing, Q&A and
+# screen understanding. 8GB minis: ollama pull qwen3-vl:4b and set this to qwen3-vl:4b.
+OLLAMA_MODEL=qwen3-vl:8b
 EOF
   note "created — paste a Gemini key in later if you want Tier 2 Q&A"
 else
