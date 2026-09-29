@@ -243,6 +243,100 @@ def push_to_talk_loop(on_utterance) -> None:
     with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
         listener.join()
 
+
+# ------------------------------------------------------- always-listening
+
+class VoiceActivityDetector:
+    """Tiny energy-based VAD with an adaptive noise floor. No dependencies.
+
+    Feed 16-bit mono frames via update(); it returns one of
+    "start" | "speech" | "end" | "silence". The noise floor adapts slowly
+    during silence so a TV hum or fan doesn't permanently deafen it.
+    Hysteresis (separate start/stop thresholds) avoids chattering.
+    """
+
+    def __init__(self, sensitivity: float = 3.0, frame_ms: int = 30,
+                 start_ms: int = 250, end_ms: int = 900):
+        self.sensitivity = sensitivity
+        self.start_needed = max(1, start_ms // frame_ms)
+        self.end_needed = max(1, end_ms // frame_ms)
+        self.floor = 200.0          # adaptive RMS noise floor (int16 units)
+        self.in_speech = False
+        self._speech_frames = 0
+        self._silence_frames = 0
+
+    def update(self, samples) -> str:
+        import numpy as np
+
+        rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)) + 1e-6)
+        if not self.in_speech:
+            # adapt the floor only while silent (slowly)
+            self.floor = 0.98 * self.floor + 0.02 * min(rms, self.floor * 4)
+            floor = max(self.floor, 60.0)  # never trust a near-zero floor
+            if rms > floor * self.sensitivity:
+                self._speech_frames += 1
+                if self._speech_frames >= self.start_needed:
+                    self.in_speech = True
+                    self._silence_frames = 0
+                    return "start"
+            else:
+                self._speech_frames = 0
+            return "silence"
+        # in speech: end only after sustained quiet (hysteresis)
+        if rms < max(self.floor, 60.0) * self.sensitivity * 0.6:
+            self._silence_frames += 1
+            if self._silence_frames >= self.end_needed:
+                self.in_speech = False
+                self._speech_frames = 0
+                return "end"
+        else:
+            self._silence_frames = 0
+        return "speech"
+
+
+def always_listen_loop(on_utterance, sensitivity: float = 3.0) -> None:
+    """Listen continuously; transcribe each detected utterance. Ctrl-C quits.
+
+    No wake word: any speech is transcribed and routed through the normal
+    tiers. Non-commands are ignored silently (the caller passes
+    quiet_miss=True), so background chatter costs a transcription but no
+    noise. In a loud room, prefer push-to-talk.
+    """
+    import sounddevice as sd
+    import numpy as np
+
+    vad = VoiceActivityDetector(sensitivity=sensitivity)
+    frame_len = int(16000 * 0.03)  # 30 ms frames
+    capturing: list[np.ndarray] = []
+    max_frames = int(15 / 0.03)   # 15 s safety cap per utterance
+
+    log("always-listening: speak naturally, Ctrl-C quits. "
+        "(no wake word — speech itself is the trigger)")
+    try:
+        with sd.RawInputStream(samplerate=16000, channels=1, dtype="int16",
+                               blocksize=frame_len) as stream:
+            while True:
+                data, _ = stream.read(frame_len)
+                samples = np.frombuffer(data, dtype=np.int16)
+                state = vad.update(samples)
+                if state == "start":
+                    capturing = [samples.copy()]
+                    log("heard speech, capturing...")
+                elif state == "speech" and capturing:
+                    capturing.append(samples.copy())
+                    if len(capturing) >= max_frames:
+                        state = "end"  # safety cap: cut it off
+                if state == "end" and capturing:
+                    audio = (np.concatenate(capturing)
+                             .astype(np.float32) / 32768.0)
+                    capturing = []
+                    if len(audio) > 16000 * 0.4:  # ignore blips < 0.4 s
+                        log("transcribing...")
+                        on_utterance(audio)
+                    time.sleep(0.5)  # cooldown so one sentence = one command
+    except KeyboardInterrupt:
+        log("always-listening stopped.")
+
 # ---------------------------------------------------------------- app names
 
 _APP_ALIASES = {
@@ -1051,8 +1145,13 @@ def gemini_answer(prompt: str) -> bool:
 # ---------------------------------------------------------------- the cascade
 
 def handle_command(text: str, confirm_audio_fn=None,
-                   allow_destructive: bool = False) -> bool:
-    """Route one transcript through the tiers. Returns True if handled."""
+                   allow_destructive: bool = False,
+                   quiet_miss: bool = False) -> bool:
+    """Route one transcript through the tiers. Returns True if handled.
+
+    quiet_miss=True (always-listening mode): a total miss is logged, not
+    spoken, so background chatter never makes the Mac talk to itself.
+    """
     t = text.strip().rstrip(".!?").strip()
     if not t:
         return False
@@ -1080,7 +1179,10 @@ def handle_command(text: str, confirm_audio_fn=None,
     # Tier 2: free Gemini Q&A (optional)
     if GEMINI_API_KEY:
         return gemini_answer(t)
-    say("I didn't understand. Say 'help' to hear what I can do")
+    if quiet_miss:
+        log("no tier matched; ignoring quietly (always-listening)")
+    else:
+        say("I didn't understand. Say 'help' to hear what I can do")
     return False
 
 
@@ -1135,17 +1237,18 @@ def demo_partials(text: str) -> None:
     print("\nfinal transcript also runs Tier 1/2 if Tier 0 never fired.")
 
 
-def on_utterance(audio) -> None:
+def on_utterance(audio, quiet_miss: bool = False) -> None:
     try:
         text = transcribe(audio)
     except Exception as e:  # noqa: BLE001
         log(f"transcription failed: {e}")
-        say("I didn't catch that")
+        if not quiet_miss:
+            say("I didn't catch that")
         return
     if not text:
         log("empty transcript")
         return
-    handle_command(text, confirm_audio_fn=record_fixed)
+    handle_command(text, confirm_audio_fn=record_fixed, quiet_miss=quiet_miss)
 
 
 def main() -> None:
@@ -1162,6 +1265,12 @@ def main() -> None:
                     help="print actions instead of running them")
     ap.add_argument("--yes", action="store_true",
                     help="allow destructive actions in --text mode")
+    ap.add_argument("--always", action="store_true",
+                    help="listen continuously with voice activity detection; "
+                         "Ctrl-C quits (no wake word — any speech triggers)")
+    ap.add_argument("--sensitivity", type=float, default=3.0, metavar="X",
+                    help="always-listen mic sensitivity multiplier "
+                         "(higher = easier to trigger; default 3.0)")
     args = ap.parse_args()
     DRY_RUN = args.dry_run
 
@@ -1176,6 +1285,10 @@ def main() -> None:
         return
     if args.once:
         on_utterance(record_fixed(args.once))
+        return
+    if args.always:
+        always_listen_loop(lambda audio: on_utterance(audio, quiet_miss=True),
+                           sensitivity=args.sensitivity)
         return
     push_to_talk_loop(on_utterance)
 
