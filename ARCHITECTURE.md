@@ -146,10 +146,40 @@ around.
 
 ## 6. Audio path (current) and the streaming upgrade
 
-**Today:** push-to-talk. `pynput` watches for Right-Option hold → `sounddevice`
-records 16 kHz mono → on release, `faster-whisper` (`tiny.en`, Metal, int8,
-beam 1, VAD filter) transcribes → the cascade runs. Perceived latency is
-release + ~200 ms.
+**Today:** two input modes share the same cascade.
+
+- **Push-to-talk** (default). `pynput` watches for Right-Option hold →
+  `sounddevice` records 16 kHz mono → on release, `faster-whisper`
+  (`tiny.en`, Metal, int8, beam 1, VAD filter) transcribes → the cascade
+  runs. Perceived latency is release + ~200 ms.
+- **Always-listening** (`--always`, or the `Voice Control (Always On).command`
+  launcher). A built-in energy VAD watches the mic continuously:
+  adaptive RMS noise floor (slow EMA during silence, never trusted below
+  a floor of 60 int16-units), speech onset at 3× the floor sustained for
+  250 ms, speech end after 900 ms below 0.6× the start threshold
+  (hysteresis), a 0.4 s minimum utterance, and a 15 s safety cap.
+  Each captured utterance goes through the same three tiers — but a total
+  miss is logged, never spoken (`quiet_miss=True`), so background chatter
+  costs a transcription and nothing else. Tune with `--sensitivity`
+  (higher = easier to trigger).
+
+**Why no wake word:** the standard free engine, openWakeWord, does not work
+natively on Apple Silicon — its ONNX models score near zero on ARM64
+([issue #309](https://github.com/dscripka/openwakeword/issues/309),
+[#336](https://github.com/dscripka/openwakeword/issues/336)); the only
+workaround is a ~500 MB TensorFlow install plus a runtime shim, which fails
+the "one command, no fiddling" bar. The energy VAD needs no new
+dependencies and works out of the box; the honest tradeoff is that any
+speech — TV included — gets transcribed. In a noisy room, push-to-talk
+wins. A real wake word remains a documented future upgrade, not a shipped
+claim.
+
+**Start at login:** `install.sh` can install `com.free-mac-voice.plist` as a
+LaunchAgent (`RunAtLoad` + `KeepAlive`), so `--always` survives reboots and
+restarts on crash. Logs go to `/tmp/free-mac-voice.log`. Note: macOS grants
+Microphone per-binary, so the first autostart prompts once for Python —
+allow it and it sticks. Remove with
+`launchctl unload -w ~/Library/LaunchAgents/com.free-mac-voice.plist`.
 
 **Next:** true mid-sentence execution. The router side is already built for
 it — `PartialSession.feed(partial)` with gating + dedup is exactly what a
@@ -165,10 +195,23 @@ except the audio plumbing is in this repo.
 |---|---|
 | `free_voice.py` | the whole system: audio, 3 tiers, actions, CLI |
 | `install.sh` | one-command macOS setup (re-runnable) |
+| `upgrade.sh` | one-command update for existing installs (git or zip) |
 | `welcome.html` | 60-second visual start guide, opened post-install |
-| `Voice Control.command` | double-click launcher (no terminal needed) |
+| `Voice Control.command` | double-click launcher: push-to-talk |
+| `Voice Control (Always On).command` | double-click launcher: always-listening |
+| `com.free-mac-voice.plist` | LaunchAgent template for start-at-login (filled in by install.sh) |
 | `requirements.txt` | Python deps |
 | `ARCHITECTURE.md` | this file |
+
+## 7b. Updating
+
+`upgrade.sh` exists because most users will install from the zip, not a
+clone. It detects the install style: `.git` present → `git pull --ff-only`;
+otherwise it downloads the latest `main` tarball from GitHub and overlays
+the files, explicitly skipping `.venv` (and `.git` if ever present), then
+re-runs `install.sh` to refresh Homebrew/Python dependencies. User config
+(`~/.free-voice/.env`) is never touched. The LaunchAgent, if installed,
+keeps working because it points at the repo's venv by absolute path.
 
 Environment variables (`~/.free-voice/.env`): `GEMINI_API_KEY`,
 `GEMINI_MODEL` (default `gemini-2.5-flash`), `WHISPER_MODEL` (default
