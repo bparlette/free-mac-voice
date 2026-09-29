@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Mac Voice Control — Start Guide</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+         max-width: 660px; margin: 0 auto; padding: 32px 20px 64px; line-height: 1.6; }
+  h1 { font-size: 2rem; margin-bottom: 0.25em; }
+  .sub { opacity: 0.7; margin-top: 0; }
+  .step { border: 1px solid #c8c8c8; border-radius: 16px; padding: 22px; margin: 20px 0; }
+  .step h2 { margin: 0 0 0.5em; font-size: 1.25rem; }
+  .key { display: inline-block; border: 1px solid #999; border-bottom-width: 3px;
+         border-radius: 8px; padding: 3px 12px; font-weight: 700; background: #f2f2f2;
+         white-space: nowrap; }
+  .chip { display: inline-block; border: 1px solid #b5b5b5; border-radius: 999px;
+          padding: 7px 15px; margin: 4px 3px; font-size: 0.95rem; }
+  button { font-size: 1rem; padding: 11px 20px; border-radius: 12px;
+           border: 1px solid #999; background: #f2f2f2; cursor: pointer; }
+  button:active { transform: scale(0.98); }
+  #meter { height: 20px; background: #e4e4e4; border-radius: 10px; overflow: hidden; margin-top: 12px; }
+  #meterFill { height: 100%; width: 0%; background: #34c759; transition: width 60ms linear; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; }
+  .dim { opacity: 0.65; }
+  .trouble li { margin-bottom: 10px; }
+  @media (prefers-color-scheme: dark) {
+    .key, button { background: #2c2c2e; }
+    #meter { background: #3a3a3c; }
+    .step { border-color: #4a4a4c; }
+  }
+</style>
+</head>
+<body>
+
+<h1>🎙️ Talk to your Mac</h1>
+<p class="sub">Free voice control is installed. The entire manual is below — 60 seconds, three steps.</p>
+
+<div class="step">
+  <h2>Step 1 — Permissions <span class="dim">(one time)</span></h2>
+  <p>macOS blocks every app until you say OK. Open <b>System Settings → Privacy &amp; Security</b> and switch these <b>on</b> for your terminal app (Terminal, iTerm, …):</p>
+  <ol>
+    <li><b>Microphone</b></li>
+    <li><b>Accessibility</b></li>
+    <li><b>Input Monitoring</b> <span class="dim">— lets it hear the push-to-talk key</span></li>
+    <li><b>Screen Recording</b> <span class="dim">— macOS 26+, only needed for “click the … button”</span></li>
+  </ol>
+  <p class="dim">Restart your terminal after flipping these on.</p>
+</div>
+
+<div class="step">
+  <h2>Step 2 — Talk</h2>
+  <p style="font-size: 1.3rem;">Hold <span class="key">Right Option ⌥</span>, speak, release.</p>
+  <p>That's the whole thing. Release the key and your Mac does it. Press <span class="key">Esc</span> to quit.</p>
+  <p class="dim">Tip: double-click <b>Voice Control.command</b> anytime to start — no terminal typing needed.</p>
+</div>
+
+<div class="step">
+  <h2>Step 3 — Try saying…</h2>
+  <div>
+    <span class="chip">“open notes”</span>
+    <span class="chip">“set volume to 30”</span>
+    <span class="chip">“play”</span>
+    <span class="chip">“set a timer for 5 minutes”</span>
+    <span class="chip">“search best pizza near me”</span>
+    <span class="chip">“click the Reply button”</span>
+    <span class="chip">“what time is it”</span>
+    <span class="chip">“lock”</span>
+  </div>
+  <p class="dim">Say “help” anytime to hear everything it understands. It costs $0 per command — everything runs on your Mac.</p>
+</div>
+
+<div class="step">
+  <h2>Mic check</h2>
+  <p>Make sure your Mac can hear you <span class="dim">(needs a microphone — a Mac mini doesn't have one built in; an iPhone on the same Wi-Fi works as a mic)</span>:</p>
+  <button id="micBtn">Test my microphone</button>
+  <div id="meterWrap" style="display:none">
+    <div id="meter"><div id="meterFill"></div></div>
+    <p id="micStatus" class="dim"></p>
+  </div>
+</div>
+
+<div class="step">
+  <h2>If something doesn't work</h2>
+  <ul class="trouble">
+    <li><b>Nothing happens at all</b> → a permission in Step 1 is off. This fixes it 9 times out of 10.</li>
+    <li><b>“I didn't understand” a lot</b> → make sure Ollama is running: open Terminal and run <span class="mono">ollama serve</span>. It handles unusual phrasing.</li>
+    <li><b>“Click the … button” can't see anything</b> → grant <b>Screen Recording</b> (macOS 26+) in Step 1.</li>
+    <li><b>Weird phrasing works but slowly</b> → normal. The instant path handles exact commands; the ~1-second local AI handles the rest.</li>
+  </ul>
+</div>
+
+<p class="dim" style="font-size: 0.85rem;">Curious how it works under the hood? Read <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> — the full implementation, latency math, and honest limits.<br>
+Full command list: <span class="mono">python3 free_voice.py --list</span></p>
+
+<script>
+(function () {
+  var btn = document.getElementById('micBtn');
+  var wrap = document.getElementById('meterWrap');
+  var fill = document.getElementById('meterFill');
+  var status = document.getElementById('micStatus');
+  btn.addEventListener('click', function () {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      wrap.style.display = 'block';
+      status.textContent = '⚠️ This browser can’t access the mic from a local file — try opening this page in Safari or Chrome, or skip this test.';
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      wrap.style.display = 'block';
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      var ctx = new Ctx();
+      var src = ctx.createMediaStreamSource(stream);
+      var analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      src.connect(analyser);
+      var data = new Uint8Array(analyser.frequencyBinCount);
+      var heard = false;
+      (function tick() {
+        analyser.getByteTimeDomainData(data);
+        var peak = 0;
+        for (var i = 0; i < data.length; i++) {
+          var v = Math.abs(data[i] - 128) / 128;
+          if (v > peak) peak = v;
+        }
+        fill.style.width = Math.min(100, peak * 160) + '%';
+        if (peak > 0.12) heard = true;
+        status.textContent = heard
+          ? '✅ Your mic works! You’re good to go.'
+          : 'Listening… speak now. Your voice should move the green bar.';
+        requestAnimationFrame(tick);
+      })();
+    }).catch(function () {
+      wrap.style.display = 'block';
+      status.textContent = '⚠️ Mic blocked — allow microphone access in the address bar and try again.';
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
