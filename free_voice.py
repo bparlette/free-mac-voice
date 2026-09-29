@@ -115,6 +115,18 @@ def log(msg: str) -> None:
     print(f"[free-voice] {msg}", flush=True)
 
 
+# ---------------------------------------------------------------- health tracking
+_START_TIME = time.time()
+_last_error = ""  # short human-readable note of the most recent backend failure
+
+
+def note_error(msg: str) -> None:
+    """Remember the latest backend failure for the 'are you working' status."""
+    global _last_error
+    _last_error = f"{datetime.now():%H:%M} — {msg}"
+    log(f"error noted: {msg}")
+
+
 # ---------------------------------------------------------------- speech out
 
 def say(text: str) -> None:
@@ -1046,20 +1058,36 @@ def act_click_any(name: str) -> None:
 
 # ---------------------------------------------------------------- local vision (screenshots via qwen3-vl)
 
-def capture_screenshot() -> str | None:
-    """Capture the main display to a temp PNG. macOS only; None elsewhere."""
+_SCREENSHOT_PATH = "/tmp/free-voice-screen.png"
+_shot_ts = 0.0
+SCREENSHOT_TTL = 8.0  # "what's on my screen" -> "click the X" reuses the shot
+
+
+def capture_screenshot(fresh: bool = False) -> str | None:
+    """Capture the main display to a PNG. macOS only; None elsewhere.
+
+    Screenshots are cached for SCREENSHOT_TTL seconds so a describe-then-click
+    sequence doesn't pay for two captures. Pass fresh=True to force recapture.
+    """
+    global _shot_ts
     if DRY_RUN:
         log("DRY-RUN screenshot capture")
         return None
-    path = "/tmp/free-voice-screen.png"
+    now = time.time()
+    if (not fresh and _shot_ts and os.path.exists(_SCREENSHOT_PATH)
+            and now - _shot_ts < SCREENSHOT_TTL):
+        log("reusing cached screenshot")
+        return _SCREENSHOT_PATH
     try:
-        subprocess.run(["screencapture", "-x", "-t", "png", path],
+        subprocess.run(["screencapture", "-x", "-t", "png", _SCREENSHOT_PATH],
                        check=True, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=15)
     except Exception as e:  # noqa: BLE001
+        note_error("screenshot failed")
         log(f"screenshot capture failed: {e}")
         return None
-    return path if os.path.exists(path) else None
+    _shot_ts = time.time()
+    return _SCREENSHOT_PATH if os.path.exists(_SCREENSHOT_PATH) else None
 
 
 def vision_ask(question: str, image_path: str) -> str | None:
@@ -1096,6 +1124,7 @@ def vision_ask(question: str, image_path: str) -> str | None:
         _ollama_ok = True
     except Exception as e:  # noqa: BLE001
         _ollama_ok = False
+        note_error("vision model unavailable")
         log(f"vision model unavailable: {e}")
         return None
     try:
@@ -1120,6 +1149,71 @@ def act_describe_screen() -> None:
         say(text)
     else:
         say("I couldn't make sense of the screen")
+
+
+def act_status() -> None:
+    """Spoken self-check: mic, models, last error. For couch debugging —
+    "are you working?" should get a useful answer, not silence."""
+    mic = describe_input_device()
+    if not OLLAMA_TIER1:
+        tier1 = "off"
+    elif _ollama_ok is True:
+        tier1 = f"{OLLAMA_MODEL}, ready"
+    elif _ollama_ok is False:
+        tier1 = f"{OLLAMA_MODEL}, unreachable"
+    else:
+        tier1 = f"{OLLAMA_MODEL}, not checked yet"
+    gem = "configured" if GEMINI_API_KEY else "not configured"
+    up = int(time.time() - _START_TIME)
+    parts = [f"Mic: {mic}.", f"Local model: {tier1}.", f"Gemini: {gem}."]
+    parts.append(f"Last error: {_last_error}." if _last_error
+                 else "No recent errors.")
+    parts.append(f"Up {up // 60} minutes." if up >= 60 else "Just started.")
+    say(" ".join(parts))
+
+
+def _refine_click(path: str, name: str, x: int, y: int,
+                  sw: int, sh: int, box: int = 480) -> tuple[int, int]:
+    """Second vision pass: crop a `box`-px region around (x, y), ask the model
+    for the target's center *within the crop*, map back to screen pixels.
+
+    Returns the refined (x, y), or the original on any failure (including
+    Pillow not being installed).
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        log("vision click: Pillow not installed, skipping refinement pass")
+        return x, y
+    try:
+        img = Image.open(path)
+        w, h = img.size
+        x0 = min(max(x - box // 2, 0), w - 1)
+        y0 = min(max(y - box // 2, 0), h - 1)
+        x1 = min(x0 + box, w)
+        y1 = min(y0 + box, h)
+        crop_path = "/tmp/free-voice-crop.png"
+        img.crop((x0, y0, x1, y1)).save(crop_path)
+        loc = vision_ask(
+            f"In this cropped close-up, find the clickable UI element best "
+            f"matching '{name}'. Reply with ONLY two integers X Y — the "
+            f"element's center as 0-1000 fractions of THIS cropped image "
+            f"(example: 512 340). If it is not clearly visible, reply exactly: NONE",
+            crop_path,
+        )
+        m = re.match(r"\s*(\d{1,4})\s+(\d{1,4})\s*", loc or "")
+        if not m:
+            return x, y
+        fx, fy = int(m.group(1)), int(m.group(2))
+        if not (0 <= fx <= 1000 and 0 <= fy <= 1000):
+            return x, y
+        nx = min(max(x0 + int(fx / 1000 * (x1 - x0)), 0), sw - 1)
+        ny = min(max(y0 + int(fy / 1000 * (y1 - y0)), 0), sh - 1)
+        log(f"vision click refined ({x},{y}) -> ({nx},{ny}) for {name!r}")
+        return nx, ny
+    except Exception as e:  # noqa: BLE001
+        log(f"vision refine failed, using first pass: {e}")
+        return x, y
 
 
 def vision_click(name: str) -> bool:
@@ -1157,6 +1251,9 @@ def vision_click(name: str) -> bool:
         sw, sh = 1920, 1080
     x = min(max(int(fx / 1000 * sw), 0), sw - 1)
     y = min(max(int(fy / 1000 * sh), 0), sh - 1)
+    # Pass 2: crop a box around the first guess and re-ask inside the crop.
+    # Much more accurate on small targets; falls back to pass 1 on any issue.
+    x, y = _refine_click(path, name, x, y, sw, sh)
     if DRY_RUN:
         log(f"DRY-RUN vision click at ({x}, {y}) for {name!r}")
         return True
@@ -1242,6 +1339,7 @@ _p(r"^click (the )?(.+)$", "click_any")
 _p(r"^what'?s on (my|the) screen$", "describe_screen")
 _p(r"^describe (my|the) screen$", "describe_screen")
 _p(r"^what am i looking at$", "describe_screen")
+_p(r"^(are you (working|there|ok)|status|health check)$", "status", True)
 # --- web (free text: final-only)
 _p(r"^(search|google|look up)( the web)? for (.+)$", "web_search")
 _p(r"^(search|google|look up) (.+)$", "web_search")
@@ -1372,10 +1470,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_open_app(m.group(2))
         elif name == "switch_app":
             act_switch_app(m.group(2))
-        elif name == "quit_app":
-            act_quit_app(m.group(m.lastindex))
-        elif name == "close_all_windows":
-            act_close_all_windows()
+        # quit_app and close_all_windows are destructive: handled by the
+        # confirmation gate below, not here.
         elif name == "close_window":
             act_keystroke("w", "command down"); say("Closed")
         elif name == "minimize":
@@ -1432,6 +1528,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_click_any(m.group(2))
         elif name == "describe_screen":
             act_describe_screen()
+        elif name == "status":
+            act_status()
         elif name == "web_search":
             act_web_search(m.group(m.lastindex))
         elif name == "open_url":
@@ -1461,10 +1559,17 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_lock()
         elif name == "sleep":
             act_sleep()
-        elif name in ("shutdown", "restart", "logout", "empty_trash"):
-            desc = {"shutdown": "shutting down", "restart": "restarting",
-                    "logout": "logging out",
-                    "empty_trash": "emptying the trash"}[name]
+        elif name in ("shutdown", "restart", "logout", "empty_trash",
+                      "quit_app", "close_all_windows"):
+            # Destructive actions ask first (spoken "yes"), unless --yes.
+            # In chained commands each destructive part is confirmed on its own.
+            if name == "quit_app":
+                desc = f"quitting {m.group(m.lastindex)}"
+            else:
+                desc = {"shutdown": "shutting down", "restart": "restarting",
+                        "logout": "logging out",
+                        "empty_trash": "emptying the trash",
+                        "close_all_windows": "closing all windows"}[name]
             ok = allow_destructive or (
                 confirm_audio_fn is not None
                 and confirm_spoken(desc, confirm_audio_fn)
@@ -1472,13 +1577,18 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             if not ok:
                 say(f"Not {desc} without confirmation")
                 return
-            {"shutdown": lambda: shell(["osascript", "-e",
-                'tell application "System Events" to shut down']),
-             "restart": lambda: shell(["osascript", "-e",
-                'tell application "System Events" to restart']),
-             "logout": lambda: shell(["osascript", "-e",
-                'tell application "System Events" to log out']),
-             "empty_trash": act_empty_trash}[name]()
+            if name == "quit_app":
+                act_quit_app(m.group(m.lastindex))
+            elif name == "close_all_windows":
+                act_close_all_windows()
+            else:
+                {"shutdown": lambda: shell(["osascript", "-e",
+                    'tell application "System Events" to shut down']),
+                 "restart": lambda: shell(["osascript", "-e",
+                    'tell application "System Events" to restart']),
+                 "logout": lambda: shell(["osascript", "-e",
+                    'tell application "System Events" to log out']),
+                 "empty_trash": act_empty_trash}[name]()
         elif name == "dark_on":
             act_dark_mode(True)
         elif name == "dark_off":
@@ -1588,6 +1698,7 @@ def ollama_route(text: str):
         _ollama_ok = True
     except Exception as e:  # noqa: BLE001
         _ollama_ok = False
+        note_error("Ollama unreachable")
         log(f"Tier 1 unavailable (Ollama not reachable at {OLLAMA_HOST}): {e}")
         return None
     dt = time.time() - t0
@@ -1609,20 +1720,39 @@ def ollama_route(text: str):
     return action, params, conf
 
 
-def dispatch_tier1(action: str, params: dict) -> None:
+def _tier1_confirm(desc: str, allow_destructive: bool) -> bool:
+    """Spoken confirmation for Tier 1 destructive actions.
+
+    Tier 1 has no confirm_audio_fn plumbed through, so it records the
+    confirmation itself via record_fixed. If no mic is available (e.g.
+    --text mode), the action is declined rather than run unconfirmed.
+    """
+    if allow_destructive or DRY_RUN:
+        return True
+    try:
+        return confirm_spoken(desc, record_fixed)
+    except Exception as e:  # noqa: BLE001 - no mic / headless
+        log(f"confirmation unavailable ({e}); declining destructive Tier 1 action")
+        say(f"Not {desc} without confirmation")
+        return False
+
+
+def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -> None:
     """Execute a Tier 1 JSON decision using the same act_* primitives.
     Every enum/param is validated — JSON mode guarantees shape, NOT sense."""
     p = params.get
     if action == "open_app":
         act_open_app(str(p("app", "")))
     elif action == "quit_app":
-        act_quit_app(str(p("app", "")))
+        if _tier1_confirm(f"quitting {p('app', '')}", allow_destructive):
+            act_quit_app(str(p("app", "")))
     elif action == "switch_app":
         act_switch_app(str(p("app", "")))
     elif action == "close_window":
         act_keystroke("w", "command down"); say("Closed")
     elif action == "close_all_windows":
-        act_close_all_windows()
+        if _tier1_confirm("closing all windows", allow_destructive):
+            act_close_all_windows()
     elif action == "minimize":
         act_minimize(str(p("app", "")))
     elif action == "hide":
@@ -1725,6 +1855,7 @@ def ollama_answer(prompt: str) -> bool:
         text = data["message"]["content"].strip()
     except Exception as e:  # noqa: BLE001
         _ollama_ok = False
+        note_error("local model answer failed")
         log(f"local answer failed: {e}")
         return False
     if text:
@@ -1733,12 +1864,46 @@ def ollama_answer(prompt: str) -> bool:
     return False
 
 
+def prewarm_ollama() -> None:
+    """Load the Tier 1/vision model into memory in a background thread.
+
+    A cold 8B model takes a while to load — doing it at startup means the
+    first real command doesn't stall. Fire-and-forget: failures just log.
+    """
+    if not OLLAMA_TIER1 or DRY_RUN:
+        return
+
+    def _load() -> None:
+        try:
+            body = {
+                "model": OLLAMA_MODEL,
+                "keep_alive": "60m",
+                "think": False,
+                "options": {"num_predict": 1},
+                "messages": [{"role": "user", "content": "Reply with: ok"}],
+                "stream": False,
+            }
+            req = urllib.request.Request(
+                OLLAMA_HOST + "/api/chat",
+                data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=180) as r:
+                json.load(r)
+            log(f"prewarmed {OLLAMA_MODEL} (model resident for 60m)")
+        except Exception as e:  # noqa: BLE001
+            log(f"prewarm skipped ({e})")
+
+    threading.Thread(target=_load, daemon=True, name="ollama-prewarm").start()
+
+
 def gemini_answer(prompt: str) -> bool:
     """Answer a free-form question with Gemini's free API tier, spoken aloud.
 
     Google Search grounding is enabled so fresh questions ("who won last
-    night") get live answers, still on the free tier. On HTTP 429 (quota
-    exhausted) it falls back to the local model and says so.
+    night") get live answers, still on the free tier. On ANY Gemini failure
+    (quota 429, other HTTP errors, network issues) it falls back to the
+    local model and says so.
     """
     body = {
         "system_instruction": {
@@ -1766,14 +1931,16 @@ def gemini_answer(prompt: str) -> bool:
         if e.code == 429:
             log("gemini 429 — free-tier quota hit, falling back to local model")
             say("Google's free limit is hit, answering from the on-device model")
-            return ollama_answer(prompt)
-        log(f"gemini HTTP {e.code}: {e}")
-        say("I didn't understand, and my backup didn't answer")
-        return False
+        else:
+            note_error(f"Gemini HTTP {e.code}")
+            log(f"gemini HTTP {e.code}: {e} — falling back to local model")
+            say("Google didn't answer, trying the on-device model")
+        return ollama_answer(prompt)
     except Exception as e:  # noqa: BLE001
-        log(f"gemini fallback failed: {e}")
-        say("I didn't understand, and my backup didn't answer")
-        return False
+        note_error("Gemini unreachable")
+        log(f"gemini failed ({e}) — falling back to local model")
+        say("Google didn't answer, trying the on-device model")
+        return ollama_answer(prompt)
 
 
 # ---------------------------------------------------------------- the cascade
@@ -1816,7 +1983,7 @@ def handle_command(text: str, confirm_audio_fn=None,
     if t1:
         action, params, conf = t1
         try:
-            dispatch_tier1(action, params)
+            dispatch_tier1(action, params, allow_destructive)
         except Exception as e:  # noqa: BLE001
             say("That didn't work")
             log(f"tier 1 action failed: {e}")
@@ -1839,8 +2006,8 @@ def cmd_list() -> None:
     examples = [
         "open notes / open chrome / open system settings",
         "switch to safari / focus terminal / bring up notes",
-        "quit spotify / close safari",
-        "close · close window · close all windows · minimize · fullscreen · hide",
+        "quit spotify / close safari  (ask first)",
+        "close · close window · close all windows  (close-all asks first)",
         "snap left · snap right · maximize · center window",
         "open notes and snap left · set volume to 30 and play  (chained commands)",
         "read clipboard · type today's date · type the time · type my email",
@@ -1848,6 +2015,7 @@ def cmd_list() -> None:
         "press enter / copy / paste / undo / save / select all",
         "click the Reply button / click the Docs link  (needs xa11y + perms)",
         "what's on my screen / describe my screen  (needs qwen3-vl model)",
+        "are you working / status  (spoken health check)",
         "search best pizza near me / go to youtube.com",
         "volume up / volume down / set volume to 30 / mute",
         "brightness up / brightness down",
@@ -1863,8 +2031,8 @@ def cmd_list() -> None:
     ]
     for e in examples:
         print("  " + e)
-    print("\nTiers: 0 = instant regex (always) · 1 = local Ollama 1.5B on miss "
-          f"({'on' if OLLAMA_TIER1 else 'off'}) · 2 = Gemini free tier "
+    print("\nTiers: 0 = instant regex (always) · 1 = local " + OLLAMA_MODEL +
+          f" ({'on' if OLLAMA_TIER1 else 'off'}) · 2 = Gemini free tier "
           f"({'on' if GEMINI_API_KEY else 'off'}).")
 
 
@@ -1941,6 +2109,7 @@ def main() -> None:
         handle_command(args.text, allow_destructive=args.yes)
         return
     log(f"microphone: {describe_input_device()}")
+    prewarm_ollama()  # load the local model now, not on the first command
     if args.once:
         usable, _ = _usable_input()
         if not usable:
