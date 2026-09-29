@@ -200,8 +200,23 @@ except the audio plumbing is in this repo.
 | `Voice Control.command` | double-click launcher: push-to-talk |
 | `Voice Control (Always On).command` | double-click launcher: always-listening |
 | `com.free-mac-voice.plist` | LaunchAgent template for start-at-login (filled in by install.sh) |
+| `prime_permissions.sh` | pops macOS's native Allow dialogs (mic, accessibility, screen recording) + opens Settings for the one manual toggle (Input Monitoring) |
 | `requirements.txt` | Python deps |
 | `ARCHITECTURE.md` | this file |
+
+## 7c. Permissions — why the user still clicks
+
+macOS TCC (Transparency, Consent, and Control) requires a human to grant
+Microphone, Accessibility, Input Monitoring, and Screen Recording. No
+installer can grant them silently — that would be a security hole, and
+every voice app, free or paid, hits the same wall. What an installer
+*can* do is provoke the OS's own dialogs instead of making the user hunt
+through Settings: `prime_permissions.sh` attempts a 1-second mic recording
+(dialog #1), talks to System Events via AppleScript (dialog #2), and takes
+a screenshot (dialog #3), then verifies Accessibility via
+`AXIsProcessTrusted` and opens the Privacy & Security pane for Input
+Monitoring — the one permission Apple offers no dialog API for. Previously
+denied permissions never re-prompt; those must be flipped by hand.
 
 ## 7b. Updating
 
