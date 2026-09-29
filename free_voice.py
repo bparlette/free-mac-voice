@@ -1056,6 +1056,125 @@ def act_click_any(name: str) -> None:
     _press_first(frontmost_app(), ["button", "link", "checkbox"], name)
 
 
+# ---------------------------------------------------------------- mouse control
+def _mouse():
+    """Lazily build a pynput mouse controller; (None, None) when unavailable."""
+    try:
+        from pynput.mouse import Button, Controller
+    except Exception as e:  # noqa: BLE001
+        log(f"mouse control unavailable: {e}")
+        return None, None
+    return Controller(), Button
+
+
+def _locate_first(app_name: str, roles: list[str],
+                  name: str) -> tuple[int, int] | None:
+    """Center pixel of the first matching accessibility element, or None.
+
+    Tree-first locate (no clicking) — the vision fallback is vision_locate().
+    """
+    xa = _load_xa11y()
+    if xa is None or not app_name:
+        return None
+    safe = name.replace("'", "").strip()
+    if not safe:
+        return None
+    app = xa.App.by_name(app_name)
+    for role in roles:
+        try:
+            els = app.locator(f"{role}[name*='{safe}']").elements()
+        except Exception as e:  # noqa: BLE001
+            log(f"xa11y locate failed ({role}): {e}")
+            continue
+        if els:
+            try:
+                b = els[0].bounds
+            except Exception as e:  # noqa: BLE001
+                log(f"xa11y bounds failed: {e}")
+                return None
+            if b is None:
+                return None
+            return (int(b.x + b.width / 2), int(b.y + b.height / 2))
+    return None
+
+
+def act_mouse_to(name: str) -> None:
+    """Move the cursor onto a named UI element ("move the mouse to the toggle").
+
+    Accessibility tree first, screenshot vision as fallback. Moves only —
+    it never clicks.
+    """
+    safe = name.strip()
+    if not safe:
+        say("Move the mouse to what?")
+        return
+    loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], safe)
+    if loc is None:
+        loc = vision_locate(safe)
+    if loc is None:
+        say(f"I couldn't find {safe} on screen")
+        return
+    x, y = loc
+    if DRY_RUN:
+        log(f"DRY-RUN mouse move to ({x}, {y}) for {safe!r}")
+        say(f"Mouse is on {safe}")
+        return
+    mouse, _ = _mouse()
+    if mouse is None:
+        say("Mouse control isn't available on this Mac")
+        return
+    mouse.position = (x, y)
+    say(f"Mouse is on {safe}")
+
+
+def act_mouse_move(direction: str, amount: str | None) -> None:
+    """Nudge the cursor ("move mouse up", "move mouse left 200")."""
+    dx, dy = {"up": (0, -1), "down": (0, 1),
+              "left": (-1, 0), "right": (1, 0)}[direction]
+    dist = int(amount) if amount else 100
+    if DRY_RUN:
+        log(f"DRY-RUN mouse move {direction} {dist}px")
+        say(f"Moving mouse {direction}")
+        return
+    mouse, _ = _mouse()
+    if mouse is None:
+        say("Mouse control isn't available on this Mac")
+        return
+    mouse.move(dx * dist, dy * dist)
+    say(f"Moved mouse {direction}")
+
+
+def act_scroll(direction: str, amount: str | None) -> None:
+    """Scroll ("scroll up", "scroll down 3"). Amount multiplies the base step."""
+    steps = int(amount) if amount else 1
+    dx, dy = {"up": (0, 4), "down": (0, -4),
+              "left": (4, 0), "right": (-4, 0)}[direction]
+    if DRY_RUN:
+        log(f"DRY-RUN scroll {direction} x{steps}")
+        say(f"Scrolling {direction}")
+        return
+    mouse, _ = _mouse()
+    if mouse is None:
+        say("Mouse control isn't available on this Mac")
+        return
+    mouse.scroll(dx * steps, dy * steps)
+    say(f"Scrolled {direction}")
+
+
+def act_click_here() -> None:
+    """Left-click at the current cursor position (bare "click")."""
+    if DRY_RUN:
+        log("DRY-RUN click at cursor")
+        say("Clicked")
+        return
+    mouse, Button = _mouse()
+    if mouse is None:
+        say("Mouse control isn't available on this Mac")
+        return
+    mouse.click(Button.left, 1)
+    say("Clicked")
+
+
 # ---------------------------------------------------------------- local vision (screenshots via qwen3-vl)
 
 _SCREENSHOT_PATH = "/tmp/free-voice-screen.png"
@@ -1216,17 +1335,16 @@ def _refine_click(path: str, name: str, x: int, y: int,
         return x, y
 
 
-def vision_click(name: str) -> bool:
-    """Last-resort click: locate a UI element by screenshot vision, click it.
+def vision_locate(name: str) -> tuple[int, int] | None:
+    """Locate a UI element by screenshot vision; return pixel (x, y) or None.
 
-    Only runs when the accessibility tree had no match. Returns True if a
-    click was attempted. Coordinates are approximate — the tree stays the
-    preferred path, and this is never used for destructive or sensitive
-    actions (those go through tree-only _press_first intents).
+    No clicking — shared by vision_click and mouse-to-target. Two passes:
+    a full-screen guess, then a 480-px crop around the guess re-asked for
+    finer coordinates.
     """
     path = capture_screenshot()
     if not path:
-        return False
+        return None
     loc = vision_ask(
         f"In this macOS screenshot, find the clickable UI element best "
         f"matching '{name}'. Reply with ONLY two integers X Y — the element's "
@@ -1235,14 +1353,14 @@ def vision_click(name: str) -> bool:
         path,
     )
     if not loc:
-        return False
+        return None
     m = re.match(r"\s*(\d{1,4})\s+(\d{1,4})\s*", loc)
     if not m:
-        log(f"vision click: unparseable location {loc!r}")
-        return False
+        log(f"vision locate: unparseable location {loc!r}")
+        return None
     fx, fy = int(m.group(1)), int(m.group(2))
     if not (0 <= fx <= 1000 and 0 <= fy <= 1000):
-        return False
+        return None
     try:
         from AppKit import NSScreen
         f = NSScreen.mainScreen().frame()
@@ -1251,9 +1369,21 @@ def vision_click(name: str) -> bool:
         sw, sh = 1920, 1080
     x = min(max(int(fx / 1000 * sw), 0), sw - 1)
     y = min(max(int(fy / 1000 * sh), 0), sh - 1)
-    # Pass 2: crop a box around the first guess and re-ask inside the crop.
-    # Much more accurate on small targets; falls back to pass 1 on any issue.
-    x, y = _refine_click(path, name, x, y, sw, sh)
+    return _refine_click(path, name, x, y, sw, sh)
+
+
+def vision_click(name: str) -> bool:
+    """Last-resort click: locate a UI element by screenshot vision, click it.
+
+    Only runs when the accessibility tree had no match. Returns True if a
+    click was attempted. Coordinates are approximate — the tree stays the
+    preferred path, and this is never used for destructive or sensitive
+    actions (those go through tree-only _press_first intents).
+    """
+    loc = vision_locate(name)
+    if loc is None:
+        return False
+    x, y = loc
     if DRY_RUN:
         log(f"DRY-RUN vision click at ({x}, {y}) for {name!r}")
         return True
@@ -1334,7 +1464,11 @@ _p(r"^select all$", "select_all", True)
 # --- UI clicks via accessibility tree (free-text names: final-only)
 _p(r"^(click|press)( the)? (.+?) button$", "click_button")
 _p(r"^click (the )?(.+?) link$", "click_link")
+_p(r"^click$", "click_here")
 _p(r"^click (the )?(.+)$", "click_any")
+_p(r"^move (the )?mouse to (the )?(.+)$", "mouse_to")
+_p(r"^move (the )?mouse (up|down|left|right)( (\d+))?$", "mouse_move")
+_p(r"^scroll (up|down|left|right)( (\d+))?$", "scroll")
 # --- screen vision (final transcript only: needs a fresh screenshot)
 _p(r"^what'?s on (my|the) screen$", "describe_screen")
 _p(r"^describe (my|the) screen$", "describe_screen")
@@ -1526,6 +1660,14 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_click_link(m.group(2))
         elif name == "click_any":
             act_click_any(m.group(2))
+        elif name == "click_here":
+            act_click_here()
+        elif name == "mouse_to":
+            act_mouse_to(m.group(3))
+        elif name == "mouse_move":
+            act_mouse_move(m.group(2), m.group(4))
+        elif name == "scroll":
+            act_scroll(m.group(1), m.group(3))
         elif name == "describe_screen":
             act_describe_screen()
         elif name == "status":
@@ -1674,23 +1816,16 @@ def ollama_route(text: str):
         return None
     if _ollama_ok is False:
         return None
-    is_thinking_model = any(k in OLLAMA_MODEL.lower() for k in ("qwen3", "r1", "deepseek"))
-    messages = [
-        {"role": "system", "content": _TIER1_SYSTEM},
-        {"role": "user", "content": text},
-    ]
-    if is_thinking_model:
-        # Pre-fill assistant response to skip reasoning tokens in thinking models
-        # and enforce sub-1.5s immediate JSON routing responses.
-        messages.append({"role": "assistant", "content": '{"action": "'})
-
     body = {
         "model": OLLAMA_MODEL,
         "format": "json",
         "keep_alive": "60m",  # stay resident: no cold starts
         "think": False,  # voice needs the answer, not a reasoning trace
         "options": {"temperature": 0, "num_predict": 64},
-        "messages": messages,
+        "messages": [
+            {"role": "system", "content": _TIER1_SYSTEM},
+            {"role": "user", "content": text},
+        ],
         "stream": False,
     }
     t0 = time.time()
@@ -1709,13 +1844,10 @@ def ollama_route(text: str):
         log(f"Tier 1 unavailable (Ollama not reachable at {OLLAMA_HOST}): {e}")
         return None
     dt = time.time() - t0
-    raw_content = data.get("message", {}).get("content", "").strip()
-    if is_thinking_model and not raw_content.startswith("{"):
-        raw_content = '{"action": "' + raw_content
     try:
-        parsed = json.loads(raw_content)
+        parsed = json.loads(data["message"]["content"])
     except Exception:  # noqa: BLE001
-        log(f"Tier 1 returned unparseable JSON: {raw_content[:80]}")
+        log("Tier 1 returned unparseable JSON")
         return None
     action = str(parsed.get("action", "none"))
     try:
@@ -1751,23 +1883,22 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     """Execute a Tier 1 JSON decision using the same act_* primitives.
     Every enum/param is validated — JSON mode guarantees shape, NOT sense."""
     p = params.get
-    app_name = str(p("app") or p("app_name") or p("name") or "")
     if action == "open_app":
-        act_open_app(app_name)
+        act_open_app(str(p("app", "")))
     elif action == "quit_app":
-        if _tier1_confirm(f"quitting {app_name}", allow_destructive):
-            act_quit_app(app_name)
+        if _tier1_confirm(f"quitting {p('app', '')}", allow_destructive):
+            act_quit_app(str(p("app", "")))
     elif action == "switch_app":
-        act_switch_app(app_name)
+        act_switch_app(str(p("app", "")))
     elif action == "close_window":
         act_keystroke("w", "command down"); say("Closed")
     elif action == "close_all_windows":
         if _tier1_confirm("closing all windows", allow_destructive):
             act_close_all_windows()
     elif action == "minimize":
-        act_minimize(app_name)
+        act_minimize(str(p("app", "")))
     elif action == "hide":
-        act_hide(app_name)
+        act_hide(str(p("app", "")))
     elif action == "snap_left":
         act_snap_window("left")
     elif action == "snap_right":
@@ -2025,6 +2156,9 @@ def cmd_list() -> None:
         "type hello world / dictate dear mom,",
         "press enter / copy / paste / undo / save / select all",
         "click the Reply button / click the Docs link  (needs xa11y + perms)",
+        "click  (clicks where the mouse already is)",
+        "move the mouse to the toggle / move mouse up / move mouse left 200",
+        "scroll up / scroll down 3 / scroll left / scroll right",
         "what's on my screen / describe my screen  (needs qwen3-vl model)",
         "are you working / status  (spoken health check)",
         "search best pizza near me / go to youtube.com",
