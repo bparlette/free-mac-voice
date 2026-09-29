@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: install.sh fills in __VENV__ and __REPO__ with real paths,
+     then installs this as ~/Library/LaunchAgents/com.free-mac-voice.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.free-mac-voice</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__VENV__/bin/python</string>
+    <string>__REPO__/free_voice.py</string>
+    <string>--always</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/free-mac-voice.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/free-mac-voice.log</string>
+</dict>
+</plist>
