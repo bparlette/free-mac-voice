@@ -9,12 +9,21 @@ Pipeline (everything local, $0 per command):
              on partial transcripts it fires ONLY when the command is
              terminal-complete at a valid boundary ("open notes" but never
              "open no"), so it can act mid-sentence without misfires
-      -> Tier 1 (Tier 0 miss only): local Ollama 1.5B in JSON mode (~0.7-1 s
-             warm, free) for novel phrasing ("could you be a dear and open
-             my browser thing"). Self-reported confidence < 0.5 = miss.
-             NOTE: this is NOT calibrated like Jev — it's a heuristic.
+      -> Tier 1 (Tier 0 miss only): local Ollama qwen3-vl:8b vision-language
+             model in JSON mode (~1-2 s warm, free) for novel phrasing
+             ("could you be a dear and open my browser thing"). Self-reported
+             confidence < 0.5 = miss. NOTE: this is NOT calibrated like
+             Jev — it's a heuristic. Non-thinking mode (think=false) so it
+             answers immediately instead of reasoning first.
       -> Tier 2 (Tier 1 miss/unsure only): Gemini API free tier for
-             open-ended questions (needs GEMINI_API_KEY, still $0)
+             open-ended questions (needs GEMINI_API_KEY, still $0), with
+             Google Search grounding for fresh answers. On 429/quota errors
+             it falls back to the local model automatically.
+      -> execution: AppleScript/shell for system actions, xa11y over the
+             macOS Accessibility tree for real UI clicks ("click the Reply
+             button") — no brittle pixel coordinates. When the tree has no
+             match, the vision model locates the element on a screenshot and
+             clicks its center ("what's on my screen" describes the display).
       -> execution: AppleScript/shell for system actions, xa11y over the
              macOS Accessibility tree for real UI clicks ("click the Reply
              button") — no brittle pixel coordinates
@@ -33,7 +42,8 @@ Usage:
     python3 free_voice.py --once 6         # record 6 s without a hotkey
 
 Setup: reuse the venv from setup.sh (faster-whisper, sounddevice, pynput).
-Optional: `brew install ollama && ollama pull qwen2.5:1.5b` (Tier 1),
+Optional: `brew install ollama && ollama pull qwen3-vl:8b` (Tier 1 + vision;
+8GB minis: `ollama pull qwen3-vl:4b` and set OLLAMA_MODEL=qwen3-vl:4b),
 `pip install xa11y` (UI-click commands).
 Permissions on the Mac: Microphone + Accessibility (+ Input Monitoring for
 the push-to-talk hotkey) for the launching terminal. macOS 26+: xa11y also
@@ -43,6 +53,7 @@ needs Screen Recording to see window contents.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import queue
@@ -51,6 +62,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -84,8 +96,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny.en")
 # Tier 1 (local LLM fallback). Set OLLAMA_TIER1=0 to disable.
+# Default is qwen3-vl:8b — a vision-language model, so one local model covers
+# routing, Q&A, AND screen understanding. 8GB minis: use qwen3-vl:4b instead.
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
 OLLAMA_TIER1 = os.environ.get("OLLAMA_TIER1", "1") == "1"
 TIER1_MIN_CONFIDENCE = float(os.environ.get("TIER1_MIN_CONFIDENCE", "0.5"))
 # Microphone selection: case-insensitive substring matched against input
@@ -977,6 +991,9 @@ def _press_first(app_name: str, roles: list[str], name: str) -> None:
                 return
             say(f"Clicked {safe}")
             return
+    # Tree had no match — last resort: locate it visually on a screenshot.
+    if vision_click(safe):
+        return
     say(f"No control matching {safe} in {app_name}")
 
 
@@ -990,6 +1007,134 @@ def act_click_link(name: str) -> None:
 
 def act_click_any(name: str) -> None:
     _press_first(frontmost_app(), ["button", "link", "checkbox"], name)
+
+
+# ---------------------------------------------------------------- local vision (screenshots via qwen3-vl)
+
+def capture_screenshot() -> str | None:
+    """Capture the main display to a temp PNG. macOS only; None elsewhere."""
+    if DRY_RUN:
+        log("DRY-RUN screenshot capture")
+        return None
+    path = "/tmp/free-voice-screen.png"
+    try:
+        subprocess.run(["screencapture", "-x", "-t", "png", path],
+                       check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=15)
+    except Exception as e:  # noqa: BLE001
+        log(f"screenshot capture failed: {e}")
+        return None
+    return path if os.path.exists(path) else None
+
+
+def vision_ask(question: str, image_path: str) -> str | None:
+    """Ask the local vision-language model about a screenshot.
+
+    Returns the model's text or None on failure. think=false: voice needs
+    the answer, not a reasoning trace.
+    """
+    global _ollama_ok
+    if _ollama_ok is False:
+        return None
+    try:
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+    except Exception as e:  # noqa: BLE001
+        log(f"vision read failed: {e}")
+        return None
+    body = {
+        "model": OLLAMA_MODEL,
+        "keep_alive": "60m",
+        "think": False,
+        "options": {"temperature": 0, "num_predict": 150},
+        "messages": [{"role": "user", "content": question, "images": [b64]}],
+        "stream": False,
+    }
+    try:
+        req = urllib.request.Request(
+            OLLAMA_HOST + "/api/chat",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+        _ollama_ok = True
+    except Exception as e:  # noqa: BLE001
+        _ollama_ok = False
+        log(f"vision model unavailable: {e}")
+        return None
+    try:
+        return data["message"]["content"].strip()
+    except (KeyError, TypeError):
+        return None
+
+
+def act_describe_screen() -> None:
+    """'what's on my screen' — describe the display in spoken sentences."""
+    path = capture_screenshot()
+    if not path:
+        say("I couldn't capture the screen")
+        return
+    text = vision_ask(
+        "Describe what's visible on this macOS screenshot in one or two short "
+        "spoken sentences. Name the frontmost app and anything important like "
+        "open dialogs, playing media, or error messages. Plain text only.",
+        path,
+    )
+    if text:
+        say(text)
+    else:
+        say("I couldn't make sense of the screen")
+
+
+def vision_click(name: str) -> bool:
+    """Last-resort click: locate a UI element by screenshot vision, click it.
+
+    Only runs when the accessibility tree had no match. Returns True if a
+    click was attempted. Coordinates are approximate — the tree stays the
+    preferred path, and this is never used for destructive or sensitive
+    actions (those go through tree-only _press_first intents).
+    """
+    path = capture_screenshot()
+    if not path:
+        return False
+    loc = vision_ask(
+        f"In this macOS screenshot, find the clickable UI element best "
+        f"matching '{name}'. Reply with ONLY two integers X Y — the element's "
+        f"center as 0-1000 fractions of screen width and height "
+        f"(example: 512 340). If it is not clearly visible, reply exactly: NONE",
+        path,
+    )
+    if not loc:
+        return False
+    m = re.match(r"\s*(\d{1,4})\s+(\d{1,4})\s*", loc)
+    if not m:
+        log(f"vision click: unparseable location {loc!r}")
+        return False
+    fx, fy = int(m.group(1)), int(m.group(2))
+    if not (0 <= fx <= 1000 and 0 <= fy <= 1000):
+        return False
+    try:
+        from AppKit import NSScreen
+        f = NSScreen.mainScreen().frame()
+        sw, sh = int(f.size.width), int(f.size.height)
+    except Exception:
+        sw, sh = 1920, 1080
+    x = min(max(int(fx / 1000 * sw), 0), sw - 1)
+    y = min(max(int(fy / 1000 * sh), 0), sh - 1)
+    if DRY_RUN:
+        log(f"DRY-RUN vision click at ({x}, {y}) for {name!r}")
+        return True
+    try:
+        from pynput.mouse import Button, Controller
+        mouse = Controller()
+        mouse.position = (x, y)
+        mouse.click(Button.left, 1)
+    except Exception as e:  # noqa: BLE001
+        log(f"vision click failed: {e}")
+        return False
+    say(f"Clicked {name}")
+    return True
 
 
 # ---------------------------------------------------------------- confirmation
@@ -1054,6 +1199,10 @@ _p(r"^select all$", "select_all", True)
 _p(r"^(click|press)( the)? (.+?) button$", "click_button")
 _p(r"^click (the )?(.+?) link$", "click_link")
 _p(r"^click (the )?(.+)$", "click_any")
+# --- screen vision (final transcript only: needs a fresh screenshot)
+_p(r"^what'?s on (my|the) screen$", "describe_screen")
+_p(r"^describe (my|the) screen$", "describe_screen")
+_p(r"^what am i looking at$", "describe_screen")
 # --- web (free text: final-only)
 _p(r"^(search|google|look up)( the web)? for (.+)$", "web_search")
 _p(r"^(search|google|look up) (.+)$", "web_search")
@@ -1230,6 +1379,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_click_link(m.group(2))
         elif name == "click_any":
             act_click_any(m.group(2))
+        elif name == "describe_screen":
+            act_describe_screen()
         elif name == "web_search":
             act_web_search(m.group(m.lastindex))
         elif name == "open_url":
@@ -1366,6 +1517,7 @@ def ollama_route(text: str):
         "model": OLLAMA_MODEL,
         "format": "json",
         "keep_alive": "60m",  # stay resident: no cold starts
+        "think": False,  # voice needs the answer, not a reasoning trace
         "options": {"temperature": 0, "num_predict": 64},
         "messages": [
             {"role": "system", "content": _TIER1_SYSTEM},
@@ -1486,10 +1638,57 @@ def dispatch_tier1(action: str, params: dict) -> None:
         say("I couldn't map that to an action")
 
 
-# ---------------------------------------------------------------- Tier 2: Gemini free-tier Q&A (unchanged)
+# ---------------------------------------------------------------- Tier 2: Gemini free-tier Q&A (search-grounded)
+
+def ollama_answer(prompt: str) -> bool:
+    """Answer a free-form question with the local model (offline fallback).
+
+    Used when Gemini's free tier is exhausted (HTTP 429) or unreachable.
+    """
+    global _ollama_ok
+    if _ollama_ok is False:
+        return False
+    body = {
+        "model": OLLAMA_MODEL,
+        "keep_alive": "60m",
+        "think": False,
+        "options": {"temperature": 0.3, "num_predict": 150},
+        "messages": [
+            {"role": "system", "content": (
+                "You are a concise Mac voice assistant. Answer in one or two "
+                "short spoken sentences. Plain text only, no markdown, no lists."
+            )},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": False,
+    }
+    try:
+        req = urllib.request.Request(
+            OLLAMA_HOST + "/api/chat",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+        _ollama_ok = True
+        text = data["message"]["content"].strip()
+    except Exception as e:  # noqa: BLE001
+        _ollama_ok = False
+        log(f"local answer failed: {e}")
+        return False
+    if text:
+        say(text)
+        return True
+    return False
+
 
 def gemini_answer(prompt: str) -> bool:
-    """Answer a free-form question with Gemini's free API tier, spoken aloud."""
+    """Answer a free-form question with Gemini's free API tier, spoken aloud.
+
+    Google Search grounding is enabled so fresh questions ("who won last
+    night") get live answers, still on the free tier. On HTTP 429 (quota
+    exhausted) it falls back to the local model and says so.
+    """
     body = {
         "system_instruction": {
             "parts": [{"text": (
@@ -1498,6 +1697,7 @@ def gemini_answer(prompt: str) -> bool:
             )}]
         },
         "contents": [{"parts": [{"text": prompt}]}],
+        "tools": [{"google_search": {}}],  # live web grounding, still free tier
         "generationConfig": {"maxOutputTokens": 120, "temperature": 0.3},
     }
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -1511,6 +1711,14 @@ def gemini_answer(prompt: str) -> bool:
         text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
         say(text)
         return True
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            log("gemini 429 — free-tier quota hit, falling back to local model")
+            say("Google's free limit is hit, answering from the on-device model")
+            return ollama_answer(prompt)
+        log(f"gemini HTTP {e.code}: {e}")
+        say("I didn't understand, and my backup didn't answer")
+        return False
     except Exception as e:  # noqa: BLE001
         log(f"gemini fallback failed: {e}")
         say("I didn't understand, and my backup didn't answer")
@@ -1540,7 +1748,7 @@ def handle_command(text: str, confirm_audio_fn=None,
         execute_match(name, m, confirm_audio_fn, allow_destructive)
         return True
 
-    # Tier 1: local 1.5B fallback (only on Tier 0 miss)
+    # Tier 1: local vision-language model (only on Tier 0 miss)
     t1 = ollama_route(t)
     if t1:
         action, params, conf = t1
@@ -1574,6 +1782,7 @@ def cmd_list() -> None:
         "type hello world / dictate dear mom,",
         "press enter / copy / paste / undo / save / select all",
         "click the Reply button / click the Docs link  (needs xa11y + perms)",
+        "what's on my screen / describe my screen  (needs qwen3-vl model)",
         "search best pizza near me / go to youtube.com",
         "volume up / volume down / set volume to 30 / mute",
         "brightness up / brightness down",
