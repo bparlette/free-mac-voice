@@ -32,12 +32,18 @@ class Base(unittest.TestCase):
         fv._ollama_ok = None
         self._gemini_key = fv.GEMINI_API_KEY
         fv.GEMINI_API_KEY = ""
+        self._last_error = fv._last_error
+        fv._last_error = ""
+        self._shot_ts = fv._shot_ts
+        fv._shot_ts = 0.0
 
     def tearDown(self):
         fv.DRY_RUN = self._dry
         fv.say = self._say
         fv._ollama_ok = self._ollama_ok
         fv.GEMINI_API_KEY = self._gemini_key
+        fv._last_error = self._last_error
+        fv._shot_ts = self._shot_ts
 
     def route_name(self, text):
         r = fv.route(text, partial=False)
@@ -191,7 +197,16 @@ class TestClipboardMacros(Base):
 # ------------------------------------------------------- vision click parsing
 class TestVisionClick(Base):
     def _vision(self, model_reply):
-        with mock.patch.object(fv, "capture_screenshot", return_value="/tmp/fake.png"), \
+        real_import = __import__
+
+        def no_pil(name, *a, **k):
+            if name == "PIL" or name.startswith("PIL."):
+                raise ImportError("no PIL")
+            return real_import(name, *a, **k)
+
+        # pass-1 parsing tests run without refinement (PIL blocked)
+        with mock.patch("builtins.__import__", side_effect=no_pil), \
+             mock.patch.object(fv, "capture_screenshot", return_value="/tmp/fake.png"), \
              mock.patch.object(fv, "vision_ask", return_value=model_reply):
             return fv.vision_click("the Reply button")
 
@@ -281,13 +296,26 @@ class TestGemini(Base):
             self.assertTrue(fv.gemini_answer("who won last night"))
         self.assertEqual(captured["body"]["tools"], [{"google_search": {}}])
 
-    def test_non_429_error_does_not_fall_back(self):
+    def test_non_429_error_falls_back_to_local(self):
         fv.GEMINI_API_KEY = "test-key"
+        local = []
         with mock.patch("urllib.request.urlopen",
                         side_effect=self._http_error(500)), \
-             mock.patch.object(fv, "ollama_answer") as local:
-            self.assertFalse(fv.gemini_answer("who won last night"))
-        local.assert_not_called()
+             mock.patch.object(fv, "ollama_answer",
+                               side_effect=lambda p: local.append(p) or True):
+            self.assertTrue(fv.gemini_answer("who won last night"))
+        self.assertEqual(local, ["who won last night"])
+        self.assertTrue(any("didn't answer" in s for s in self.said))
+
+    def test_generic_network_error_falls_back_to_local(self):
+        fv.GEMINI_API_KEY = "test-key"
+        local = []
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=ConnectionError("dns down")), \
+             mock.patch.object(fv, "ollama_answer",
+                               side_effect=lambda p: local.append(p) or True):
+            self.assertTrue(fv.gemini_answer("who won last night"))
+        self.assertEqual(local, ["who won last night"])
 
 
 # ------------------------------------------------------- phonetic matching
@@ -311,6 +339,228 @@ class TestSafetySurface(Base):
 
     def test_confirm_spoken_exists(self):
         self.assertTrue(callable(fv.confirm_spoken))
+
+
+# ------------------------------------------------- destructive confirmation
+class TestDestructiveConfirmation(Base):
+    def _exec(self, text, confirm=None, allow_destructive=False):
+        name, m = self.route_name(text)
+        with mock.patch.object(fv, "confirm_spoken",
+                               return_value=confirm) as cs, \
+             mock.patch.object(fv, "act_quit_app") as qa, \
+             mock.patch.object(fv, "act_close_all_windows") as caw:
+            fv.execute_match(name, m, confirm_audio_fn=lambda s: b"",
+                             allow_destructive=allow_destructive)
+            return cs, qa, caw
+
+    def test_quit_app_confirmed_runs(self):
+        _, qa, _ = self._exec("quit spotify", confirm=True)
+        qa.assert_called_once()
+
+    def test_quit_app_declined_skips(self):
+        cs, qa, _ = self._exec("quit spotify", confirm=False)
+        qa.assert_not_called()
+        cs.assert_called_once()
+        self.assertTrue(any("without confirmation" in s for s in self.said))
+
+    def test_close_all_windows_confirmed_runs(self):
+        _, _, caw = self._exec("close all windows", confirm=True)
+        caw.assert_called_once()
+
+    def test_close_all_windows_declined_skips(self):
+        _, _, caw = self._exec("close all windows", confirm=False)
+        caw.assert_not_called()
+        self.assertTrue(any("without confirmation" in s for s in self.said))
+
+    def test_allow_destructive_skips_prompt(self):
+        cs, qa, _ = self._exec("quit spotify", allow_destructive=True)
+        qa.assert_called_once()
+        cs.assert_not_called()
+
+    def test_tier1_quit_app_allow_destructive(self):
+        with mock.patch.object(fv, "act_quit_app") as qa:
+            fv.dispatch_tier1("quit_app", {"app": "safari"},
+                              allow_destructive=True)
+        qa.assert_called_once_with("safari")
+
+    def test_tier1_quit_app_declines_without_mic(self):
+        fv.DRY_RUN = False
+        try:
+            with mock.patch.object(fv, "record_fixed",
+                                   side_effect=RuntimeError("no mic")), \
+                 mock.patch.object(fv, "act_quit_app") as qa:
+                fv.dispatch_tier1("quit_app", {"app": "safari"})
+            qa.assert_not_called()
+            self.assertTrue(any("without confirmation" in s for s in self.said))
+        finally:
+            fv.DRY_RUN = True
+
+
+# ------------------------------------------------- status / health check
+class TestStatus(Base):
+    def test_status_routes(self):
+        for phrase in ("are you working", "are you there", "are you ok",
+                       "status", "health check"):
+            name, _ = self.route_name(phrase)
+            self.assertEqual(name, "status", phrase)
+
+    def test_status_speaks_mic_model_gemini(self):
+        with mock.patch.object(fv, "describe_input_device",
+                               return_value="iPhone"):
+            fv._ollama_ok = True
+            fv.act_status()
+        spoken = " ".join(self.said)
+        self.assertIn("Mic: iPhone", spoken)
+        self.assertIn(fv.OLLAMA_MODEL, spoken)
+        self.assertIn("No recent errors", spoken)
+
+    def test_status_reports_last_error(self):
+        fv._last_error = "14:22 — Ollama unreachable"
+        with mock.patch.object(fv, "describe_input_device",
+                               return_value="iPhone"):
+            fv.act_status()
+        self.assertTrue(any("Last error:" in s and "Ollama unreachable" in s
+                            for s in self.said))
+
+    def test_note_error_records(self):
+        fv.note_error("boom")
+        self.assertIn("boom", fv._last_error)
+
+
+# ------------------------------------------------- model pre-warm
+class TestPrewarm(Base):
+    def _inline_thread(self):
+        created = []
+
+        class InlineThread:
+            def __init__(self, target=None, daemon=None, name=None):
+                created.append((target, daemon, name))
+                self._target = target
+
+            def start(self):
+                self._target()
+
+        return mock.patch.object(fv.threading, "Thread", InlineThread), created
+
+    def test_prewarm_sends_tiny_chat_request(self):
+        fv.DRY_RUN = False
+        captured = {}
+        resp = mock.MagicMock()
+        resp.__enter__.return_value = resp
+        resp.read.return_value = b"{}"
+
+        def fake(req, timeout=None):
+            captured["body"] = json.loads(req.data.decode())
+            return resp
+
+        patch_thread, created = self._inline_thread()
+        try:
+            with patch_thread, \
+                 mock.patch("urllib.request.urlopen", side_effect=fake):
+                fv.prewarm_ollama()
+        finally:
+            fv.DRY_RUN = True
+        self.assertEqual(len(created), 1)
+        self.assertTrue(created[0][1])  # daemon
+        body = captured["body"]
+        self.assertEqual(body["model"], fv.OLLAMA_MODEL)
+        self.assertIs(body["think"], False)
+        self.assertEqual(body["options"]["num_predict"], 1)
+        self.assertEqual(body["keep_alive"], "60m")
+
+    def test_prewarm_skipped_in_dry_run(self):
+        with self._inline_thread()[0] as _:
+            with mock.patch("urllib.request.urlopen") as uo:
+                fv.prewarm_ollama()
+        uo.assert_not_called()
+
+
+# ------------------------------------------------- screenshot cache
+class TestScreenshotCache(Base):
+    def test_second_call_within_ttl_reuses_capture(self):
+        fv.DRY_RUN = False
+        try:
+            with mock.patch.object(fv, "subprocess") as sp, \
+                 mock.patch("os.path.exists", return_value=True):
+                p1 = fv.capture_screenshot()
+                p2 = fv.capture_screenshot()
+            self.assertEqual(p1, p2)
+            sp.run.assert_called_once()
+        finally:
+            fv.DRY_RUN = True
+
+    def test_fresh_bypasses_cache(self):
+        fv.DRY_RUN = False
+        try:
+            with mock.patch.object(fv, "subprocess") as sp, \
+                 mock.patch("os.path.exists", return_value=True):
+                fv.capture_screenshot()
+                fv.capture_screenshot(fresh=True)
+            self.assertEqual(sp.run.call_count, 2)
+        finally:
+            fv.DRY_RUN = True
+
+
+# ------------------------------------------------- two-pass vision click
+class TestTwoPassRefine(Base):
+    def _fake_pil(self, boxes):
+        class FakeCrop:
+            def __init__(self, box):
+                boxes.append(box)
+
+            def save(self, path):
+                pass
+
+        class FakeImage:
+            size = (1920, 1080)
+
+            def crop(self, box):
+                return FakeCrop(box)
+
+        fake_pil = mock.MagicMock()
+        fake_pil.Image.open.return_value = FakeImage()
+        return fake_pil
+
+    def test_second_pass_runs_and_maps_back(self):
+        boxes = []
+        fake_pil = self._fake_pil(boxes)
+        replies = ["512 340", "500 500"]  # pass 1, then pass-2 inside crop
+        with mock.patch.dict("sys.modules", {"PIL": fake_pil,
+                                              "PIL.Image": mock.MagicMock()}), \
+             mock.patch.object(fv, "capture_screenshot",
+                               return_value="/tmp/fake.png"), \
+             mock.patch.object(fv, "vision_ask",
+                               side_effect=replies) as va:
+            self.assertTrue(fv.vision_click("the Reply button"))
+        self.assertEqual(va.call_count, 2)
+        # pass 1: 512/340 of 1920x1080 -> (983, 367); crop 480px around it
+        self.assertEqual(boxes, [(743, 127, 1223, 607)])
+
+    def test_failed_second_pass_keeps_first_guess(self):
+        fake_pil = self._fake_pil([])
+        with mock.patch.dict("sys.modules", {"PIL": fake_pil,
+                                              "PIL.Image": mock.MagicMock()}), \
+             mock.patch.object(fv, "capture_screenshot",
+                               return_value="/tmp/fake.png"), \
+             mock.patch.object(fv, "vision_ask",
+                               side_effect=["512 340", "NONE"]):
+            self.assertTrue(fv.vision_click("the Reply button"))
+
+    def test_missing_pillow_falls_back_to_single_pass(self):
+        real_import = __import__
+
+        def no_pil(name, *a, **k):
+            if name == "PIL" or name.startswith("PIL."):
+                raise ImportError("no PIL")
+            return real_import(name, *a, **k)
+
+        with mock.patch("builtins.__import__", side_effect=no_pil), \
+             mock.patch.object(fv, "capture_screenshot",
+                               return_value="/tmp/fake.png"), \
+             mock.patch.object(fv, "vision_ask",
+                               return_value="512 340") as va:
+            self.assertTrue(fv.vision_click("the Reply button"))
+        va.assert_called_once()
 
 
 if __name__ == "__main__":

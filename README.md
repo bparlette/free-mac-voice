@@ -25,6 +25,8 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | “read clipboard” | Reads your copied text aloud |
 | “type today's date” | Types formatted date macro |
 | “what's on my screen” | AI screen vision & summary (Qwen3-VL) |
+| “are you working” | Spoken health check: mic, models, last error |
+| “quit spotify” | Quits the app (asks first) |
 | “set volume to 30” | Sets volume |
 | “play” / “next” | Media keys |
 | “set a timer for 5 minutes” | Background timer, speaks when done |
@@ -58,7 +60,17 @@ A Mac mini has no built-in mic. Two free options:
 bash upgrade.sh
 ```
 
-Works whether you installed from `git clone` or the zip download. It pulls the latest version, preserves your virtual environment and `~/.free-voice/.env`, then re-runs the installer to refresh dependencies. (Git users can also just `git pull`.)
+One command: pulls the latest version (git or zip install), migrates stale
+settings in `~/.free-voice/.env` (e.g. an old default model gets bumped to the
+current one — your customizations are never touched), pulls the configured
+model, refreshes Python dependencies, and restarts the always-listening
+service if you have it installed. No permission dialogs, no questions.
+
+New since the last release: "are you working" (spoken health check), model
+pre-warm at startup so the first command doesn't stall, screenshot caching for
+describe-then-click, two-pass vision click refinement, confirmation now covers
+"quit …" and "close all windows" (plus shut down / restart / log out / empty
+trash), and Gemini failures of any kind fall back to the on-device model.
 
 ## How it stays free (30-second version)
 

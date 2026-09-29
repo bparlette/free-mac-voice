@@ -5,9 +5,18 @@
 #   bash install.sh
 #
 # Installs: Homebrew packages (whisper-cpp, ollama, python), a Python venv
-# with everything free_voice.py needs, the local 1.5B fallback model, and a
+# with everything free_voice.py needs, the local vision-language model, and a
 # config template. Safe to re-run — it skips whatever is already done.
 #
+#   bash install.sh --update   # non-interactive refresh: skips permission
+#                              # dialogs, login prompt, and welcome guide.
+#                              # Used by upgrade.sh.
+set -euo pipefail
+
+UPDATE_MODE=0
+if [[ "${1:-}" == "--update" ]]; then
+  UPDATE_MODE=1
+fi
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -83,13 +92,29 @@ if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
   done
 fi
 if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
-  step "Pulling qwen3-vl:8b (~5 GB, one-time download)…"
-  ollama pull qwen3-vl:8b
+  WANT_MODEL="$(grep -E '^OLLAMA_MODEL=' "$HOME/.free-voice/.env" 2>/dev/null \
+    | cut -d= -f2 | tr -d ' ' || true)"
+  WANT_MODEL="${WANT_MODEL:-qwen3-vl:8b}"
+  step "Pulling $WANT_MODEL (one-time download, skipped if already present)…"
+  ollama pull "$WANT_MODEL"
 else
   warn "Ollama isn't responding — Tier 1 fallback will be skipped until you run 'ollama serve'."
 fi
 
 # --- 6. Config dir + .env template --------------------------------------------------
+# Fixes the upgrade trap: an old .env that still points at a retired default
+# model is bumped to the new default; user-customized values are never touched.
+migrate_env() {
+  local env="$HOME/.free-voice/.env"
+  if grep -q '^OLLAMA_MODEL=qwen2\.5:1\.5b$' "$env" 2>/dev/null; then
+    sed -i.bak 's/^OLLAMA_MODEL=qwen2\.5:1\.5b$/OLLAMA_MODEL=qwen3-vl:8b/' "$env"
+    note "migrated OLLAMA_MODEL qwen2.5:1.5b -> qwen3-vl:8b (backup: $env.bak)"
+  fi
+  if ! grep -q 'VOICE_USER_EMAIL=' "$env" 2>/dev/null; then
+    printf '\n# "type my email" types this address. Uncomment and set it.\n# VOICE_USER_EMAIL=\n' >> "$env"
+    note "added VOICE_USER_EMAIL placeholder to .env"
+  fi
+}
 step "Setting up ~/.free-voice/.env…"
 mkdir -p "$HOME/.free-voice"
 if [[ ! -f "$HOME/.free-voice/.env" ]]; then
@@ -103,14 +128,19 @@ OLLAMA_MODEL=qwen3-vl:8b
 EOF
   note "created — paste a Gemini key in later if you want Tier 2 Q&A"
 else
-  note "already exists, leaving it alone"
+  migrate_env
+  note "already exists, migrated stale defaults, kept your settings"
 fi
 
 # --- 7. Permissions -------------------------------------------------------------------
+if [[ "$UPDATE_MODE" == "1" ]]; then
+  note "update mode — skipping permission dialogs (run install.sh without --update to re-prime)"
+else
 step "macOS permissions (one-time, ~60 seconds)"
 note "This pops macOS's own Allow dialogs — just click through them."
 note "Run this from the terminal app you'll use for Voice Control."
 bash "$REPO_DIR/prime_permissions.sh"
+fi
 
 # --- 8. Smoke test ----------------------------------------------------------------------
 step "Smoke test (no mic needed)…"
@@ -119,6 +149,9 @@ python "$REPO_DIR/free_voice.py" --partial "open notes" --dry-run >/dev/null
 note "router + completion gating OK"
 
 # --- 9. Optional: start at login (always-listening) ---------------------------------------
+if [[ "$UPDATE_MODE" == "1" ]]; then
+  note "update mode — keeping existing login setting (service restart is handled by upgrade.sh)"
+else
 step "Start automatically at login?"
 note "This keeps voice control always listening, even after a reboot."
 note "It restarts itself if it ever crashes."
@@ -141,10 +174,15 @@ if [[ "${login_ans:-N}" =~ ^[Yy] ]]; then
 else
   note "skipped — double-click 'Voice Control (Always On).command' to start manually"
 fi
+fi  # UPDATE_MODE
 
 # --- 10. Welcome guide ----------------------------------------------------------------------
+if [[ "$UPDATE_MODE" == "1" ]]; then
+  note "update mode — skipping welcome guide"
+else
 step "Opening your 60-second start guide…"
 open "$REPO_DIR/welcome.html" || true
+fi
 
 step "Done!"
 cat <<'EOF'

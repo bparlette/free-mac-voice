@@ -41,5 +41,17 @@ else
   shopt -u dotglob nullglob
 fi
 
-echo "==> re-running installer (refreshes deps, keeps your settings)..."
-bash "$REPO_DIR/install.sh"
+echo "==> re-running installer in update mode (refreshes deps, migrates .env, no dialogs)..."
+bash "$REPO_DIR/install.sh" --update
+
+PLIST="$HOME/Library/LaunchAgents/com.free-mac-voice.plist"
+if [[ -f "$PLIST" ]]; then
+  echo "==> restarting voice service so it picks up the new code..."
+  if ! launchctl kickstart -k "gui/$(id -u)/com.free-mac-voice" >/dev/null 2>&1; then
+    launchctl unload "$PLIST" >/dev/null 2>&1 || true
+    launchctl load -w "$PLIST" || echo "    (service restart needs a manual: launchctl load -w $PLIST)"
+  fi
+else
+  echo "    (always-listening service not installed — skipping restart)"
+fi
+echo "==> update complete"

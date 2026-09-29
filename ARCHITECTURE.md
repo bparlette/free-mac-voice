@@ -267,9 +267,32 @@ Continuity (same Apple ID, Wi-Fi + Bluetooth, nearby/unlocked).
 clone. It detects the install style: `.git` present → `git pull --ff-only`;
 otherwise it downloads the latest `main` tarball from GitHub and overlays
 the files, explicitly skipping `.venv` (and `.git` if ever present), then
-re-runs `install.sh` to refresh Homebrew/Python dependencies. User config
-(`~/.free-voice/.env`) is never touched. The LaunchAgent, if installed,
-keeps working because it points at the repo's venv by absolute path.
+re-runs `install.sh --update` — the non-interactive mode that refreshes
+Homebrew/Python dependencies and migrates stale `.env` defaults without
+re-popping permission dialogs or the login prompt. User config
+(`~/.free-voice/.env`) keeps every user customization; only known-retired
+default values (e.g. an old default model) are bumped, with a `.bak` backup.
+Finally `upgrade.sh` restarts the LaunchAgent service (if installed) so the
+new code actually takes effect — previously the old process kept running
+until the next reboot.
+
+## 7c. Reliability features
+
+- **Destructive confirmation** (both tiers): quit/close-all-windows/shutdown/
+  restart/logout/empty-trash ask for a spoken "yes" first (Tier 0 via
+  `confirm_spoken`, Tier 1 via `_tier1_confirm`); `--yes` skips it in
+  `--text` mode. Chained commands confirm each destructive part separately.
+- **Model pre-warm**: `prewarm_ollama()` fires a background thread at startup
+  so the 8B model is resident before the first command, not loaded by it.
+- **Screenshot cache**: `capture_screenshot()` caches for 8 s — a
+  describe-then-click sequence reuses the shot instead of capturing twice.
+- **Two-pass vision clicks**: after the first coordinate guess, a 480-px crop
+  around the guess is re-asked for finer coordinates (Pillow; skipped
+  gracefully when absent).
+- **Status command**: "are you working" speaks mic, model readiness, Gemini
+  state, and the last backend error (tracked via `note_error()`).
+- **Gemini fallback**: ANY Gemini failure — not just 429 — falls back to the
+  local model and says so.
 
 Environment variables (`~/.free-voice/.env`): `GEMINI_API_KEY`,
 `GEMINI_MODEL` (default `gemini-2.5-flash`), `WHISPER_MODEL` (default
