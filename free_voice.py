@@ -88,6 +88,11 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
 OLLAMA_TIER1 = os.environ.get("OLLAMA_TIER1", "1") == "1"
 TIER1_MIN_CONFIDENCE = float(os.environ.get("TIER1_MIN_CONFIDENCE", "0.5"))
+# Microphone selection: case-insensitive substring matched against input
+# device names, e.g. VOICE_MIC=iPhone uses the Continuity microphone whenever
+# the iPhone is in range, falling back to the system default otherwise.
+# Overridable per-run with --mic.
+VOICE_MIC = os.environ.get("VOICE_MIC", "")
 DRY_RUN = False
 
 
@@ -138,6 +143,44 @@ _rec_q: "queue.Queue" = queue.Queue()
 _recording = threading.Event()
 
 
+def resolve_input_device(want: str = ""):
+    """Return a sounddevice input device index, or None for the system default.
+
+    `want` (default VOICE_MIC) is a case-insensitive substring matched against
+    input device names. Returns None when unset or no match — the caller then
+    uses the system default input.
+    """
+    want = (want or VOICE_MIC).strip().lower()
+    if not want:
+        return None
+    try:
+        import sounddevice as sd
+    except Exception:
+        return None
+    try:
+        for i, d in enumerate(sd.query_devices()):
+            if d.get("max_input_channels", 0) > 0 \
+                    and want in str(d.get("name", "")).lower():
+                return i
+    except Exception:
+        pass
+    return None
+
+
+def describe_input_device() -> str:
+    """Human-readable name of the mic that will be used, for startup logging."""
+    try:
+        import sounddevice as sd
+        idx = resolve_input_device()
+        if idx is None:
+            dev = sd.query_devices(kind="input")
+        else:
+            dev = sd.query_devices(idx)
+        return str(dev.get("name", "?"))
+    except Exception:
+        return "?"
+
+
 def _audio_cb(indata, frames, time_info, status):  # sounddevice callback
     if _recording.is_set():
         _rec_q.put(bytes(indata))
@@ -162,7 +205,8 @@ def record_while_held() -> bytes:
     t = threading.Thread(target=drain, daemon=True)
     t.start()
     with sd.RawInputStream(
-        samplerate=16000, channels=1, dtype="int16", callback=_audio_cb
+        samplerate=16000, channels=1, dtype="int16", callback=_audio_cb,
+        device=resolve_input_device()
     ):
         while _recording.is_set():
             time.sleep(0.05)
@@ -178,7 +222,8 @@ def record_fixed(seconds: float):
     import sounddevice as sd
 
     log(f"recording {seconds:.0f}s...")
-    data = sd.rec(int(seconds * 16000), samplerate=16000, channels=1, dtype="float32")
+    data = sd.rec(int(seconds * 16000), samplerate=16000, channels=1,
+                  dtype="float32", device=resolve_input_device())
     sd.wait()
     return data.flatten()
 
@@ -314,7 +359,8 @@ def always_listen_loop(on_utterance, sensitivity: float = 3.0) -> None:
         "(no wake word — speech itself is the trigger)")
     try:
         with sd.RawInputStream(samplerate=16000, channels=1, dtype="int16",
-                               blocksize=frame_len) as stream:
+                               blocksize=frame_len,
+                               device=resolve_input_device()) as stream:
             while True:
                 data, _ = stream.read(frame_len)
                 samples = np.frombuffer(data, dtype=np.int16)
@@ -1271,8 +1317,14 @@ def main() -> None:
     ap.add_argument("--sensitivity", type=float, default=3.0, metavar="X",
                     help="always-listen mic sensitivity multiplier "
                          "(higher = easier to trigger; default 3.0)")
+    ap.add_argument("--mic", metavar="NAME",
+                    help="use the input device whose name contains NAME "
+                         "(e.g. --mic iPhone); overrides VOICE_MIC")
     args = ap.parse_args()
     DRY_RUN = args.dry_run
+    global VOICE_MIC
+    if args.mic:
+        VOICE_MIC = args.mic
 
     if args.list:
         cmd_list()
@@ -1283,6 +1335,7 @@ def main() -> None:
     if args.text:
         handle_command(args.text, allow_destructive=args.yes)
         return
+    log(f"microphone: {describe_input_device()}")
     if args.once:
         on_utterance(record_fixed(args.once))
         return
