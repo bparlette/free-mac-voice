@@ -29,6 +29,30 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 
 Say **“help”** anytime to hear all ~58 commands. Or double-click **Voice Control.command** — no terminal needed.
 
+## Always listening
+
+Rather than holding a key, just talk:
+
+- **Try it once:** double-click **Voice Control (Always On).command**. Speak naturally; non-commands are ignored silently. Ctrl-C or close the window to stop.
+- **Every login, even after reboots:** re-run `bash install.sh` and answer **y** to the start-at-login prompt. It restarts itself if it ever crashes (logs at `/tmp/free-mac-voice.log`).
+
+There's no wake word — any speech is the trigger. In a noisy room, push-to-talk is calmer. If it triggers too easily, raise the bar: `python3 free_voice.py --always --sensitivity 4.5` (default 3.0).
+
+## Use your iPhone as the mic
+
+A Mac mini has no built-in mic. Two free options:
+
+1. **Continuity (built-in, no app):** same Apple ID on iPhone + Mac, Wi-Fi and Bluetooth on, iPhone nearby → Mac **System Settings → Sound → Input → your iPhone**.
+2. **WO Mic (free app):** WO Mic from the iOS App Store + the free Mac client from wolicheng.com, connected over Wi-Fi. Ad-supported and reviews are mixed — try Continuity first.
+
+## Updating
+
+```bash
+bash upgrade.sh
+```
+
+Works whether you installed from `git clone` or the zip download. It pulls the latest version, preserves your virtual environment and `~/.free-voice/.env`, then re-runs the installer to refresh dependencies. (Git users can also just `git pull`.)
+
 ## How it stays free (30-second version)
 
 Three tiers, fastest first. The system only uses a slower tier when the faster one can't help:
