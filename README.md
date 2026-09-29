@@ -19,15 +19,22 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | You say | Your Mac |
 |---|---|
 | “open notes” | Opens Notes |
+| “open notes and snap left” | Chained: opens app and tiles it to half screen |
+| “snap left” / “maximize” | Window layout and tiling |
+| “switch to safari” | Focuses background application |
+| “read clipboard” | Reads your copied text aloud |
+| “type today's date” | Types formatted date macro |
+| “what's on my screen” | AI screen vision & summary (Qwen3-VL) |
 | “set volume to 30” | Sets volume |
 | “play” / “next” | Media keys |
 | “set a timer for 5 minutes” | Background timer, speaks when done |
 | “click the Reply button” | Clicks the real button in the front app |
 | “search best pizza near me” | Google search |
 | “what time is it” | Speaks the time |
+| “close” / “close all windows” | Closes active tab/window or all windows |
 | “lock” | Locks the screen |
 
-Say **“help”** anytime to hear all ~58 commands. Or double-click **Voice Control.command** — no terminal needed.
+Say **“help”** anytime to hear available commands. Or double-click **Voice Control.command** — no terminal needed. Includes instant audio earcons (subtle audio chime on keypress, release click on completion).
 
 ## Always listening
 

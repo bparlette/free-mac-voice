@@ -107,6 +107,7 @@ TIER1_MIN_CONFIDENCE = float(os.environ.get("TIER1_MIN_CONFIDENCE", "0.5"))
 # the iPhone is in range, falling back to the system default otherwise.
 # Overridable per-run with --mic.
 VOICE_MIC = os.environ.get("VOICE_MIC", "")
+VOICE_USER_EMAIL = os.environ.get("VOICE_USER_EMAIL", "").strip()
 DRY_RUN = False
 
 
@@ -125,6 +126,16 @@ def say(text: str) -> None:
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass  # e.g. test environments without the macOS `say` binary
+
+
+def play_chime(sound_name: str = "Tink.aiff") -> None:
+    """Play a short macOS audio notification sound non-blockingly."""
+    path = f"/System/Library/Sounds/{sound_name}"
+    if os.path.exists(path):
+        try:
+            subprocess.Popen(["afplay", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
 
 def applescript(script: str) -> str:
@@ -336,6 +347,7 @@ def push_to_talk_loop(on_utterance) -> None:
         if key == keyboard.Key.alt_r and not held.is_set():
             held.set()
             _recording.set()
+            play_chime("Tink.aiff")
             log("listening... (release right-Option)")
             t = threading.Thread(target=worker_fn, daemon=True)
             worker.append(t)
@@ -349,6 +361,7 @@ def push_to_talk_loop(on_utterance) -> None:
         if key == keyboard.Key.alt_r and held.is_set():
             held.clear()
             _recording.clear()
+            play_chime("Pop.aiff")
             log("transcribing...")
             for t in worker:
                 t.join(timeout=30)
@@ -765,16 +778,6 @@ def act_snap_window(side: str) -> None:
     say(label)
 
 
-def play_chime(sound_name: str = "Tink.aiff") -> None:
-    """Play a short macOS audio notification sound non-blockingly."""
-    path = f"/System/Library/Sounds/{sound_name}"
-    if os.path.exists(path):
-        try:
-            subprocess.Popen(["afplay", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-
 def act_keystroke(keys: str, using: str = "") -> None:
     mod = f" using {{{using}}}" if using else ""
     applescript(f'tell application "System Events" to keystroke "{esc(keys)}"{mod}')
@@ -934,6 +937,38 @@ def act_time() -> None:
 
 def act_date() -> None:
     say(datetime.now().strftime("It's %A, %B %-d"))
+
+
+def act_read_clipboard() -> None:
+    """Read the current text on the clipboard aloud."""
+    try:
+        res = subprocess.run(["pbpaste"], capture_output=True, text=True, check=True)
+        text = res.stdout.strip()
+        if text:
+            say(text[:300])
+        else:
+            say("The clipboard is empty")
+    except Exception:
+        say("Couldn't read the clipboard")
+
+
+def act_type_date() -> None:
+    """Type the current formatted date."""
+    act_type_text(datetime.now().strftime("%B %-d, %Y"))
+
+
+def act_type_time() -> None:
+    """Type the current formatted time."""
+    act_type_text(datetime.now().strftime("%-I:%M %p"))
+
+
+def act_type_email() -> None:
+    """Type the user's configured email address."""
+    email = VOICE_USER_EMAIL or os.environ.get("VOICE_USER_EMAIL", "").strip()
+    if email:
+        act_type_text(email)
+    else:
+        say("No email set. Add VOICE_USER_EMAIL to your dot env file.")
 
 
 # ---------------------------------------------------------------- xa11y UI actions (Tier 0 execution for real UI nodes)
@@ -1184,7 +1219,11 @@ _p(r"^(snap|tile) right$", "snap_right", True)
 _p(r"^(maximize|zoom)( the)? window$", "maximize_window", True)
 _p(r"^(maximize|zoom)$", "maximize_window", True)
 _p(r"^center( the)? window$", "center_window", True)
-# --- typing & keys (type/dictate carry free text: final-only)
+# --- typing & keys (specific macros BEFORE generic type)
+_p(r"^(read|speak|what's on)( the)? clipboard$", "read_clipboard", True)
+_p(r"^type( today's| the)? date$", "type_date", True)
+_p(r"^type( the| current)? time$", "type_time", True)
+_p(r"^type( my)? email$", "type_email", True)
 _p(r"^type (.+)$", "type_text")
 _p(r"^dictate (.+)$", "type_text")
 _p(r"^press (enter|return|escape|tab|space|delete)$", "press_key", True)
@@ -1290,6 +1329,10 @@ def route(text: str, partial: bool = False):
             continue
         if partial and not _partial_complete(name, m):
             continue
+        if name in ("open_app", "quit_app", "switch_app") and (" and " in t.lower() or " then " in t.lower()):
+            phrase = m.group(2) if name in ("open_app", "switch_app") else m.group(m.lastindex)
+            if resolve_app(phrase) is None:
+                continue
         return name, m
     return None
 
@@ -1353,6 +1396,14 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_snap_window("maximize")
         elif name == "center_window":
             act_snap_window("center")
+        elif name == "read_clipboard":
+            act_read_clipboard()
+        elif name == "type_date":
+            act_type_date()
+        elif name == "type_time":
+            act_type_time()
+        elif name == "type_email":
+            act_type_email()
         elif name == "type_text":
             act_type_text(m.group(1)); say("Typed")
         elif name == "press_key":
@@ -1748,6 +1799,18 @@ def handle_command(text: str, confirm_audio_fn=None,
         execute_match(name, m, confirm_audio_fn, allow_destructive)
         return True
 
+    # Compound command chaining: if single Tier 0 missed, try chaining (e.g. "open notes and snap left")
+    if " and " in t.lower() or " then " in t.lower() or ", " in t:
+        parts = [p.strip() for p in re.split(r"\s+(?:and\s+then|then|and)\s+|,\s*", t, flags=re.IGNORECASE) if p.strip()]
+        if len(parts) > 1:
+            routes = [route(p, partial=False) for p in parts]
+            if all(sub_r is not None for sub_r in routes):
+                log(f"Tier 0 chained hit ({len(parts)} commands): {parts}")
+                for (name, m) in routes:
+                    execute_match(name, m, confirm_audio_fn, allow_destructive)
+                    time.sleep(0.3)
+                return True
+
     # Tier 1: local vision-language model (only on Tier 0 miss)
     t1 = ollama_route(t)
     if t1:
@@ -1779,6 +1842,8 @@ def cmd_list() -> None:
         "quit spotify / close safari",
         "close · close window · close all windows · minimize · fullscreen · hide",
         "snap left · snap right · maximize · center window",
+        "open notes and snap left · set volume to 30 and play  (chained commands)",
+        "read clipboard · type today's date · type the time · type my email",
         "type hello world / dictate dear mom,",
         "press enter / copy / paste / undo / save / select all",
         "click the Reply button / click the Docs link  (needs xa11y + perms)",

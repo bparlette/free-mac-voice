@@ -77,6 +77,13 @@ complete. Demo it without a mic:
 python3 free_voice.py --partial "open notes" --dry-run
 ```
 
+### 2b. Chained Compound Commands & Macros
+
+- **Chaining without LLM overhead**: When an utterance contains conjunctions (`"and"`, `"and then"`, `", then"`), Tier 0 verifies whether all sub-clauses form valid actions. If so, they execute sequentially with a 300 ms inter-command delay (`open notes and snap left`, `set volume to 30 and play`). If any clause fails or the phrase is a natural sentence, Tier 1 handles it.
+- **Phonetic & Soundex Resolution**: Standard American Soundex indexing maps spoken misspellings from Whisper to installed app bundles (e.g. `es de` / `s d` → `ES-DE`, `sephari` → `Safari`).
+- **Tactile Earcons**: Push-to-talk plays native `Tink.aiff` on Right-Option press and `Pop.aiff` on release, giving zero-latency eyes-free auditory feedback.
+- **Voice Macros**: Quick actions for `read clipboard` (`pbpaste`), `type today's date`, `type the time`, and `type my email` (`VOICE_USER_EMAIL` in `.env`).
+
 ## 3. Tier 1 — local vision-language model (JSON mode)
 
 Fires **only** on a Tier 0 miss. `ollama_route()` POSTs to
