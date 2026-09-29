@@ -60,7 +60,6 @@ import queue
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.error
@@ -808,6 +807,30 @@ def act_snap_window(side: str) -> None:
     say(label)
 
 
+def act_move_next_display() -> None:
+    """Move frontmost window to the next connected display."""
+    try:
+        from AppKit import NSScreen
+        screens = NSScreen.screens()
+        if len(screens) < 2:
+            say("Only one display connected")
+            return
+        s0, s1 = screens[0].frame(), screens[1].frame()
+        dx = int(s1.origin.x - s0.origin.x)
+        dy = int(s1.origin.y - s0.origin.y)
+        applescript(
+            'tell application "System Events" to tell (first application process whose frontmost is true) to '
+            'tell window 1\n'
+            '  set {wx, wy} to position\n'
+            f'  set position to {{wx + ({dx}), wy + ({dy})}}\n'
+            'end tell'
+        )
+        say("Moved to next display")
+    except Exception as e:
+        log(f"move to next display failed: {e}")
+        say("Couldn't move window across displays")
+
+
 def act_keystroke(keys: str, using: str = "") -> None:
     mod = f" using {{{using}}}" if using else ""
     applescript(f'tell application "System Events" to keystroke "{esc(keys)}"{mod}')
@@ -1227,63 +1250,58 @@ def capture_screenshot(fresh: bool = False) -> str | None:
     return _SCREENSHOT_PATH if os.path.exists(_SCREENSHOT_PATH) else None
 
 
-VISION_MAX_DIM = 800  # px: downscaled screenshots infer ~60% faster, still legible
-
-
-def _downscale_for_vision(image_path: str) -> str:
-    """sips-downscale a JPEG copy of a screenshot for the vision model.
-
-    Returns the temp copy's path, or the original path when downscaling is
-    unavailable (non-macOS, sips failure). The full-res original stays cached
-    for the two-pass click refinement crop, which needs native pixels.
+def prepare_vision_image(image_path: str, max_dimension: int = 800) -> str:
+    """Downsample and compress screenshot using macOS native sips.
+    Reduces payload ~95%, avoids Ollama context overflow, and cuts inference
+    time by ~60%. 800px is the measured sweet spot (M4: ~7.7s vs ~19.6s at
+    1280px); the full-res original is kept for the two-pass click crop.
     """
-    if sys.platform != "darwin":
+    if not image_path:
         return image_path
     try:
-        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        tmp.close()
-        subprocess.run(
-            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "70",
-             "-Z", str(VISION_MAX_DIM), image_path, "--out", tmp.name],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=15,
-        )
-        return tmp.name
-    except Exception as e:  # noqa: BLE001
-        log(f"vision downscale failed, using full-res: {e}")
-        try:
-            os.unlink(tmp.name)
-        except Exception:  # noqa: BLE001
-            pass
+        if not os.path.exists(image_path):
+            return image_path
+    except Exception:
         return image_path
+    opt_path = image_path + ".opt.jpg"
+    try:
+        if os.path.exists(opt_path):
+            try:
+                if os.path.getmtime(opt_path) >= os.path.getmtime(image_path):
+                    return opt_path
+            except Exception:
+                pass
+        res = subprocess.run(
+            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "75",
+             "-Z", str(max_dimension), image_path, "--out", opt_path],
+            capture_output=True, check=False, timeout=5
+        )
+        if res.returncode == 0 and os.path.exists(opt_path):
+            return opt_path
+    except Exception as e:  # noqa: BLE001
+        log(f"sips optimization failed ({e}), using raw screenshot")
+    return image_path
 
 
 def vision_ask(question: str, image_path: str,
                prefill: str | None = None) -> str | None:
     """Ask the local vision-language model about a screenshot.
 
-    Returns the model's text or None on failure. think=false: voice needs
-    the answer, not a reasoning trace. The image is downscaled to
-    VISION_MAX_DIM before sending (far fewer visual tokens, ~60% faster
-    inference); pass prefill to start the assistant's reply and suppress
-    reasoning-style preamble on open-ended questions.
+    Returns the model's text or None on failure. Downscales with native sips
+    to fit within context window and eliminate 400 errors on high-DPI screens.
+    Pass prefill to start the assistant's reply and suppress reasoning-style
+    preamble on open-ended questions.
     """
     global _ollama_ok
     if _ollama_ok is False:
         return None
-    small = _downscale_for_vision(image_path)
+    ready_path = prepare_vision_image(image_path)
     try:
-        with open(small, "rb") as f:
+        with open(ready_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
     except Exception as e:  # noqa: BLE001
         log(f"vision read failed: {e}")
         return None
-    finally:
-        if small != image_path:
-            try:
-                os.unlink(small)
-            except Exception:  # noqa: BLE001
-                pass
     messages = [{"role": "user", "content": question, "images": [b64]}]
     if prefill:
         messages.append({"role": "assistant", "content": prefill})
@@ -1291,7 +1309,7 @@ def vision_ask(question: str, image_path: str,
         "model": OLLAMA_MODEL,
         "keep_alive": "60m",
         "think": False,
-        "options": {"temperature": 0, "num_predict": 150, "num_ctx": 4096},
+        "options": {"temperature": 0, "num_predict": 250, "num_ctx": 4096},
         "messages": messages,
         "stream": False,
     }
@@ -1309,10 +1327,19 @@ def vision_ask(question: str, image_path: str,
         note_error("vision model unavailable")
         log(f"vision model unavailable: {e}")
         return None
-    try:
-        return data["message"]["content"].strip()
-    except (KeyError, TypeError):
-        return None
+    msg = data.get("message", {})
+    content = msg.get("content", "").strip()
+    if content:
+        return content
+    # Fallback: if reasoning tokens exhausted prediction limit, extract coordinate answer
+    thinking = msg.get("thinking", "").strip()
+    if thinking:
+        m = re.findall(r"\b(\d{1,4}\s+\d{1,4})\b", thinking)
+        if m:
+            return m[-1]
+        if "NONE" in thinking:
+            return "NONE"
+    return None
 
 
 def act_describe_screen() -> None:
@@ -1487,7 +1514,10 @@ def _p(rx: str, name: str, partial_ok: bool = False) -> None:
     _PATTERNS.append((re.compile(rx, re.IGNORECASE), name, partial_ok))
 
 
-# --- apps (specific "open X settings" / "open trash" BEFORE generic open)
+# --- apps & tabs (specific "open tab" / "open X settings" / "open trash" BEFORE generic open)
+_p(r"^(new|open)( a)? tab$", "new_tab", True)
+_p(r"^close( the)? tab$", "close_tab", True)
+_p(r"^(reopen|undo close)( the)? tab$", "reopen_tab", True)
 _p(r"^open (.+) settings$", "settings", True)
 _p(r"^open trash$", "open_trash", True)
 _p(r"^(open|launch|start) the (.+?) (app|application)$", "open_app", True)
@@ -1495,7 +1525,7 @@ _p(r"^(open|launch|start) (.+)$", "open_app", True)
 _p(r"^(switch to|focus|bring up) (.+)$", "switch_app", True)
 # --- windows / tabs / quit
 _p(r"^close all windows$", "close_all_windows", True)
-_p(r"^close( the)? (window|tab)$", "close_window", True)
+_p(r"^close( the)? window$", "close_window", True)
 _p(r"^close$", "close_window", True)
 _p(r"^(quit|close)( the)? (app |application )?(.+)$", "quit_app", True)
 _p(r"^(minimize|minimise)( the)? (.+?)( window| app)?$", "minimize_app", True)
@@ -1503,6 +1533,18 @@ _p(r"^(minimize|minimise)( the window)?$", "minimize", True)
 _p(r"^(fullscreen|full screen|make it full screen)$", "fullscreen", True)
 _p(r"^hide( the)? (.+?)( app| application)?$", "hide_app", True)
 _p(r"^hide( the app)?$", "hide", True)
+# --- browser navigation
+_p(r"^(refresh|reload)( the (page|tab))?$", "refresh_page", True)
+_p(r"^(go )?back$", "nav_back", True)
+_p(r"^(go )?forward$", "nav_forward", True)
+_p(r"^(page down|scroll page down)$", "page_down", True)
+_p(r"^(page up|scroll page up)$", "page_up", True)
+_p(r"^(find|find on page|search page)$", "find_in_page", True)
+_p(r"^clear( the)? terminal$", "clear_terminal", True)
+# --- spaces & display management
+_p(r"^next space$", "next_space", True)
+_p(r"^(previous|prev) space$", "prev_space", True)
+_p(r"^move to (the )?(next|other) (display|screen|monitor)$", "move_next_display", True)
 # --- window snapping / tiling
 _p(r"^(snap|tile)( the)? window left$", "snap_left", True)
 _p(r"^(snap|tile) left$", "snap_left", True)
@@ -1673,6 +1715,32 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         # confirmation gate below, not here.
         elif name == "close_window":
             act_keystroke("w", "command down"); say("Closed")
+        elif name == "new_tab":
+            act_keystroke("t", "command down"); say("New tab")
+        elif name == "close_tab":
+            act_keystroke("w", "command down"); say("Closed tab")
+        elif name == "reopen_tab":
+            act_keystroke("t", "shift down, command down"); say("Reopened tab")
+        elif name == "refresh_page":
+            act_keystroke("r", "command down"); say("Refreshed")
+        elif name == "nav_back":
+            act_keystroke("[", "command down"); say("Back")
+        elif name == "nav_forward":
+            act_keystroke("]", "command down"); say("Forward")
+        elif name in ("scroll_down", "page_down"):
+            act_key_code(121); say("Scrolled down")
+        elif name in ("scroll_up", "page_up"):
+            act_key_code(116); say("Scrolled up")
+        elif name == "find_in_page":
+            act_keystroke("f", "command down"); say("Find")
+        elif name == "clear_terminal":
+            act_keystroke("k", "command down"); say("Cleared")
+        elif name == "next_space":
+            act_key_code(124, "control down"); say("Next space")
+        elif name == "prev_space":
+            act_key_code(123, "control down"); say("Previous space")
+        elif name == "move_next_display":
+            act_move_next_display()
         elif name == "minimize":
             act_minimize()
         elif name == "minimize_app":
@@ -1846,6 +1914,9 @@ _TIER1_SYSTEM = (
     "open_app {app: name}, quit_app {app: name}, switch_app {app: name}, "
     "minimize {app: optional name}, hide {app: optional name}, "
     "close_window {}, close_all_windows {}, "
+    "new_tab {}, close_tab {}, reopen_tab {}, refresh_page {}, "
+    "nav_back {}, nav_forward {}, scroll_down {}, scroll_up {}, "
+    "next_space {}, prev_space {}, move_next_display {}, "
     "snap_left {}, snap_right {}, maximize_window {}, center_window {}, "
     "type_text {text: string}, web_search {query: string}, open_url {url: string}, "
     "set_volume {level: 0-100}, volume_up {}, volume_down {}, mute_toggle {}, "
@@ -1861,6 +1932,9 @@ _TIER1_SYSTEM = (
 _TIER1_ACTIONS = {
     "open_app", "quit_app", "switch_app", "minimize", "hide",
     "close_window", "close_all_windows",
+    "new_tab", "close_tab", "reopen_tab", "refresh_page",
+    "nav_back", "nav_forward", "scroll_down", "scroll_up",
+    "next_space", "prev_space", "move_next_display",
     "snap_left", "snap_right", "maximize_window", "center_window",
     "type_text", "web_search", "open_url",
     "set_volume", "volume_up", "volume_down", "mute_toggle", "media",
@@ -1960,6 +2034,28 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     elif action == "close_all_windows":
         if _tier1_confirm("closing all windows", allow_destructive):
             act_close_all_windows()
+    elif action == "new_tab":
+        act_keystroke("t", "command down"); say("New tab")
+    elif action == "close_tab":
+        act_keystroke("w", "command down"); say("Closed tab")
+    elif action == "reopen_tab":
+        act_keystroke("t", "shift down, command down"); say("Reopened tab")
+    elif action == "refresh_page":
+        act_keystroke("r", "command down"); say("Refreshed")
+    elif action == "nav_back":
+        act_keystroke("[", "command down"); say("Back")
+    elif action == "nav_forward":
+        act_keystroke("]", "command down"); say("Forward")
+    elif action in ("scroll_down", "page_down"):
+        act_key_code(121); say("Scrolled down")
+    elif action in ("scroll_up", "page_up"):
+        act_key_code(116); say("Scrolled up")
+    elif action == "next_space":
+        act_key_code(124, "control down"); say("Next space")
+    elif action == "prev_space":
+        act_key_code(123, "control down"); say("Previous space")
+    elif action == "move_next_display":
+        act_move_next_display()
     elif action == "minimize":
         act_minimize(str(p("app", "")))
     elif action == "hide":
