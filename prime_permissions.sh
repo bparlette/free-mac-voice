@@ -25,7 +25,8 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV="$REPO_DIR/.venv"
 
 upsert_env() { # $1=KEY $2=value — add or replace a line in ~/.free-voice/.env
-  local envdir="$HOME/.free-voice" env="$envdir/.env"
+  local envdir="$HOME/.free-voice"
+  local env="$envdir/.env"
   mkdir -p "$envdir"
   touch "$env"
   if grep -q "^$1=" "$env" 2>/dev/null; then
