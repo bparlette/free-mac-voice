@@ -72,8 +72,21 @@
 </div>
 
 <div class="step">
+  <h2>Want it always listening?</h2>
+  <p style="font-size: 1.15rem;">Double-click <b>Voice Control (Always On).command</b> — then just talk. No key to hold.</p>
+  <p>It hears speech, does the command, and goes back to listening. Things that aren't commands are ignored silently. <span class="key">Ctrl-C</span> or close the window to stop.</p>
+  <p class="dim">There's no wake word — any speech wakes it. In a noisy room (TV on, people talking), the push-to-talk key is calmer. During install you can also choose <b>start at login</b> so it's always ready, even after a reboot.</p>
+</div>
+
+<div class="step">
+  <h2>Use your iPhone as the mic <span class="dim">(Mac mini has none built in)</span></h2>
+  <p><b>Option A — built-in, free, no app:</b> on your iPhone and Mac, sign into the same Apple ID with Wi-Fi and Bluetooth on, keep the iPhone nearby. Then on the Mac: <b>System Settings → Sound → Input → choose your iPhone</b>. Done.</p>
+  <p><b>Option B — WO Mic (free app):</b> install <b>WO Mic</b> from the iOS App Store plus the free Mac client from wolicheng.com, connect over Wi-Fi, then pick “WO Mic” as the input. Works fine; the app is ad-supported and reviews are mixed, so try Option A first.</p>
+</div>
+
+<div class="step">
   <h2>Mic check</h2>
-  <p>Make sure your Mac can hear you <span class="dim">(needs a microphone — a Mac mini doesn't have one built in; an iPhone on the same Wi-Fi works as a mic)</span>:</p>
+  <p>Make sure your Mac can hear you <span class="dim">(see above if you need a microphone)</span>:</p>
   <button id="micBtn">Test my microphone</button>
   <div id="meterWrap" style="display:none">
     <div id="meter"><div id="meterFill"></div></div>
@@ -88,6 +101,8 @@
     <li><b>“I didn't understand” a lot</b> → make sure Ollama is running: open Terminal and run <span class="mono">ollama serve</span>. It handles unusual phrasing.</li>
     <li><b>“Click the … button” can't see anything</b> → grant <b>Screen Recording</b> (macOS 26+) in Step 1.</li>
     <li><b>Weird phrasing works but slowly</b> → normal. The instant path handles exact commands; the ~1-second local AI handles the rest.</li>
+    <li><b>Always-listening triggers on the TV</b> → expected — there's no wake word. Use push-to-talk in noisy rooms, or raise the bar with <span class="mono">--sensitivity 4.5</span>.</li>
+    <li><b>Start-at-login asks for Microphone permission again</b> → normal. macOS grants mic access per app; allow it once for Python and it sticks.</li>
   </ul>
 </div>
 
