@@ -317,9 +317,13 @@ Measured end-to-end execution times from command dispatch to action execution an
 
 | Command | Routing Path | Decision / Inference Latency | Total End-to-End Time |
 |---|---|---|---|
-| `close notes` | Tier 0: Regex router | < 1 ms | **1.94s** |
-| `open notes` | Tier 0: Regex router | < 1 ms | **2.18s** |
-| `what time is it` | Tier 0: Regex router | < 1 ms | **2.59s** |
-| `could you please open notes` | Tier 1: Local Ollama LLM | **0.32s** | **2.53s** |
+| `close notes` | Tier 0: Regex router | < 1 ms | **1.94s - 2.06s** |
+| `open notes` | Tier 0: Regex router | < 1 ms | **2.18s - 3.30s** |
+| `what time is it` | Tier 0: Regex router | < 1 ms | **2.59s - 2.68s** |
+| `could you please open notes` | Tier 1: `qwen2.5:1.5b` fallback | **0.32s** | **2.53s** |
+| `could you please open notes` | Tier 1: `qwen3-vl:8b` vision fallback | **1.38s** | **3.78s** |
 
-Key takeaway: With `"think": false` enabled on local Ollama models, Tier 1 routing decision latency dropped from 0.40s down to **0.32s** (~20% speedup), eliminating unnecessary reasoning traces during real-time voice handling.
+Key takeaway:
+- **Fast Tier 0 reflexes**: Standard everyday commands execute in < 1 ms router time and complete within ~2 seconds total roundtrip including speech response.
+- **Micro-model fallback (`qwen2.5:1.5b`)**: Evaluates natural language variants in 0.32s with 986 MB RAM footprint.
+- **Vision-Language fallback (`qwen3-vl:8b`)**: Evaluates natural language variants in 1.38s while providing full on-device screen understanding ("what's on my screen") and visual element grounding. Assistant prefill bypasses the default reasoning trace, preventing 8-second thinking delays while maintaining structured JSON accuracy.
