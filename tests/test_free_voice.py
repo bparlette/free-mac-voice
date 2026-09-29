@@ -444,6 +444,28 @@ class TestOllama(Base):
             self.assertIsNone(fv.ollama_route("open notes please"))
         self.assertFalse(fv._ollama_ok)
 
+    def test_thinking_model_uses_prefill_and_reconstructs_json(self):
+        # When Ollama returns the suffix following the prefill {"action": "
+        fake, captured = self._fake_urlopen('open_app", "params": {"app": "Notes"}, "confidence": 0.95}')
+        with mock.patch.object(fv, "OLLAMA_MODEL", "qwen3-vl:8b"), \
+             mock.patch("urllib.request.urlopen", side_effect=fake):
+            res = fv.ollama_route("could you please open notes")
+        self.assertIsNotNone(res)
+        action, params, conf = res
+        self.assertEqual(action, "open_app")
+        self.assertEqual(params, {"app": "Notes"})
+        self.assertEqual(conf, 0.95)
+        # Check that assistant prefill was sent
+        msgs = captured["body"]["messages"]
+        self.assertEqual(msgs[-1]["role"], "assistant")
+        self.assertEqual(msgs[-1]["content"], '{"action": "')
+
+    def test_dispatch_tier1_supports_alternate_app_key(self):
+        opened = []
+        with mock.patch.object(fv, "act_open_app", side_effect=opened.append):
+            fv.dispatch_tier1("open_app", {"app_name": "Calculator"})
+        self.assertEqual(opened, ["Calculator"])
+
 
 # ------------------------------------------------------- Tier 2 / Gemini
 class TestGemini(Base):

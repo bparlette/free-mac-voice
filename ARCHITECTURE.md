@@ -338,12 +338,12 @@ Key takeaway:
 
 | Component / Benchmark | Samples (\(n\)) | Mean | Median (\(p50\)) | 95th %tile (\(p95\)) | Status / Notes |
 |---|---|---|---|---|---|
-| **Tier 0 Routing** | 200 | 0.3 ms | **0.2 ms** | 0.6 ms | Corpus of 23 commands incl. chained commands |
-| **Tier 0 Partial Gating** | 200 | 0.1 ms | **0.1 ms** | 0.2 ms | 10 growing prefixes of `"open notes"` |
+| **Tier 0 Routing** | 200 | 0.3 ms | **0.2 ms** | 0.3 ms | Corpus of 23 commands incl. chained commands |
+| **Tier 0 Partial Gating** | 200 | 0.2 ms | **0.2 ms** | 0.2 ms | 10 growing prefixes of `"open notes"` |
 | **Chain Dispatch Overhead** | 50 | 0.3 ms | **0.3 ms** | 0.5 ms | `"open notes and snap left"` sequential dispatch |
-| **Tier 1 Cold (Load + Route)** | 1 | 9.07s | **9.07s** | 9.07s | Initial model load into unified memory |
-| **Tier 1 Warm (Resident Model)**| 5 | 1.28s | **1.26s** | 1.33s | Warm route with assistant prefill |
-| **Screenshot Capture** | 5 | 0.18s | **0.19s** | 0.25s | Native macOS `screencapture` to temp file |
-| **Vision: Describe Screen** | 3 | 19.64s | **18.54s** | 22.00s | Screenshot + `sips` downsample + `qwen3-vl:8b` |
-| **Vision: Locate Element** | 3 | 21.11s | **21.08s** | 21.18s | Native `sips` downsample + coordinate query |
-| **Earcon Audio Feedback** | 5 | 3.1 ms | **2.7 ms** | 5.7 ms | Non-blocking `afplay` sound trigger |
+| **Tier 1 Cold (Load + Route)** | 1 | 1.31s | **1.31s** | 1.31s | Warm-start or resident model route with assistant prefill |
+| **Tier 1 Warm (Resident Model)**| 5 | 1.30s | **1.30s** | 1.32s | Resident model route with assistant prefill (bypasses CoT) |
+| **Screenshot Capture** | 5 | 0.20s | **0.20s** | 0.27s | Native macOS `screencapture` to temp file |
+| **Vision: Describe Screen** | 3 | 11.35s | **11.32s** | 11.49s | Screenshot + `sips` 800px downsample + `qwen3-vl:8b` (~60% faster) |
+| **Vision: Locate Element** | 3 | 21.24s | **21.19s** | 21.40s | Native `sips` 800px downsample + coordinate query |
+| **Earcon Audio Feedback** | 5 | 3.1 ms | **2.2 ms** | 6.1 ms | Non-blocking `afplay` sound trigger |

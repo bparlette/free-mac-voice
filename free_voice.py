@@ -1955,16 +1955,23 @@ def ollama_route(text: str):
         return None
     if _ollama_ok is False:
         return None
+    is_thinking_model = any(k in OLLAMA_MODEL.lower() for k in ("qwen3", "r1", "deepseek"))
+    messages = [
+        {"role": "system", "content": _TIER1_SYSTEM},
+        {"role": "user", "content": text},
+    ]
+    if is_thinking_model:
+        # Pre-fill assistant response to skip reasoning tokens in thinking models
+        # and enforce sub-1.5s immediate JSON routing responses.
+        messages.append({"role": "assistant", "content": '{"action": "'})
+
     body = {
         "model": OLLAMA_MODEL,
         "format": "json",
         "keep_alive": "60m",  # stay resident: no cold starts
         "think": False,  # voice needs the answer, not a reasoning trace
         "options": {"temperature": 0, "num_predict": 64},
-        "messages": [
-            {"role": "system", "content": _TIER1_SYSTEM},
-            {"role": "user", "content": text},
-        ],
+        "messages": messages,
         "stream": False,
     }
     t0 = time.time()
@@ -1983,10 +1990,13 @@ def ollama_route(text: str):
         log(f"Tier 1 unavailable (Ollama not reachable at {OLLAMA_HOST}): {e}")
         return None
     dt = time.time() - t0
+    raw_content = data.get("message", {}).get("content", "").strip()
+    if is_thinking_model and not raw_content.startswith("{"):
+        raw_content = '{"action": "' + raw_content
     try:
-        parsed = json.loads(data["message"]["content"])
+        parsed = json.loads(raw_content)
     except Exception:  # noqa: BLE001
-        log("Tier 1 returned unparseable JSON")
+        log(f"Tier 1 returned unparseable JSON: {raw_content[:80]}")
         return None
     action = str(parsed.get("action", "none"))
     try:
@@ -2022,13 +2032,14 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     """Execute a Tier 1 JSON decision using the same act_* primitives.
     Every enum/param is validated — JSON mode guarantees shape, NOT sense."""
     p = params.get
+    app_name = str(p("app") or p("app_name") or p("name") or "")
     if action == "open_app":
-        act_open_app(str(p("app", "")))
+        act_open_app(app_name)
     elif action == "quit_app":
-        if _tier1_confirm(f"quitting {p('app', '')}", allow_destructive):
-            act_quit_app(str(p("app", "")))
+        if _tier1_confirm(f"quitting {app_name}", allow_destructive):
+            act_quit_app(app_name)
     elif action == "switch_app":
-        act_switch_app(str(p("app", "")))
+        act_switch_app(app_name)
     elif action == "close_window":
         act_keystroke("w", "command down"); say("Closed")
     elif action == "close_all_windows":
@@ -2057,9 +2068,9 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     elif action == "move_next_display":
         act_move_next_display()
     elif action == "minimize":
-        act_minimize(str(p("app", "")))
+        act_minimize(app_name)
     elif action == "hide":
-        act_hide(str(p("app", "")))
+        act_hide(app_name)
     elif action == "snap_left":
         act_snap_window("left")
     elif action == "snap_right":

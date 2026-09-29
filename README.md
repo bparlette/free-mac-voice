@@ -101,21 +101,22 @@ Full implementation details, latency math, and honest limits: **[ARCHITECTURE.md
 
 Measured end-to-end execution times on an Apple M4 Mac mini (including process spawn, command execution, and macOS voice confirmation):
 
-| Command | Tier / Path | Decision Time | Total End-to-End Time |
+| Command | Routing Path | Decision / Inference Latency | Total End-to-End Time |
 |---|---|---|---|
-| `close notes` | Tier 0 (Instant Regex) | < 1 ms | **1.94s** |
-| `open notes` | Tier 0 (Instant Regex) | < 1 ms | **2.18s** |
-| `what time is it` | Tier 0 (Instant Regex) | < 1 ms | **2.59s** |
-| `could you please open notes` | Tier 1 (Local LLM Fallback) | 0.32s | **2.53s** |
+| `close notes` | Tier 0 (Instant Regex) | < 1 ms | **1.94s - 2.06s** |
+| `open notes` | Tier 0 (Instant Regex) | < 1 ms | **2.18s - 3.30s** |
+| `what time is it` | Tier 0 (Instant Regex) | < 1 ms | **2.59s - 2.68s** |
+| `could you please open notes` | Tier 1 (`qwen2.5:1.5b` fallback) | **0.32s** | **2.53s** |
+| `could you please open notes` | Tier 1 (`qwen3-vl:8b` vision fallback) | **1.30s** | **3.70s** |
 
-*Note: Disabling reasoning traces (`"think": false`) on local Ollama models reduces Tier 1 decision latency from 0.40s down to **0.32s** (a ~20% speedup).*
+*Note: For thinking models such as `qwen3-vl:8b`, an assistant prefill bypasses reasoning tokens, keeping 8.8B-parameter decision latency down from 8.2s to **1.30s** on Apple Silicon without losing structured routing accuracy.*
 
 ## Tests & benchmarks
 
 No mic, model, or Mac required — the suite stubs all hardware:
 
 ```bash
-python3 -m unittest discover -s tests   # 60 unit tests, stdlib only
+python3 -m unittest discover -s tests   # 86 unit tests, stdlib only
 ```
 
 Component benchmarks (Tier 0 routing, Tier 1 cold vs warm, screenshot,

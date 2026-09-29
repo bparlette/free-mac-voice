@@ -108,8 +108,10 @@ bench_chain_dispatch.check = lambda: None
 def bench_tier1_cold():
     fv._ollama_ok = None
     r = fv.ollama_route("could you please open notes")
-    if r is None and fv._ollama_ok is False:
-        raise RuntimeError("ollama_unreachable")
+    if r is None:
+        if fv._ollama_ok is False:
+            raise RuntimeError("ollama_unreachable")
+        raise RuntimeError("tier1_route_failed")
 def _check_ollama():
     try:
         subprocess.run(["curl", "-sf", "http://localhost:11434/api/tags"],
@@ -122,8 +124,10 @@ bench_tier1_cold.check = _check_ollama
 
 def bench_tier1_warm():
     r = fv.ollama_route("could you please open notes")
-    if r is None and fv._ollama_ok is False:
-        raise RuntimeError("ollama_unreachable")
+    if r is None:
+        if fv._ollama_ok is False:
+            raise RuntimeError("ollama_unreachable")
+        raise RuntimeError("tier1_route_failed")
 bench_tier1_warm.check = _check_ollama
 
 
