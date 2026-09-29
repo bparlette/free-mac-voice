@@ -1432,21 +1432,28 @@ def vision_locate(name: str) -> tuple[int, int] | None:
 
     No clicking — shared by vision_click and mouse-to-target. Two passes:
     a full-screen guess, then a 480-px crop around the guess re-asked for
-    finer coordinates.
+    finer coordinates. The first pass also returns the element's approximate
+    size; when the element is at least as wide as the refinement crop, the
+    first-pass center already lands inside it, so the second inference
+    (~5-8s) is skipped. A missing size (older two-integer replies) refines,
+    conservatively.
     """
     path = capture_screenshot()
     if not path:
         return None
     loc = vision_ask(
         f"In this macOS screenshot, find the clickable UI element best "
-        f"matching '{name}'. Reply with ONLY two integers X Y — the element's "
-        f"center as 0-1000 fractions of screen width and height "
-        f"(example: 512 340). If it is not clearly visible, reply exactly: NONE",
+        f"matching '{name}'. Reply with ONLY three integers X Y S — the "
+        f"element's center as 0-1000 fractions of screen width and height "
+        f"(example: 512 340), and S, the element's approximate width as a "
+        f"0-1000 fraction of screen width (example: 40 for a small button, "
+        f"300 for a large window). If it is not clearly visible, reply "
+        f"exactly: NONE",
         path,
     )
     if not loc:
         return None
-    m = re.match(r"\s*(\d{1,4})\s+(\d{1,4})\s*", loc)
+    m = re.match(r"\s*(\d{1,4})\s+(\d{1,4})(?:\s+(\d{1,4}))?\s*", loc)
     if not m:
         log(f"vision locate: unparseable location {loc!r}")
         return None
@@ -1461,6 +1468,11 @@ def vision_locate(name: str) -> tuple[int, int] | None:
         sw, sh = 1920, 1080
     x = min(max(int(fx / 1000 * sw), 0), sw - 1)
     y = min(max(int(fy / 1000 * sh), 0), sh - 1)
+    size_px = int(m.group(3)) / 1000 * sw if m.group(3) else 0
+    if size_px >= 480:  # fills the refinement crop: center can't miss
+        log(f"vision locate: large target (~{int(size_px)}px), "
+            f"skipping refinement for {name!r}")
+        return x, y
     return _refine_click(path, name, x, y, sw, sh)
 
 
