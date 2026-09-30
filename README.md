@@ -48,9 +48,33 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | “move mouse up / left 200” | Nudges the cursor (default 100 px) |
 | “scroll up / scroll down 3” | Scrolls the window under the cursor |
 | “search best pizza near me” | Google search |
-| “what time is it” | Speaks the time |
-| “close” / “close all windows” | Closes active tab/window or all windows |
-| “lock” | Locks the screen |
+| “next app” / “previous app” | Switches applications (⌘Tab / ⇧⌘Tab) |
+| “next tab” / “previous tab” | Switches browser/terminal tabs (^Tab / ^⇧Tab) |
+| “type URL” / “address bar” | Focuses browser address bar (⌘L) |
+| “search Mac” | Opens Spotlight search (⌘Space) |
+| “show all windows” | Mission Control overview (F3) |
+| “show desktop” | Reveals desktop (F11) |
+| “next window” | Cycles windows of current app (⌘`) |
+| “hide everything else” | Hides all other apps (⌥⌘H) |
+| “kill safari” | Force quits an app (asks first) |
+| “private window” | Opens private / incognito window (⇧⌘N) |
+| “bookmark this” | Bookmarks active page (⌘D) |
+| “paste plain text” | Pastes without formatting (⌥⇧⌘V) |
+| “find next” | Jumps to next match in document/page (⌘G) |
+| “save as” | Opens Save As dialog (⇧⌘S) |
+| “print this” | Opens system print dialog (⌘P) |
+| “record screen” | Opens macOS screenshot & recording toolbar (⇧⌘5) |
+| “go to desktop / documents / downloads / apps” | Finder quick navigation folders |
+| “new folder” | Creates new folder in active window (⇧⌘N) |
+| “rename to project notes” | Renames selected file/item |
+| “duplicate this” | Duplicates selected file (⌘D) |
+| “get file info” | Opens Get Info inspector (⌘I) |
+| “preview this” | Quick Look preview (Space) |
+| “trash this” | Moves selected file to Trash (⌘⌫) |
+| “list / icon / column / gallery view” | Switches Finder view modes (⌘1–⌘4) |
+| “close” / “close this” / “close all windows” | Closes active tab/window or all windows |
+| “lock” / “lock it down” | Locks the screen |
+| “dim screen” / “brightness up” | Controls screen brightness |
 
 Say **“help”** anytime to hear available commands. Or double-click **Voice Control.command** — no terminal needed. Includes instant audio earcons (subtle audio chime on keypress, release click on completion).
 

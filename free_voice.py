@@ -739,6 +739,28 @@ def act_quit_app(name: str) -> None:
     say(f"Quitting {app}")
 
 
+def act_force_quit_app(name: str) -> None:
+    app = resolve_app(name)
+    if not app:
+        say(f"I couldn't find an app called {name}")
+        return
+    if app == "Finder":
+        say("I won't force quit the Finder")
+        return
+    shell(["killall", app])
+    say(f"Force quit {app}")
+
+
+def act_rename_to(new_name: str) -> None:
+    """Rename selected item in Finder/macOS: Return, type name, Return."""
+    act_keystroke("\r")
+    time.sleep(0.1)
+    act_type_text(new_name)
+    time.sleep(0.1)
+    act_keystroke("\r")
+    say(f"Renamed to {new_name}")
+
+
 def act_minimize(name: str = "") -> None:
     if name:
         app = resolve_app(name)
@@ -2062,10 +2084,11 @@ def act_ascii_art() -> None:
 
 # --- SVG drawing -------------------------------------------------------
 
-def _llm_text(prompt: str, max_tokens: int = 800) -> str | None:
+def _llm_text(prompt: str, max_tokens: int = 2048) -> str | None:
     """Raw text from the local model, else Gemini if configured. None if both fail."""
-    system = ("Reply with ONLY the requested code. "
-              "No explanations, no markdown fences.")
+    system = ("You are an SVG generator. Reply with ONLY valid raw SVG code "
+              "starting with <svg and ending with </svg>. "
+              "No explanations, no conversational text, no markdown fences.")
     # Local model first (100% on-device, private, offline)
     try:
         body = {
@@ -2078,7 +2101,7 @@ def _llm_text(prompt: str, max_tokens: int = 800) -> str | None:
         req = urllib.request.Request(
             OLLAMA_HOST + "/api/chat", data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=90) as r:
+        with urllib.request.urlopen(req, timeout=120) as r:
             data = json.load(r)
         msg = data.get("message", {})
         content = msg.get("content", "").strip()
@@ -2116,9 +2139,9 @@ def act_draw_svg(subject: str) -> None:
     subject = subject.strip()
     say(f"Drawing {subject}")
     svg = _llm_text(
-        f"Create a simple, cute, flat cartoon SVG drawing of {subject}. "
-        f"Use a 400x400 viewBox, bright colors, simple shapes. Reply with "
-        f"ONLY the SVG code, starting with <svg and ending with </svg>.")
+        f"Generate a clean, flat SVG drawing of {subject}. "
+        f"Use a 400x400 viewBox with simple shapes and colors. "
+        f"Output ONLY raw <svg> code immediately starting with <svg and ending with </svg>.")
     if not svg:
         say("I couldn't draw that right now")
         return
@@ -2247,15 +2270,24 @@ _p(r"^(start dictating|dictate|take notes)( until i say stop)?$", "dictate_start
 _p(r"^(new|open)( a)? tab$", "new_tab", True)
 _p(r"^close( the)? tab$", "close_tab", True)
 _p(r"^(reopen|undo close)( the)? tab$", "reopen_tab", True)
+_p(r"^(next tab|tab forward)$", "next_tab", True)
+_p(r"^(previous tab|prev tab|tab back)$", "prev_tab", True)
 _p(r"^open (.+) settings$", "settings", True)
 _p(r"^open trash$", "open_trash", True)
 _p(r"^(open|launch|start) the (.+?) (app|application)$", "open_app", True)
 _p(r"^(open|launch|start) (.+)$", "open_app", True)
+_p(r"^(next app|app forward)$", "next_app", True)
+_p(r"^(previous app|prev app|app back)$", "prev_app", True)
 _p(r"^(switch to|focus|bring up) (.+)$", "switch_app", True)
-# --- windows / tabs / quit
+# --- windows / tabs / quit / hide
 _p(r"^close all windows$", "close_all_windows", True)
-_p(r"^close( the)? window$", "close_window", True)
+_p(r"^(close( the)? window|close this)$", "close_window", True)
 _p(r"^close$", "close_window", True)
+_p(r"^next window$", "next_window", True)
+_p(r"^show all windows$", "show_all_windows", True)
+_p(r"^show desktop$", "show_desktop", True)
+_p(r"^hide everything else$", "hide_others", True)
+_p(r"^kill (.+)$", "kill_app")
 _p(r"^(quit|close)( the)? (app |application )?(.+)$", "quit_app", True)
 _p(r"^(minimize|minimise)( the)? (.+?)( window| app)?$", "minimize_app", True)
 _p(r"^(minimize|minimise)( the window)?$", "minimize", True)
@@ -2268,7 +2300,11 @@ _p(r"^(go )?back$", "nav_back", True)
 _p(r"^(go )?forward$", "nav_forward", True)
 _p(r"^(page down|scroll page down)$", "page_down", True)
 _p(r"^(page up|scroll page up)$", "page_up", True)
+_p(r"^(find next|next match)$", "find_next", True)
 _p(r"^(find|find on page|search page)$", "find_in_page", True)
+_p(r"^(type url|address bar)$", "address_bar", True)
+_p(r"^(private window|new incognito window|incognito window)$", "private_window", True)
+_p(r"^(bookmark this|add bookmark)$", "bookmark_this", True)
 _p(r"^clear( the)? terminal$", "clear_terminal", True)
 # --- spaces & display management
 _p(r"^next space$", "next_space", True)
@@ -2282,7 +2318,7 @@ _p(r"^(snap|tile) right$", "snap_right", True)
 _p(r"^(maximize|zoom)( the)? window$", "maximize_window", True)
 _p(r"^(maximize|zoom)$", "maximize_window", True)
 _p(r"^center( the)? window$", "center_window", True)
-# --- typing & keys (specific macros BEFORE generic type)
+# --- typing, clipboard & document keys (specific macros BEFORE generic type)
 _p(r"^(read|speak|what's on)( my| the)? clipboard$", "read_clipboard", True)
 _p(r"^type( today's| the)? date$", "type_date", True)
 _p(r"^type( the| current)? time$", "type_time", True)
@@ -2291,12 +2327,30 @@ _p(r"^type (.+)$", "type_text")
 _p(r"^dictate (.+)$", "type_text")
 _p(r"^press (enter|return|escape|tab|space|delete)$", "press_key", True)
 _p(r"^copy$", "copy_", True)
+_p(r"^(paste plain text|paste match style)$", "paste_plain", True)
 _p(r"^paste$", "paste_", True)
 _p(r"^cut$", "cut_", True)
 _p(r"^undo$", "undo_", True)
 _p(r"^redo$", "redo_", True)
+_p(r"^(save as|save copy as)$", "save_as", True)
 _p(r"^save$", "save_", True)
+_p(r"^(print this|print)$", "print_this", True)
 _p(r"^select all$", "select_all", True)
+# --- Finder navigation & file management
+_p(r"^go to desktop$", "finder_desktop", True)
+_p(r"^go to documents$", "finder_documents", True)
+_p(r"^go to downloads$", "finder_downloads", True)
+_p(r"^go to apps$", "finder_apps", True)
+_p(r"^new folder$", "new_folder", True)
+_p(r"^rename to (.+)$", "rename_to")
+_p(r"^(duplicate this|duplicate)$", "duplicate_this", True)
+_p(r"^(get file info|get info)$", "get_file_info", True)
+_p(r"^(preview this|preview)$", "preview_this", True)
+_p(r"^(trash this|delete this|move to trash)$", "trash_this", True)
+_p(r"^list view$", "list_view", True)
+_p(r"^icon view$", "icon_view", True)
+_p(r"^column view$", "column_view", True)
+_p(r"^gallery view$", "gallery_view", True)
 # --- UI clicks via accessibility tree (free-text names: final-only)
 _p(r"^(click|press|tap|hit)(?: on)?( the)? (.+?) button$", "click_button")
 _p(r"^(?:click|press|tap|hit)(?: on)? (the )?(.+?) link$", "click_link")
@@ -2313,6 +2367,7 @@ _p(r"^(what('?s| is) in this window|describe this window)$", "describe_window_vi
 _p(r"^(what color|describe (the |this )?(image|diagram|video|photo))", "describe_window_visual")
 _p(r"^(are you (working|there|ok)|status|health check)$", "status", True)
 # --- web (free text: final-only)
+_p(r"^search mac$", "search_mac", True)
 _p(r"^(search|google|look up)( the web)? for (.+)$", "web_search")
 _p(r"^(search|google|look up) (.+)$", "web_search")
 _p(r"^(go to|visit|open website) ([a-z0-9][a-z0-9.\-]*\.[a-z]{2,}.*)$", "open_url")
@@ -2323,14 +2378,14 @@ _p(r"^set (the )?volume to (\d+)( percent)?$", "vol_set")
 _p(r"^louder$", "vol_up", True)
 _p(r"^quieter$", "vol_down", True)
 _p(r"^(mute|unmute|mute the sound|unmute the sound)$", "mute_toggle", True)
-_p(r"^brightness up$", "bright_up", True)
-_p(r"^brightness down$", "bright_down", True)
+_p(r"^(brightness up|brighten screen)$", "bright_up", True)
+_p(r"^(brightness down|dim screen)$", "bright_down", True)
 _p(r"^set (the )?brightness to (\d+)( percent)?$", "bright_set")
 _p(r"^(play|pause|play or pause|play pause|resume)$", "media_playpause", True)
 _p(r"^next( (track|song))?$", "media_next", True)
 _p(r"^previous( (track|song))?$", "media_prev", True)
 # --- system power (destructive ones need confirmation: final-only)
-_p(r"^lock( (the )?(computer|mac|screen))?$", "lock", True)
+_p(r"^(lock( (the )?(computer|mac|screen))?|lock it down)$", "lock", True)
 _p(r"^(sleep|put (the )?(mac|computer) to sleep)$", "sleep", True)
 _p(r"^(shut down|shutdown|power off)( the (mac|computer))?$", "shutdown")
 _p(r"^restart( the (mac|computer))?$", "restart")
@@ -2341,6 +2396,7 @@ _p(r"^light mode$", "dark_off", True)
 _p(r"^(turn on|enable) dark mode$", "dark_on", True)
 _p(r"^(turn off|disable) dark mode$", "dark_off", True)
 _p(r"^(turn|switch) wi-?fi (on|off)$", "wifi", True)
+_p(r"^record screen$", "record_screen", True)
 _p(r"^(take a )?screenshot$", "shot_full", True)
 _p(r"^(take a )?screenshot of (the )?window$", "shot_window", True)
 _p(r"^screenshot (a )?selection$", "shot_selection", True)
@@ -2466,12 +2522,34 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         # confirmation gate below, not here.
         elif name == "close_window":
             act_keystroke("w", "command down"); say("Closed")
+        elif name == "next_window":
+            act_keystroke("`", "command down"); say("Next window")
+        elif name == "show_all_windows":
+            act_key_code(99); say("All windows")  # F3 Mission Control
+        elif name == "show_desktop":
+            act_key_code(103); say("Desktop")  # F11 Show Desktop
+        elif name == "hide_others":
+            act_keystroke("h", "option down, command down"); say("Hiding others")
         elif name == "new_tab":
             act_keystroke("t", "command down"); say("New tab")
         elif name == "close_tab":
             act_keystroke("w", "command down"); say("Closed tab")
         elif name == "reopen_tab":
             act_keystroke("t", "shift down, command down"); say("Reopened tab")
+        elif name == "next_tab":
+            act_key_code(48, "control down"); say("Next tab")  # ^Tab
+        elif name == "prev_tab":
+            act_key_code(48, "control down, shift down"); say("Previous tab")  # ^Shift-Tab
+        elif name == "next_app":
+            act_key_code(48, "command down"); say("Next app")  # Cmd-Tab
+        elif name == "prev_app":
+            act_key_code(48, "command down, shift down"); say("Previous app")  # Cmd-Shift-Tab
+        elif name == "address_bar":
+            act_keystroke("l", "command down"); say("Address bar")
+        elif name == "private_window":
+            act_keystroke("n", "shift down, command down"); say("Private window")
+        elif name == "bookmark_this":
+            act_keystroke("d", "command down"); say("Bookmarked")
         elif name == "refresh_page":
             act_keystroke("r", "command down"); say("Refreshed")
         elif name == "nav_back":
@@ -2482,8 +2560,12 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_key_code(121); say("Scrolled down")
         elif name in ("scroll_up", "page_up"):
             act_key_code(116); say("Scrolled up")
+        elif name == "find_next":
+            act_keystroke("g", "command down"); say("Find next")
         elif name == "find_in_page":
             act_keystroke("f", "command down"); say("Find")
+        elif name == "search_mac":
+            act_key_code(49, "command down"); say("Spotlight")
         elif name == "clear_terminal":
             act_keystroke("k", "command down"); say("Cleared")
         elif name == "next_space":
@@ -2526,6 +2608,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_keystroke(keymap[m.group(1).lower()] if m.group(1).lower() != " " else " ")
         elif name == "copy_":
             act_keystroke("c", "command down")
+        elif name == "paste_plain":
+            act_keystroke("v", "option down, shift down, command down"); say("Pasted plain text")
         elif name == "paste_":
             act_keystroke("v", "command down")
         elif name == "cut_":
@@ -2534,10 +2618,44 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_keystroke("z", "command down")
         elif name == "redo_":
             act_keystroke("z", "command down, shift down")
+        elif name == "save_as":
+            act_keystroke("s", "shift down, command down"); say("Save as")
         elif name == "save_":
             act_keystroke("s", "command down"); say("Saved")
+        elif name == "print_this":
+            act_keystroke("p", "command down"); say("Print")
         elif name == "select_all":
             act_keystroke("a", "command down")
+        elif name == "finder_desktop":
+            act_keystroke("d", "shift down, command down"); say("Desktop")
+        elif name == "finder_documents":
+            act_keystroke("o", "shift down, command down"); say("Documents")
+        elif name == "finder_downloads":
+            act_keystroke("l", "option down, command down"); say("Downloads")
+        elif name == "finder_apps":
+            act_keystroke("a", "shift down, command down"); say("Applications")
+        elif name == "new_folder":
+            act_keystroke("n", "shift down, command down"); say("New folder")
+        elif name == "rename_to":
+            act_rename_to(m.group(1))
+        elif name == "duplicate_this":
+            act_keystroke("d", "command down"); say("Duplicated")
+        elif name == "get_file_info":
+            act_keystroke("i", "command down"); say("File info")
+        elif name == "preview_this":
+            act_key_code(49); say("Preview")
+        elif name == "trash_this":
+            act_key_code(51, "command down"); say("Moved to trash")
+        elif name == "list_view":
+            act_keystroke("2", "command down"); say("List view")
+        elif name == "icon_view":
+            act_keystroke("1", "command down"); say("Icon view")
+        elif name == "column_view":
+            act_keystroke("3", "command down"); say("Column view")
+        elif name == "gallery_view":
+            act_keystroke("4", "command down"); say("Gallery view")
+        elif name == "record_screen":
+            act_keystroke("5", "shift down, command down"); say("Record screen")
         elif name == "click_button":
             act_click_button(m.group(3))
         elif name == "click_link":
@@ -2588,11 +2706,13 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         elif name == "sleep":
             act_sleep()
         elif name in ("shutdown", "restart", "logout", "empty_trash",
-                      "quit_app", "close_all_windows"):
+                      "quit_app", "kill_app", "close_all_windows"):
             # Destructive actions ask first (spoken "yes"), unless --yes.
             # In chained commands each destructive part is confirmed on its own.
             if name == "quit_app":
                 desc = f"quitting {m.group(m.lastindex)}"
+            elif name == "kill_app":
+                desc = f"force quitting {m.group(1)}"
             else:
                 desc = {"shutdown": "shutting down", "restart": "restarting",
                         "logout": "logging out",
@@ -2607,6 +2727,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
                 return
             if name == "quit_app":
                 act_quit_app(m.group(m.lastindex))
+            elif name == "kill_app":
+                act_force_quit_app(m.group(1))
             elif name == "close_all_windows":
                 act_close_all_windows()
             else:

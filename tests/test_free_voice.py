@@ -99,6 +99,82 @@ class TestTier0Routing(Base):
         # ...but the finished command routes fine
         self.assertIsNotNone(fv.route("set volume to 30", partial=False))
 
+    def test_phase1_routing(self):
+        self.assertEqual(self.route_name("next app")[0], "next_app")
+        self.assertEqual(self.route_name("previous app")[0], "prev_app")
+        self.assertEqual(self.route_name("next tab")[0], "next_tab")
+        self.assertEqual(self.route_name("previous tab")[0], "prev_tab")
+        self.assertEqual(self.route_name("type url")[0], "address_bar")
+        self.assertEqual(self.route_name("address bar")[0], "address_bar")
+        self.assertEqual(self.route_name("search mac")[0], "search_mac")
+        self.assertEqual(self.route_name("show all windows")[0], "show_all_windows")
+        self.assertEqual(self.route_name("show desktop")[0], "show_desktop")
+        self.assertEqual(self.route_name("next window")[0], "next_window")
+        self.assertEqual(self.route_name("hide everything else")[0], "hide_others")
+        self.assertEqual(self.route_name("private window")[0], "private_window")
+        self.assertEqual(self.route_name("bookmark this")[0], "bookmark_this")
+        self.assertEqual(self.route_name("paste plain text")[0], "paste_plain")
+        self.assertEqual(self.route_name("find next")[0], "find_next")
+        self.assertEqual(self.route_name("save as")[0], "save_as")
+        self.assertEqual(self.route_name("print this")[0], "print_this")
+        self.assertEqual(self.route_name("record screen")[0], "record_screen")
+
+    def test_phase1_aliases(self):
+        self.assertEqual(self.route_name("lock it down")[0], "lock")
+        self.assertEqual(self.route_name("dim screen")[0], "bright_down")
+        self.assertEqual(self.route_name("close this")[0], "close_window")
+
+    def test_phase1_kill_destructive_gate(self):
+        name, m = self.route_name("kill safari")
+        self.assertEqual(name, "kill_app")
+        self.assertEqual(m.group(1), "safari")
+        # Ensure kill_app requires confirmation
+        called = []
+        with mock.patch.object(fv, "act_force_quit_app", lambda a: called.append(a)):
+            fv.execute_match("kill_app", m, allow_destructive=False, confirm_audio_fn=None)
+            self.assertEqual(called, [])
+            self.assertTrue(any("Not force quitting safari without confirmation" in s for s in self.said))
+            # With confirmation
+            fv.execute_match("kill_app", m, allow_destructive=True)
+            self.assertEqual(called, ["safari"])
+
+    def test_phase2_finder_navigation(self):
+        self.assertEqual(self.route_name("go to desktop")[0], "finder_desktop")
+        self.assertEqual(self.route_name("go to documents")[0], "finder_documents")
+        self.assertEqual(self.route_name("go to downloads")[0], "finder_downloads")
+        self.assertEqual(self.route_name("go to apps")[0], "finder_apps")
+        self.assertEqual(self.route_name("new folder")[0], "new_folder")
+        name, m = self.route_name("rename to project notes")
+        self.assertEqual(name, "rename_to")
+        self.assertEqual(m.group(1), "project notes")
+        self.assertEqual(self.route_name("duplicate this")[0], "duplicate_this")
+        self.assertEqual(self.route_name("get file info")[0], "get_file_info")
+        self.assertEqual(self.route_name("preview this")[0], "preview_this")
+        self.assertEqual(self.route_name("trash this")[0], "trash_this")
+        self.assertEqual(self.route_name("list view")[0], "list_view")
+        self.assertEqual(self.route_name("icon view")[0], "icon_view")
+        self.assertEqual(self.route_name("column view")[0], "column_view")
+        self.assertEqual(self.route_name("gallery view")[0], "gallery_view")
+
+    def test_partial_gating_and_overlaps(self):
+        # close vs close tab vs close all windows vs close this
+        self.assertEqual(fv.route("close", partial=True)[0], "close_window")
+        self.assertEqual(fv.route("close this", partial=True)[0], "close_window")
+        self.assertEqual(fv.route("close tab", partial=True)[0], "close_tab")
+        self.assertEqual(fv.route("close all windows", partial=True)[0], "close_all_windows")
+
+        # paste vs paste plain text
+        self.assertEqual(fv.route("paste", partial=True)[0], "paste_")
+        self.assertEqual(fv.route("paste plain text", partial=True)[0], "paste_plain")
+
+        # rename to is free text: NEVER partial-safe
+        self.assertIsNone(fv.route("rename to draft", partial=True))
+        self.assertIsNotNone(fv.route("rename to draft", partial=False))
+
+        # kill is destructive: free-text app name, NOT partial-safe
+        self.assertIsNone(fv.route("kill safari", partial=True))
+        self.assertIsNotNone(fv.route("kill safari", partial=False))
+
 
 # ------------------------------------------------------- compound chaining (new)
 class TestChaining(Base):
