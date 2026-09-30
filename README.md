@@ -260,9 +260,13 @@ Whenever the voice engine starts or reloads, it automatically discovers and bind
 - **Instant Fallback:** If offline, running in a minimal container, or if model files are uninitialized, it falls back seamlessly to macOS native `say` without interruption.
 
 #### 🎧 Audio Previews (Listen to Local Synthesis):
-- [🔊 Heart Sample (Warm American Female)](docs/audio_samples/heart_sample.wav)
+- [🔊 Heart Sample (Warm American Female — Default)](docs/audio_samples/heart_sample.wav)
 - [🔊 Adam Sample (Deep American Male)](docs/audio_samples/adam_sample.wav)
+- [🔊 Sarah Sample (Clear American Female)](docs/audio_samples/sarah_sample.wav)
+- [🔊 Nicole Sample (Friendly American Female)](docs/audio_samples/nicole_sample.wav)
 - [🔊 George Sample (Refined British Male)](docs/audio_samples/george_sample.wav)
+- [🔊 Fenrir Sample (Cinematic American Male)](docs/audio_samples/fenrir_sample.wav)
+- [🔊 Emma Sample (Crisp British Female)](docs/audio_samples/emma_sample.wav)
 
 ---
 
