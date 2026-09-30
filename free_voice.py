@@ -2063,9 +2063,33 @@ def act_ascii_art() -> None:
 # --- SVG drawing -------------------------------------------------------
 
 def _llm_text(prompt: str, max_tokens: int = 800) -> str | None:
-    """Raw text from Gemini, else the local model. None if both fail."""
+    """Raw text from the local model, else Gemini if configured. None if both fail."""
     system = ("Reply with ONLY the requested code. "
               "No explanations, no markdown fences.")
+    # Local model first (100% on-device, private, offline)
+    try:
+        body = {
+            "model": OLLAMA_MODEL, "keep_alive": "60m", "think": False,
+            "options": {"temperature": 0.7, "num_predict": max_tokens},
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}],
+            "stream": False,
+        }
+        req = urllib.request.Request(
+            OLLAMA_HOST + "/api/chat", data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=90) as r:
+            data = json.load(r)
+        msg = data.get("message", {})
+        content = msg.get("content", "").strip()
+        if content:
+            return content
+        thinking = msg.get("thinking", "").strip()
+        if thinking and ("<svg" in thinking or "{" in thinking):
+            return thinking
+    except Exception as e:  # noqa: BLE001
+        log(f"draw: local model failed ({e}), trying gemini fallback if configured")
+
     if GEMINI_API_KEY:
         try:
             body = {
@@ -2083,24 +2107,8 @@ def _llm_text(prompt: str, max_tokens: int = 800) -> str | None:
                 data = json.load(r)
             return data["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:  # noqa: BLE001
-            log(f"draw: gemini failed ({e}), trying local model")
-    try:
-        body = {
-            "model": OLLAMA_MODEL, "keep_alive": "60m", "think": False,
-            "options": {"temperature": 0.7, "num_predict": max_tokens},
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": prompt}],
-            "stream": False,
-        }
-        req = urllib.request.Request(
-            OLLAMA_HOST + "/api/chat", data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=90) as r:
-            data = json.load(r)
-        return data["message"]["content"]
-    except Exception as e:  # noqa: BLE001
-        log(f"draw: local model failed ({e})")
-        return None
+            log(f"draw: gemini fallback failed ({e})")
+    return None
 
 
 def act_draw_svg(subject: str) -> None:
@@ -3084,9 +3092,13 @@ def handle_command(text: str, confirm_audio_fn=None,
             log(f"tier 1 action failed: {e}")
         return True
 
-    # Tier 2: free Gemini Q&A (optional)
+    # Tier 2: Q&A (local Ollama by default, or Gemini if configured)
     if GEMINI_API_KEY:
-        return gemini_answer(t)
+        if gemini_answer(t):
+            return True
+    elif not quiet_miss:
+        if ollama_answer(t):
+            return True
     if quiet_miss:
         log("no tier matched; ignoring quietly (always-listening)")
     else:
