@@ -2291,5 +2291,116 @@ class TestDecisionRouter(Base):
             self.assertIsNone(res)
 
 
+# ------------------------------------------------------- Apple TV / Couch Media
+class TestAppleTVFeatures(Base):
+    def test_media_seek_forward(self):
+        for phrase in ("skip", "fast forward", "forward 30 seconds", "skip 15 seconds"):
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "media_seek_fwd")
+
+        with mock.patch.object(fv, "act_key_code") as mock_kc:
+            fv.handle_command("skip 20 seconds")
+            self.assertEqual(mock_kc.call_count, 2)
+            self.assertEqual(mock_kc.call_args[0][0], 124)
+
+    def test_media_seek_backward(self):
+        for phrase in ("rewind", "rewind 20 seconds", "skip back 30 seconds", "go back 15 seconds"):
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "media_seek_back")
+
+        with mock.patch.object(fv, "act_key_code") as mock_kc:
+            fv.handle_command("rewind 10 seconds")
+            self.assertEqual(mock_kc.call_count, 1)
+            self.assertEqual(mock_kc.call_args[0][0], 123)
+
+    def test_what_did_they_say(self):
+        for phrase in ("what did they say", "what did she say?", "what did he say"):
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "media_what_did_they_say")
+
+        with mock.patch.object(fv, "act_key_code") as mock_kc, \
+             mock.patch.object(fv, "act_keystroke") as mock_ks:
+            fv.handle_command("what did they say")
+            self.assertEqual(mock_kc.call_count, 2)
+            mock_ks.assert_called_with("c")
+
+    def test_subtitles_toggle(self):
+        for phrase in ("turn subtitles on", "subtitles off", "toggle subtitles", "closed captions", "captions"):
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "media_subtitles")
+
+        with mock.patch.object(fv, "act_keystroke") as mock_ks:
+            fv.handle_command("toggle subtitles")
+            mock_ks.assert_called_with("c")
+
+    def test_next_episode(self):
+        r = fv.route("next episode")
+        self.assertIsNotNone(r)
+        name, m = r
+        self.assertEqual(name, "media_next_episode")
+
+        with mock.patch.object(fv, "act_keystroke") as mock_ks:
+            fv.handle_command("next episode")
+            mock_ks.assert_called_with("n", "shift down")
+
+    def test_watch_stream_services(self):
+        cases = {
+            "watch youtube": "https://www.youtube.com",
+            "open netflix": "https://www.netflix.com",
+            "watch disney plus": "https://www.disneyplus.com",
+            "open hulu": "https://www.hulu.com",
+            "watch prime video": "https://www.amazon.com/gp/video/storefront",
+            "open max": "https://www.max.com",
+        }
+        for phrase, expected_url in cases.items():
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "watch_stream")
+            with mock.patch.object(fv, "shell") as mock_sh:
+                fv.handle_command(phrase)
+                mock_sh.assert_called_with(["open", expected_url])
+
+    def test_watch_apple_tv(self):
+        r = fv.route("watch apple tv")
+        self.assertIsNotNone(r)
+        name, m = r
+        self.assertEqual(name, "watch_stream")
+        with mock.patch.object(fv, "act_open_app") as mock_app:
+            fv.handle_command("watch apple tv")
+            mock_app.assert_called_with("TV")
+
+    def test_search_youtube(self):
+        r = fv.route("search youtube for interstellar soundtrack")
+        self.assertIsNotNone(r)
+        name, m = r
+        self.assertEqual(name, "search_youtube")
+        with mock.patch.object(fv, "shell") as mock_sh:
+            fv.handle_command("search youtube for interstellar soundtrack")
+            self.assertTrue(mock_sh.called)
+            cmd = mock_sh.call_args[0][0]
+            self.assertEqual(cmd[0], "open")
+            self.assertIn("youtube.com/results?search_query=interstellar", cmd[1])
+
+    def test_airplay_settings(self):
+        for phrase in ("airplay", "open airplay settings", "enable airplay receiver", "connect airplay", "screen mirroring"):
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "airplay_settings")
+
+        with mock.patch.object(fv, "shell") as mock_sh:
+            fv.handle_command("open airplay settings")
+            mock_sh.assert_called_with(["open", "x-apple.systempreferences:com.apple.AirPlay-Settings.extension"])
+
+
 if __name__ == "__main__":
     unittest.main()

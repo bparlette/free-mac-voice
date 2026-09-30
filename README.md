@@ -78,6 +78,21 @@ flowchart TD
 | `“show all windows”` / `“show desktop”` | Mission Control (F3) and Reveal Desktop (F11) |
 | `“quit spotify”` / `“close all windows”` | Clean application shutdown (confirms aloud first) |
 
+### 🍿 Apple TV & Couch Media Experience
+| Voice Command | Action |
+|---|---|
+| `“watch youtube”` / `“open netflix”` | Launches streaming services directly in the browser |
+| `“watch disney plus”` / `“open hulu”` / `“open max”` / `“watch prime video”` | Direct-to-app streaming launcher |
+| `“watch apple tv”` | Opens native macOS Apple TV app (`/System/Applications/TV.app`) |
+| `“search youtube for lofi hip hop”` | Direct search query on YouTube |
+| `“skip 10 seconds”` / `“fast forward 30 seconds”` | Jumps forward across YouTube, Netflix, Disney+, VLC |
+| `“rewind”` / `“go back 15 seconds”` | Jumps backward across video players |
+| `“what did they say?”` | Rewinds 15s and toggles subtitles (signature Apple TV feature) |
+| `“subtitles on”` / `“toggle subtitles”` | Toggles closed captions (`c` key standard across web players) |
+| `“next episode”` | Plays next video or episode (`Shift+N`) |
+| `“fullscreen”` / `“theater mode”` | Toggles macOS full screen (`Ctrl+Cmd+F`) |
+| `“airplay”` / `“screen mirroring”` | Opens AirPlay Receiver settings to cast from iPhone or iPad |
+
 ### 🔊 Sound, System & Media
 | Voice Command | Action |
 |---|---|

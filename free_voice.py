@@ -1091,6 +1091,67 @@ def act_media(cmd: str) -> None:
     say({"playpause": "Play pause", "next": "Next", "previous": "Previous"}[cmd])
 
 
+def act_media_seek(seconds: int = 10, forward: bool = True) -> None:
+    # Arrow keystrokes across YouTube, Netflix, QuickTime, VLC (key code 124=right, 123=left)
+    steps = max(1, round(seconds / 10))
+    code = 124 if forward else 123
+    for _ in range(steps):
+        act_key_code(code)
+    say(f"Skipped {seconds} seconds forward" if forward else f"Rewound {seconds} seconds")
+
+
+def act_media_subtitles() -> None:
+    # 'c' key toggles subtitles/captions on YouTube, Netflix, Disney+, Plex, Hulu, VLC
+    act_keystroke("c")
+    say("Toggled subtitles")
+
+
+def act_media_what_did_they_say() -> None:
+    # Apple TV signature feature: rewinds 15 seconds and toggles subtitles
+    act_key_code(123)
+    act_key_code(123)
+    act_keystroke("c")
+    say("Rewinding with subtitles")
+
+
+def act_media_next_episode() -> None:
+    # Shift+N plays next video/episode on YouTube, Netflix
+    act_keystroke("n", "shift down")
+    say("Next episode")
+
+
+def act_airplay_settings() -> None:
+    shell(["open", "x-apple.systempreferences:com.apple.AirPlay-Settings.extension"])
+    say("Opening AirPlay settings. Turn on AirPlay Receiver to cast from your iPhone or iPad.")
+
+
+def act_watch_stream(service: str, query: str = "") -> None:
+    s = service.lower().replace(" plus", "").replace(" video", "").strip()
+    urls = {
+        "youtube": "https://www.youtube.com",
+        "netflix": "https://www.netflix.com",
+        "hulu": "https://www.hulu.com",
+        "disney": "https://www.disneyplus.com",
+        "max": "https://www.max.com",
+        "hbo": "https://www.max.com",
+        "prime": "https://www.amazon.com/gp/video/storefront",
+    }
+    if s == "apple tv":
+        act_open_app("TV")
+        return
+    if s == "youtube" and query:
+        url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
+        shell(["open", url])
+        say(f"Searching YouTube for {query}")
+        return
+    if s in urls:
+        shell(["open", urls[s]])
+        say(f"Opening {s.title()}")
+    else:
+        say(f"Opening {service}")
+
+
+
 def act_lock() -> None:
     act_key_code(12, "control down, command down")  # Ctrl-Cmd-Q
     say("Locking")
@@ -1148,6 +1209,8 @@ _SETTINGS_PANES = {
     "wallpaper": "com.apple.Wallpaper-settings",
     "notifications": "com.apple.Notifications-settings",
     "focus": "com.apple.Focus-settings",
+    "airplay": "com.apple.AirPlay-Settings.extension",
+    "airplay receiver": "com.apple.AirPlay-Settings.extension",
     "screen time": "com.apple.Screen-Time-settings",
 }
 
@@ -2718,8 +2781,16 @@ _p(r"^close( the)? tab$", "close_tab", True)
 _p(r"^(reopen|undo close)( the)? tab$", "reopen_tab", True)
 _p(r"^(next tab|tab forward)$", "next_tab", True)
 _p(r"^(previous tab|prev tab|tab back)$", "prev_tab", True)
+# --- airplay & screen mirroring
+_p(r"^(?:open |enable |start )?airplay(?: settings| receiver)?$", "airplay_settings", True)
+_p(r"^(?:connect |cast with )?airplay$", "airplay_settings", True)
+_p(r"^screen mirroring$", "airplay_settings", True)
 _p(r"^open (.+) settings$", "settings", True)
 _p(r"^open trash$", "open_trash", True)
+# --- streaming services (10-foot couch TV mode)
+_p(r"^(?:watch|stream) (youtube|netflix|hulu|disney(?: plus)?|max|hbo|prime(?: video)?|apple tv)$", "watch_stream", True)
+_p(r"^(?:open|launch) (youtube|netflix|hulu|disney(?: plus)?|max|hbo|prime(?: video)?)$", "watch_stream", True)
+_p(r"^(?:search|find on) youtube (?:for )?(.+)$", "search_youtube")
 _p(r"^(open|launch|start) the (.+?) (app|application)$", "open_app", True)
 _p(r"^(open|launch|start) (.+)$", "open_app", True)
 _p(r"^(next app|app forward)$", "next_app", True)
@@ -2737,7 +2808,7 @@ _p(r"^kill (.+)$", "kill_app")
 _p(r"^(quit|close)( the)? (app |application )?(.+)$", "quit_app", True)
 _p(r"^(minimize|minimise)( the)? (.+?)( window| app)?$", "minimize_app", True)
 _p(r"^(minimize|minimise)( the window)?$", "minimize", True)
-_p(r"^(fullscreen|full screen|make it full screen)$", "fullscreen", True)
+_p(r"^(fullscreen|full screen|make it full screen|toggle full screen|enter full screen|exit full screen|theater mode|theatre mode)$", "fullscreen", True)
 _p(r"^hide( the)? (.+?)( app| application)?$", "hide_app", True)
 _p(r"^hide( the app)?$", "hide", True)
 # --- browser navigation
@@ -2830,6 +2901,13 @@ _p(r"^set (the )?brightness to (\d+)( percent)?$", "bright_set")
 _p(r"^(play|pause|play or pause|play pause|resume)$", "media_playpause", True)
 _p(r"^next( (track|song))?$", "media_next", True)
 _p(r"^previous( (track|song))?$", "media_prev", True)
+_p(r"^(?:skip|fast forward|jump forward|forward)(?: (\d+))?(?: seconds?)?$", "media_seek_fwd", True)
+_p(r"^(?:rewind|skip back|jump back)(?: (\d+))?(?: seconds?)?$", "media_seek_back", True)
+_p(r"^go back (\d+) seconds?$", "media_seek_back", True)
+_p(r"^what did (they|he|she) say\??$", "media_what_did_they_say", True)
+_p(r"^(?:turn )?subtitles (on|off)$", "media_subtitles", True)
+_p(r"^(?:toggle )?(subtitles|closed captions|captions)$", "media_subtitles", True)
+_p(r"^next episode$", "media_next_episode", True)
 # --- system power (destructive ones need confirmation: final-only)
 _p(r"^(lock( (the )?(computer|mac|screen))?|lock it down)$", "lock", True)
 _p(r"^(sleep|put (the )?(mac|computer) to sleep)$", "sleep", True)
@@ -3261,6 +3339,24 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_media("next")
         elif name == "media_prev":
             act_media("previous")
+        elif name == "media_seek_fwd":
+            sec = int(m.group(1)) if m.group(1) else 10
+            act_media_seek(sec, forward=True)
+        elif name == "media_seek_back":
+            sec = int(m.group(1)) if m.group(1) else 10
+            act_media_seek(sec, forward=False)
+        elif name == "media_what_did_they_say":
+            act_media_what_did_they_say()
+        elif name == "media_subtitles":
+            act_media_subtitles()
+        elif name == "media_next_episode":
+            act_media_next_episode()
+        elif name == "watch_stream":
+            act_watch_stream(m.group(1))
+        elif name == "search_youtube":
+            act_watch_stream("youtube", query=m.group(1))
+        elif name == "airplay_settings":
+            act_airplay_settings()
         elif name == "tv_computer":
             act_tv_input("computer", "computer")
         elif name == "tv_tv":
