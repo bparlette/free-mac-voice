@@ -4,3 +4,27 @@ __pycache__/
 .DS_Store
 *.log
 benchmarks/results.jsonl
+
+# Environment variables & secrets
+.env
+.env.*
+*.env
+*.token
+*.key
+*.pem
+*.secret
+
+# Screenshots & audio files (prevents accidental recording leaks)
+*.png
+*.jpg
+*.jpeg
+*.wav
+*.mp3
+*.m4a
+
+# Editor & OS artifacts
+.vscode/
+.idea/
+*.swp
+*~
+
