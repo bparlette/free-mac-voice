@@ -169,30 +169,62 @@ def bench_vision_locate():
 bench_vision_locate.check = _check_vision
 
 
-def _synth_wav(seconds=3):
-    import wave
+def _make_speech_audio():
+    """Return a float32 numpy array of real TTS speech (macOS) or a synthetic
+    signal (non-mac / CI). faster-whisper accepts float32 numpy arrays directly,
+    bypassing av.open entirely (works with av 19 which dropped metadata_errors)."""
+    import numpy as np
+    if platform.system() == "Darwin":
+        # Use macOS `say` + `afconvert` to generate real speech audio
+        import wave, struct, tempfile
+        with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as f:
+            aiff = f.name
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            wav_path = f.name
+        try:
+            subprocess.run(
+                ["say", "-o", aiff, "could you please open notes for me"],
+                check=True, capture_output=True)
+            subprocess.run(
+                ["afconvert", "-f", "WAVE", "-d", "LEI16@16000", aiff, wav_path],
+                check=True, capture_output=True)
+            with wave.open(wav_path, "rb") as w:
+                raw = w.readframes(w.getnframes())
+            return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        except Exception:
+            pass  # fall through to synthetic
+        finally:
+            for p in (aiff, wav_path):
+                try:
+                    os.unlink(p)
+                except FileNotFoundError:
+                    pass
+    # Synthetic fallback: multi-harmonic signal to survive VAD filter
     import math
-    import struct
-    path = os.path.join(tempfile.gettempdir(), "fv_bench.wav")
-    with wave.open(path, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(16000)
-        frames = b"".join(
-            struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * i / 16000)))
-            for i in range(16000 * seconds))
-        w.writeframes(frames)
-    return path
+    n, sr = 16000 * 2, 16000
+    t = [i / sr for i in range(n)]
+    sig = [(0.5 * math.sin(2 * math.pi * 150 * x) +
+            0.3 * math.sin(2 * math.pi * 300 * x) +
+            0.2 * math.sin(2 * math.pi * 450 * x)) for x in t]
+    return np.array(sig, dtype=np.float32)
 
 
 def bench_transcribe():
-    wav = _synth_wav()
-    fv.transcribe(wav)
+    import numpy as np
+    audio = _make_speech_audio()
+    from faster_whisper import WhisperModel
+    if fv._whisper is None:
+        fv._whisper = WhisperModel(fv.WHISPER_MODEL, device="auto", compute_type="int8")
+    segs, _ = fv._whisper.transcribe(audio, beam_size=1, vad_filter=True)
+    _ = list(segs)  # consume generator — timing includes full decode
+
+
 def _check_whisper():
     try:
         import faster_whisper  # noqa: F401
-    except ImportError:
-        return "faster-whisper not installed"
+        import numpy as np    # noqa: F401
+    except ImportError as e:
+        return f"missing dependency: {e}"
     return None
 bench_transcribe.check = _check_whisper
 

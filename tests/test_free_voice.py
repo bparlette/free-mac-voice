@@ -437,6 +437,7 @@ class TestOllama(Base):
         self.assertEqual(body["keep_alive"], "60m")
         self.assertEqual(body["model"], fv.OLLAMA_MODEL)
         self.assertEqual(body["options"]["num_predict"], 64)
+        self.assertEqual(body["options"]["num_ctx"], 1024)
 
     def test_unreachable_ollama_returns_none(self):
         with mock.patch("urllib.request.urlopen",

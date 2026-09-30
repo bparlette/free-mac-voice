@@ -1982,7 +1982,7 @@ def ollama_route(text: str):
         "format": "json",
         "keep_alive": "60m",  # stay resident: no cold starts
         "think": False,  # voice needs the answer, not a reasoning trace
-        "options": {"temperature": 0, "num_predict": 64},
+        "options": {"temperature": 0, "num_predict": 64, "num_ctx": 1024},
         "messages": messages,
         "stream": False,
     }

@@ -317,7 +317,7 @@ python3 free_voice.py --partial "open notes" --dry-run     # fires exactly once
 python3 free_voice.py --text "click the Reply button" --dry-run
 ```
 
-### Measured Real-World Latency (Apple M4 Mac mini, 16 GB unified RAM)
+#### Measured Real-World Latency (Apple M4 Mac mini, 16 GB unified RAM)
 
 Measured end-to-end execution times from command dispatch to action execution and `say` voice synthesis completion:
 
@@ -327,12 +327,12 @@ Measured end-to-end execution times from command dispatch to action execution an
 | `open notes` | Tier 0: Regex router | < 1 ms | **2.18s - 3.30s** |
 | `what time is it` | Tier 0: Regex router | < 1 ms | **2.59s - 2.68s** |
 | `could you please open notes` | Tier 1: `qwen2.5:1.5b` fallback | **0.32s** | **2.53s** |
-| `could you please open notes` | Tier 1: `qwen3-vl:8b` vision fallback | **1.38s** | **3.78s** |
+| `could you please open notes` | Tier 1: `qwen3-vl:8b` + `num_ctx=1024` | **1.26s** | **3.66s** |
 
 Key takeaway:
 - **Fast Tier 0 reflexes**: Standard everyday commands execute in < 1 ms router time and complete within ~2 seconds total roundtrip including speech response.
 - **Micro-model fallback (`qwen2.5:1.5b`)**: Evaluates natural language variants in 0.32s with 986 MB RAM footprint.
-- **Vision-Language fallback (`qwen3-vl:8b`)**: Evaluates natural language variants in 1.38s while providing full on-device screen understanding ("what's on my screen") and visual element grounding. Assistant prefill bypasses the default reasoning trace, preventing 8-second thinking delays while maintaining structured JSON accuracy.
+- **Vision-Language fallback (`qwen3-vl:8b`)**: With `num_ctx=1024` and assistant prefill, routing latency is a consistent **1.26s p50** across all prompts. Without `num_ctx`, the default KV context causes 1.3–6.2s variance (p50=5.75s) depending on prompt position. `num_ctx=512` was actively harmful (+28% slower due to context truncation pressure). The routing system prompt is ~297 tokens, giving 727 tokens of headroom at 1024.
 
 ### Component Benchmark Breakdown (`benchmarks/bench.py`)
 
@@ -341,9 +341,11 @@ Key takeaway:
 | **Tier 0 Routing** | 200 | 0.3 ms | **0.2 ms** | 0.3 ms | Corpus of 23 commands incl. chained commands |
 | **Tier 0 Partial Gating** | 200 | 0.2 ms | **0.2 ms** | 0.2 ms | 10 growing prefixes of `"open notes"` |
 | **Chain Dispatch Overhead** | 50 | 0.3 ms | **0.3 ms** | 0.5 ms | `"open notes and snap left"` sequential dispatch |
-| **Tier 1 Cold (Load + Route)** | 1 | 1.31s | **1.31s** | 1.31s | Warm-start or resident model route with assistant prefill |
-| **Tier 1 Warm (Resident Model)**| 5 | 1.30s | **1.30s** | 1.32s | Resident model route with assistant prefill (bypasses CoT) |
+| **Tier 1 Cold (Load + Route)** | 1 | ~1.31s | **~1.31s** | ~1.31s | Resident model route; `num_ctx=1024` for consistent prefill |
+| **Tier 1 Warm (Resident Model)**| 5 | 1.18s | **1.26s** | 1.32s | Consistent 1.0–1.3s; `num_ctx=1024` eliminates 5–6s outliers |
+| **Whisper STT (`tiny.en`, int8)** | 5×3 | 0.122s | **0.121s** | 0.139s | Real TTS speech 1–3.5s; model load 0.36s (first call only) |
 | **Screenshot Capture** | 5 | 0.20s | **0.20s** | 0.27s | Native macOS `screencapture` to temp file |
 | **Vision: Describe Screen** | 3 | 11.35s | **11.32s** | 11.49s | Screenshot + `sips` 800px downsample + `qwen3-vl:8b` (~60% faster) |
-| **Vision: Locate Element** | 3 | 21.24s | **21.19s** | 21.40s | Native `sips` 800px downsample + coordinate query |
+| **Vision: Locate Element** | 3 | 21.24s | **21.19s** | 21.40s | Native `sips` 800px downsample + coordinate query; adaptive skip for large targets saves 5–8s |
 | **Earcon Audio Feedback** | 5 | 3.1 ms | **2.2 ms** | 6.1 ms | Non-blocking `afplay` sound trigger |
+

@@ -110,9 +110,9 @@ Measured end-to-end execution times on an Apple M4 Mac mini (including process s
 | `open notes` | Tier 0 (Instant Regex) | < 1 ms | **2.18s - 3.30s** |
 | `what time is it` | Tier 0 (Instant Regex) | < 1 ms | **2.59s - 2.68s** |
 | `could you please open notes` | Tier 1 (`qwen2.5:1.5b` fallback) | **0.32s** | **2.53s** |
-| `could you please open notes` | Tier 1 (`qwen3-vl:8b` vision fallback) | **1.30s** | **3.70s** |
+| `could you please open notes` | Tier 1 (`qwen3-vl:8b` + `num_ctx=1024`) | **1.26s** | **3.66s** |
 
-*Note: For thinking models such as `qwen3-vl:8b`, an assistant prefill bypasses reasoning tokens, keeping 8.8B-parameter decision latency down from 8.2s to **1.30s** on Apple Silicon without losing structured routing accuracy.*
+*Note: `num_ctx=1024` caps the KV context window to give consistent 1.0–1.3s Tier 1 latency. Without it, qwen3-vl:8b's large default context produces 1.3–6.2s variance (p50=5.75s). Whisper STT (`tiny.en`, int8) runs in **109–139ms** on M4 for 1–3.5s of speech after a 360ms first-call model load — entirely local, no cloud dependency.*
 
 ## Tests & benchmarks
 
