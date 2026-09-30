@@ -413,6 +413,26 @@ def push_to_talk_loop(on_utterance) -> None:
 
 # ------------------------------------------------------- always-listening
 
+from concurrent.futures import ThreadPoolExecutor
+
+ALWAYS_MODE: bool = False
+_vision_pool: ThreadPoolExecutor | None = None
+
+
+def _get_vision_pool() -> ThreadPoolExecutor:
+    global _vision_pool
+    if _vision_pool is None:
+        _vision_pool = ThreadPoolExecutor(max_workers=1,
+                                          thread_name_prefix="free-voice-vision")
+    return _vision_pool
+
+
+def _submit_vision_task(fn, *args, **kwargs):
+    """Submit a slow vision task to the background thread pool in --always mode."""
+    pool = _get_vision_pool()
+    return pool.submit(fn, *args, **kwargs)
+
+
 class VoiceActivityDetector:
     """Tiny energy-based VAD with an adaptive noise floor. No dependencies.
 
@@ -1046,6 +1066,183 @@ def _load_xa11y():
     return _xa11y_mod or None
 
 
+# ---------------------------------------------------------------- mouse control
+def _mouse():
+    """Lazily build a pynput mouse controller; (None, None) when unavailable."""
+    try:
+        from pynput.mouse import Button, Controller
+    except Exception as e:  # noqa: BLE001
+        log(f"mouse control unavailable: {e}")
+        return None, None
+    return Controller(), Button
+
+
+def _click_xy(x: int, y: int, name: str) -> bool:
+    """Click at (x, y) coordinates; returns True if successful/dry-run."""
+    if DRY_RUN:
+        log(f"DRY-RUN click at ({x}, {y}) for {name!r}")
+        return True
+    ctrl, btn = _mouse()
+    if ctrl is None or btn is None:
+        log("click failed: mouse controller unavailable")
+        return False
+    try:
+        ctrl.position = (x, y)
+        ctrl.click(btn.left, 1)
+    except Exception as e:  # noqa: BLE001
+        log(f"click failed: {e}")
+        return False
+    say(f"Clicked {name}")
+    return True
+
+
+# ---------------------------------------------------------------- Apple Vision OCR fast-path
+_vision_framework_mod = None
+
+
+def _load_vision_framework():
+    """Import Apple Vision and Foundation lazily on macOS; (None, None) on failure."""
+    global _vision_framework_mod
+    if _vision_framework_mod is None:
+        try:
+            import Vision
+            from Foundation import NSURL
+            _vision_framework_mod = (Vision, NSURL)
+        except Exception as e:  # noqa: BLE001
+            _vision_framework_mod = False
+            log(f"Apple Vision framework unavailable: {e}")
+    return _vision_framework_mod or (None, None)
+
+
+def _clean_target_variants(name: str) -> list[str]:
+    """Generate clean search variants from a spoken element name."""
+    s = name.strip().lower()
+    for prefix in ("the ", "a ", "an "):
+        if s.startswith(prefix):
+            s = s[len(prefix):].strip()
+            break
+    variants = [s]
+    for suffix in (" button", " link", " icon", " tab", " menu", " checkbox", " item", " toggle"):
+        if s.endswith(suffix):
+            base = s[:-len(suffix)].strip()
+            if base and base not in variants:
+                variants.append(base)
+            break
+    return variants
+
+
+def ocr_locate(name: str, screenshot_path: str | None = None) -> tuple[int, int] | str | None:
+    """Locate a named text element on screen using Apple Vision OCR.
+
+    Returns:
+        (x, y): center coordinates of best match if unambiguous.
+        "ambiguous": if multiple equally strong matches exist across the screen.
+        None: if no match, purely iconographic, or Vision unavailable.
+    """
+    Vision, NSURL = _load_vision_framework()
+    if Vision is None or NSURL is None:
+        return None
+
+    path = screenshot_path or capture_screenshot()
+    if not path or not os.path.exists(path):
+        return None
+
+    variants = _clean_target_variants(name)
+    if not variants or not variants[0]:
+        return None
+
+    try:
+        from AppKit import NSScreen
+        f = NSScreen.mainScreen().frame()
+        sw, sh = int(f.size.width), int(f.size.height)
+    except Exception:
+        sw, sh = 1920, 1080
+
+    try:
+        req = Vision.VNRecognizeTextRequest.alloc().init()
+        req.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+        req.setUsesLanguageCorrection_(False)
+        url = NSURL.fileURLWithPath_(path)
+        handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)
+        success, _ = handler.performRequests_error_([req], None)
+        if not success:
+            return None
+        results = req.results() or []
+    except Exception as e:  # noqa: BLE001
+        log(f"OCR request failed: {e}")
+        return None
+
+    import difflib
+
+    candidates = []
+    for obs in results:
+        try:
+            cands = obs.topCandidates_(1)
+            if not cands:
+                continue
+            top_cand = cands[0]
+            text = top_cand.string().strip()
+            text_lower = text.lower()
+            bbox = obs.boundingBox()
+        except Exception:
+            continue
+
+        best_score = 0.0
+        for var in variants:
+            if text_lower == var:
+                best_score = max(best_score, 1.0)
+            elif re.search(r"\b" + re.escape(var) + r"\b", text_lower):
+                best_score = max(best_score, 0.95)
+            elif var in text_lower or text_lower in var:
+                best_score = max(best_score, 0.85)
+            else:
+                ratio = difflib.SequenceMatcher(None, var, text_lower).ratio()
+                if ratio >= 0.75:
+                    best_score = max(best_score, ratio * 0.9)
+
+        if best_score < 0.75:
+            continue
+
+        cx = bbox.origin.x + bbox.size.width / 2.0
+        cy_vis = bbox.origin.y + bbox.size.height / 2.0
+        sx = int(cx * sw)
+        sy = int((1.0 - cy_vis) * sh)
+        area = bbox.size.width * bbox.size.height
+        dist = ((cx - 0.5) ** 2 + (cy_vis - 0.5) ** 2) ** 0.5
+        score = best_score * 100.0 + area * 50.0 - dist * 10.0
+        candidates.append({
+            "text": text,
+            "match_score": best_score,
+            "score": score,
+            "sx": sx,
+            "sy": sy,
+            "area": area,
+            "dist": dist,
+        })
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+
+    top = [c for c in candidates if c["match_score"] >= 0.85]
+    if len(top) >= 2:
+        c1, c2 = top[0], top[1]
+        pixel_dist = ((c1["sx"] - c2["sx"]) ** 2 + (c1["sy"] - c2["sy"]) ** 2) ** 0.5
+        if (abs(c1["match_score"] - c2["match_score"]) < 0.05
+                and pixel_dist > 80
+                and c1["area"] < 2.5 * c2["area"]):
+            log(f"OCR locate: ambiguous matches for {name!r}: "
+                f"{[c['text'] for c in top[:3]]}")
+            say(f"I found multiple items matching '{name}'. Which one did you want?")
+            return "ambiguous"
+
+    winner = candidates[0]
+    log(f"OCR locate: matched {winner['text']!r} at ({winner['sx']}, {winner['sy']}) "
+        f"for {name!r} (conf={winner['match_score']:.2f})")
+    return winner["sx"], winner["sy"]
+
+
 def frontmost_app() -> str:
     return applescript(
         'tell application "System Events" to get name of first '
@@ -1081,7 +1278,15 @@ def _press_first(app_name: str, roles: list[str], name: str) -> None:
                 return
             say(f"Clicked {safe}")
             return
-    # Tree had no match — last resort: locate it visually on a screenshot.
+    # Tree had no match — Tier 1: Apple Vision OCR fast-path
+    ocr_res = ocr_locate(safe)
+    if ocr_res == "ambiguous":
+        return
+    if ocr_res is not None:
+        x, y = ocr_res
+        if _click_xy(x, y, safe):
+            return
+    # Tree & OCR had no match — Tier 2 (last resort): locate it visually on a screenshot (VLM).
     if vision_click(safe):
         return
     say(f"No control matching {safe} in {app_name}")
@@ -1097,17 +1302,6 @@ def act_click_link(name: str) -> None:
 
 def act_click_any(name: str) -> None:
     _press_first(frontmost_app(), ["button", "link", "checkbox"], name)
-
-
-# ---------------------------------------------------------------- mouse control
-def _mouse():
-    """Lazily build a pynput mouse controller; (None, None) when unavailable."""
-    try:
-        from pynput.mouse import Button, Controller
-    except Exception as e:  # noqa: BLE001
-        log(f"mouse control unavailable: {e}")
-        return None, None
-    return Controller(), Button
 
 
 def _locate_first(app_name: str, roles: list[str],
@@ -1144,14 +1338,19 @@ def _locate_first(app_name: str, roles: list[str],
 def act_mouse_to(name: str) -> None:
     """Move the cursor onto a named UI element ("move the mouse to the toggle").
 
-    Accessibility tree first, screenshot vision as fallback. Moves only —
-    it never clicks.
+    Accessibility tree first, Apple Vision OCR second, screenshot VLM as fallback.
+    Moves only — it never clicks.
     """
     safe = name.strip()
     if not safe:
         say("Move the mouse to what?")
         return
     loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], safe)
+    if loc is None:
+        ocr_res = ocr_locate(safe)
+        if ocr_res == "ambiguous":
+            return
+        loc = ocr_res
     if loc is None:
         loc = vision_locate(safe)
     if loc is None:
@@ -1257,6 +1456,7 @@ def prepare_vision_image(image_path: str, max_dimension: int = 800) -> str:
     Reduces payload ~95%, avoids Ollama context overflow, and cuts inference
     time by ~60%. 800px is the measured sweet spot (M4: ~7.7s vs ~19.6s at
     1280px); the full-res original is kept for the two-pass click crop.
+    Describe-screen uses 640px (~11.8s) for faster orientation.
     """
     if not image_path:
         return image_path
@@ -1265,7 +1465,8 @@ def prepare_vision_image(image_path: str, max_dimension: int = 800) -> str:
             return image_path
     except Exception:
         return image_path
-    opt_path = image_path + ".opt.jpg"
+    opt_suffix = ".opt.jpg" if max_dimension == 800 else f".opt_{max_dimension}.jpg"
+    opt_path = f"{image_path}{opt_suffix}"
     try:
         if os.path.exists(opt_path):
             try:
@@ -1286,7 +1487,8 @@ def prepare_vision_image(image_path: str, max_dimension: int = 800) -> str:
 
 
 def vision_ask(question: str, image_path: str,
-               prefill: str | None = None) -> str | None:
+               prefill: str | None = None,
+               max_dimension: int = 800) -> str | None:
     """Ask the local vision-language model about a screenshot.
 
     Returns the model's text or None on failure. Downscales with native sips
@@ -1297,7 +1499,7 @@ def vision_ask(question: str, image_path: str,
     global _ollama_ok
     if _ollama_ok is False:
         return None
-    ready_path = prepare_vision_image(image_path)
+    ready_path = prepare_vision_image(image_path, max_dimension=max_dimension)
     try:
         with open(ready_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
@@ -1344,8 +1546,97 @@ def vision_ask(question: str, image_path: str,
     return None
 
 
-def act_describe_screen() -> None:
-    """'what's on my screen' — describe the display in spoken sentences."""
+_quartz_mod = None
+
+
+def _load_quartz():
+    """Import Quartz lazily on macOS; None on failure."""
+    global _quartz_mod
+    if _quartz_mod is None:
+        try:
+            import Quartz
+            _quartz_mod = Quartz
+        except Exception as e:  # noqa: BLE001
+            _quartz_mod = False
+            log(f"Quartz framework unavailable: {e}")
+    return _quartz_mod or None
+
+
+def quartz_window_summary() -> str | None:
+    """Return a spoken one-or-two sentence summary of on-screen windows via Quartz.
+
+    Fast (~13ms) orientation without taking a screenshot or requiring Screen
+    Recording permissions. Returns None if Quartz is unavailable or no layer-0
+    windows >= 100px exist.
+    """
+    Q = _load_quartz()
+    if Q is None:
+        return None
+    try:
+        options = Q.kCGWindowListOptionOnScreenOnly | Q.kCGWindowListExcludeDesktopElements
+        window_list = Q.CGWindowListCopyWindowInfo(options, Q.kCGNullWindowID) or []
+    except Exception as e:  # noqa: BLE001
+        log(f"Quartz window list failed: {e}")
+        return None
+
+    windows = []
+    for w in window_list:
+        layer = w.get(Q.kCGWindowLayer, -1)
+        bounds = w.get(Q.kCGWindowBounds, {})
+        width = bounds.get("Width", 0)
+        height = bounds.get("Height", 0)
+        owner = w.get(Q.kCGWindowOwnerName, "")
+        name = w.get(Q.kCGWindowName, "")
+        if layer == 0 and width >= 100 and height >= 100:
+            windows.append((owner, name))
+
+    if not windows:
+        return None
+
+    front_app, front_title = windows[0]
+    front_str = f"{front_app} ({front_title})" if front_title and front_title != front_app else front_app
+
+    behind = []
+    seen = {front_app}
+    for app, title in windows[1:]:
+        if app not in seen:
+            seen.add(app)
+            desc = f"{app} ({title})" if title and title != app else app
+            behind.append(desc)
+
+    if behind:
+        if len(behind) == 1:
+            behind_str = behind[0]
+        elif len(behind) == 2:
+            behind_str = f"{behind[0]} and {behind[1]}"
+        else:
+            behind_str = f"{behind[0]}, {behind[1]}, and {len(behind) - 2} other app(s)"
+        summary = f"In front is {front_str}. Behind it, you have {behind_str}."
+    else:
+        summary = f"In front is {front_str}, with no other active windows behind it."
+    return summary
+
+
+def act_describe_screen(visual_content_only: bool = False) -> None:
+    """'what's on my screen' — Quartz orientation first (~13ms), VLM fallback."""
+    if not visual_content_only:
+        summary = quartz_window_summary()
+        if summary:
+            say(summary)
+            return
+    act_describe_screen_vlm()
+
+
+def act_describe_screen_vlm() -> None:
+    """Describe the visual display content using the local VLM (qwen3-vl)."""
+    if ALWAYS_MODE:
+        say("Looking...")
+        _submit_vision_task(_describe_screen_vlm_task)
+        return
+    _describe_screen_vlm_task()
+
+
+def _describe_screen_vlm_task() -> None:
     path = capture_screenshot()
     if not path:
         say("I couldn't capture the screen")
@@ -1356,6 +1647,7 @@ def act_describe_screen() -> None:
         "open dialogs, playing media, or error messages. Plain text only.",
         path,
         prefill="The screen shows ",
+        max_dimension=640,
     )
     if text:
         # prefill seeded the model's reply; speak the full sentence.
@@ -1486,6 +1778,14 @@ def vision_click(name: str) -> bool:
     preferred path, and this is never used for destructive or sensitive
     actions (those go through tree-only _press_first intents).
     """
+    if ALWAYS_MODE:
+        say("Looking...")
+        _submit_vision_task(_vision_click_task, name)
+        return True
+    return _vision_click_task(name)
+
+
+def _vision_click_task(name: str) -> bool:
     loc = vision_locate(name)
     if loc is None:
         return False
@@ -1794,6 +2094,14 @@ def act_reminder(amount: int, unit: str, message: str) -> None:
 
 def act_read_screen() -> None:
     """'read my screen to me' — a fuller spoken tour than describe."""
+    if ALWAYS_MODE:
+        say("Looking...")
+        _submit_vision_task(_read_screen_task)
+        return
+    _read_screen_task()
+
+
+def _read_screen_task() -> None:
     path = capture_screenshot()
     if not path:
         say("I couldn't capture the screen")
@@ -1805,6 +2113,7 @@ def act_read_screen() -> None:
         "and any dialogs or notifications. Plain text only.",
         path,
         prefill="Looking at the screen, ",
+        max_dimension=640,
     )
     if text:
         say(text)
@@ -1906,6 +2215,8 @@ _p(r"^scroll (up|down|left|right)( (\d+))?$", "scroll")
 _p(r"^what'?s on (my|the) screen$", "describe_screen")
 _p(r"^describe (my|the) screen$", "describe_screen")
 _p(r"^what am i looking at$", "describe_screen")
+_p(r"^(what('?s| is) in this window|describe this window)$", "describe_window_visual")
+_p(r"^(what color|describe (the |this )?(image|diagram|video|photo))", "describe_window_visual")
 _p(r"^(are you (working|there|ok)|status|health check)$", "status", True)
 # --- web (free text: final-only)
 _p(r"^(search|google|look up)( the web)? for (.+)$", "web_search")
@@ -2149,6 +2460,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_scroll(m.group(1), m.group(3))
         elif name == "describe_screen":
             act_describe_screen()
+        elif name == "describe_window_visual":
+            act_describe_screen(visual_content_only=True)
         elif name == "status":
             act_status()
         elif name == "web_search":
@@ -2820,6 +3133,8 @@ def main() -> None:
             log(f"couldn't record ({e})")
         return
     if args.always:
+        global ALWAYS_MODE
+        ALWAYS_MODE = True
         always_listen_loop(lambda audio: on_utterance(audio, quiet_miss=True),
                            sensitivity=args.sensitivity)
         return

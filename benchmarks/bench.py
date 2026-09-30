@@ -145,7 +145,7 @@ bench_screenshot.check = _check_macos_screen
 
 def bench_vision_describe():
     with mock.patch.object(fv, "say", lambda t: None):
-        fv.act_describe_screen()
+        fv.act_describe_screen_vlm()
 def _check_vision():
     s = _check_macos_screen()
     if s:
@@ -238,6 +238,40 @@ def _check_macos_audio():
 bench_chime.check = _check_macos_audio
 
 
+def bench_quartz_summary():
+    s = fv.quartz_window_summary()
+    if s is None:
+        raise RuntimeError("quartz_summary_failed")
+def _check_quartz():
+    if platform.system() != "Darwin":
+        return "needs macOS (Quartz)"
+    if fv._load_quartz() is None:
+        return "Quartz framework unavailable"
+    return None
+bench_quartz_summary.check = _check_quartz
+
+
+def bench_ocr_locate():
+    path = fv.capture_screenshot()
+    if not path:
+        raise RuntimeError("screencapture_failed")
+    try:
+        fv.ocr_locate("File", path)
+    finally:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+def _check_ocr():
+    if platform.system() != "Darwin":
+        return "needs macOS (Vision)"
+    v, _ = fv._load_vision_framework()
+    if v is None:
+        return "Vision framework unavailable"
+    return None
+bench_ocr_locate.check = _check_ocr
+
+
 BENCHMARKS = [
     ("tier0_route", "Tier 0 routing", bench_tier0_route, 200,
      "corpus of 23 commands incl. one chained command"),
@@ -245,6 +279,10 @@ BENCHMARKS = [
      "10 growing prefixes of 'open notes'"),
     ("chain_dispatch", "chain dispatch overhead", bench_chain_dispatch, 50,
      "handle_command('open notes and snap left'), executors mocked"),
+    ("quartz_window_summary", "Quartz window summary", bench_quartz_summary, 20,
+     "CGWindowListCopyWindowInfo layer-0 parse + spoken summary (no screenshot)"),
+    ("ocr_locate", "Apple Vision OCR locate", bench_ocr_locate, 5,
+     "screenshot + VNRecognizeTextRequest locate"),
     ("tier1_cold", "Tier 1 cold (model load)", bench_tier1_cold, 1,
      "first ollama_route call; includes model load into memory"),
     ("tier1_warm", "Tier 1 warm", bench_tier1_warm, 5,
@@ -252,9 +290,9 @@ BENCHMARKS = [
     ("screenshot_capture", "screenshot capture", bench_screenshot, 5,
      "screencapture to temp file"),
     ("vision_describe_e2e", "vision: describe screen e2e", bench_vision_describe, 3,
-     "screenshot + qwen3-vl inference, spoken output mocked"),
+     "screenshot + qwen3-vl inference (640px), spoken output mocked"),
     ("vision_locate", "vision: locate element", bench_vision_locate, 3,
-     "screenshot + coordinate query inference"),
+     "screenshot + coordinate query inference (800px)"),
     ("transcribe_3s", "whisper tiny.en, 3s audio", bench_transcribe, 3,
      "synthetic 440Hz tone; real speech may differ"),
     ("chime", "earcon playback", bench_chime, 5,

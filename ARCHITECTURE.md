@@ -136,19 +136,28 @@ so out loud ("Google's free limit is hit, answering from the on-device
 model"). The local answer is lower quality and knowledge-cutoff-bound, but
 the assistant never goes silent.
 
-## 4b. Screen vision (local, same model)
+## 4b. Screen description & vision tiers
 
-"What's on my screen" captures a screenshot (`screencapture -x`) and sends it
-to `qwen3-vl:8b` with the question.
+Screen queries and UI control locate follow a fast-path additive cascade:
 
-**Native `sips` Image Optimization (`prepare_vision_image`)**:
-High-DPI Retina screens produce raw PNG captures that exceed Ollama's default 4096-token context window (`exceed_context_size_error`), causing HTTP 400 errors or request timeouts. `prepare_vision_image()` uses macOS's built-in `sips` tool to downsample captures to max 1280px JPEG (75% quality) and caches the result alongside the capture. This shrinks image payload by ~95% (from ~6 MB to ~150 KB), eliminates context overflow (`num_ctx: 8192`), and cuts vision prompt evaluation time by ~60%.
+1. **Quartz Window Summary (`quartz_window_summary()`) — Instant Orientation**:
+   "What's on my screen" / "describe my screen" routes through Quartz first using `CGWindowListCopyWindowInfo`. It filters for layer-0 active windows $\ge 100\text{px}$ in front-to-back z-order and speaks a concise summary naming the frontmost app + window title and what's behind it.
+   - **~1.3 ms latency**: ~8,900× faster than VLM inference.
+   - **Zero permissions barrier**: Does not require Screen Recording permissions, working instantly even before that grant.
+   - **No screenshot overhead**: Completely skips `screencapture` and Ollama.
+   - Orientation queries use Quartz; visual-content questions ("what's in this window", "what color is the button", "read my screen") seamlessly fall through to the VLM.
 
-`vision_ask()` is also the fallback behind UI clicks: when the accessibility
-tree has no node matching ("click the blue Submit button" in a canvas-drawn
-UI), the model returns the element's center as 0–1000 fractions and pynput
-clicks there. Tree-first ordering keeps coordinates approximate-only; vision
-clicks are never used for destructive or sensitive actions.
+2. **Apple Vision OCR Fast-Path (`ocr_locate()`) — High-Speed Text Clicking**:
+   When the accessibility tree (`xa11y`) has no node matching a clicked label (canvas UI, Flutter/web apps), the click chain queries Apple's native `VNRecognizeTextRequest` before falling back to the VLM.
+   - **0.46s p50 latency**: ~45× faster than the 21.1s VLM locate pass.
+   - **Fuzzy text matching**: Cleans button/link affixes and evaluates token overlap and fuzzy ratios across all on-screen text boxes.
+   - **Ambiguity protection**: When multiple identical or near-identical controls are found across disparate coordinates, it safely clarifies ("I found multiple items matching X. Which one did you want?") rather than misclicking.
+   - **Iconographic fallback**: Purely iconographic targets ("the red circle") score 0 in OCR and gracefully fall through to `vision_locate()`.
+
+3. **Local VLM Fallback (`qwen3-vl:8b`)**:
+   - **Describe Screen (640px)**: Uses 640px downscaling (`prepare_vision_image(max_dimension=640)`), trimming latency down to ~11.58s p50 while maintaining high descriptive accuracy.
+   - **Locate Element (800px)**: Retains the measured 800px fidelity sweet spot for precise coordinate extraction, skipping the second crop pass when the target is large ($\ge 480\text{px}$).
+   - **Vision ThreadPool for `--always` Mode**: In continuous listening mode, VLM inferences are shunted to a background single-worker `ThreadPoolExecutor`. It speaks an immediate "Looking..." acknowledgment and delivers the response when ready, ensuring 11–21s inferences never deafen the microphone loop.
 
 ## 5. Execution
 
@@ -338,14 +347,16 @@ Key takeaway:
 
 | Component / Benchmark | Samples (\(n\)) | Mean | Median (\(p50\)) | 95th %tile (\(p95\)) | Status / Notes |
 |---|---|---|---|---|---|
-| **Tier 0 Routing** | 200 | 0.3 ms | **0.2 ms** | 0.3 ms | Corpus of 23 commands incl. chained commands |
+| **Tier 0 Routing** | 200 | 0.3 ms | **0.3 ms** | 0.3 ms | Corpus of 23 commands incl. chained commands |
 | **Tier 0 Partial Gating** | 200 | 0.2 ms | **0.2 ms** | 0.2 ms | 10 growing prefixes of `"open notes"` |
-| **Chain Dispatch Overhead** | 50 | 0.3 ms | **0.3 ms** | 0.5 ms | `"open notes and snap left"` sequential dispatch |
-| **Tier 1 Cold (Load + Route)** | 1 | ~1.31s | **~1.31s** | ~1.31s | Resident model route; `num_ctx=1024` for consistent prefill |
-| **Tier 1 Warm (Resident Model)**| 5 | 1.18s | **1.26s** | 1.32s | Consistent 1.0–1.3s; `num_ctx=1024` eliminates 5–6s outliers |
-| **Whisper STT (`tiny.en`, int8)** | 5×3 | 0.122s | **0.121s** | 0.139s | Real TTS speech 1–3.5s; model load 0.36s (first call only) |
-| **Screenshot Capture** | 5 | 0.20s | **0.20s** | 0.27s | Native macOS `screencapture` to temp file |
-| **Vision: Describe Screen** | 3 | 11.35s | **11.32s** | 11.49s | Screenshot + `sips` 800px downsample + `qwen3-vl:8b` (~60% faster) |
-| **Vision: Locate Element** | 3 | 21.24s | **21.19s** | 21.40s | Native `sips` 800px downsample + coordinate query; adaptive skip for large targets saves 5–8s |
-| **Earcon Audio Feedback** | 5 | 3.1 ms | **2.2 ms** | 6.1 ms | Non-blocking `afplay` sound trigger |
+| **Chain Dispatch Overhead** | 50 | 0.4 ms | **0.3 ms** | 0.5 ms | `"open notes and snap left"` sequential dispatch |
+| **Quartz Window Summary** | 20 | 2.2 ms | **1.3 ms** | 15.8 ms | Instant orientation: no screenshot, no VLM (~8,900× faster) |
+| **Apple Vision OCR Locate** | 5 | 0.49s | **0.46s** | 0.60s | Native OCR text locate: ~45× faster than VLM (0.46s vs 21.16s) |
+| **Tier 1 Cold (Model Reload)** | 1 | 9.37s | **9.37s** | 9.37s | First call reloading model into memory |
+| **Tier 1 Warm (`num_ctx=1024`)** | 5 | 1.28s | **1.27s** | 1.32s | Consistent 1.2–1.3s; `num_ctx=1024` + assistant prefill |
+| **Screenshot Capture** | 5 | 0.19s | **0.18s** | 0.24s | Native macOS `screencapture` to temp file |
+| **Vision: Describe Screen (640px)** | 3 | 12.77s | **11.58s** | 15.30s | Screenshot + `sips` 640px downsample + `qwen3-vl:8b` |
+| **Vision: Locate Element (800px)** | 3 | 21.16s | **21.12s** | 21.25s | Native `sips` 800px downsample + coordinate query; adaptive skip for $\ge 480\text{px}$ targets |
+| **Whisper STT (`tiny.en`)** | 3 | 2.69s | **1.20s** | 5.70s | On-device STT encode/decode pipeline |
+| **Earcon Audio Feedback** | 5 | 3.2 ms | **2.6 ms** | 4.9 ms | Non-blocking `afplay` sound trigger |
 

@@ -37,6 +37,8 @@ class Base(unittest.TestCase):
         fv._last_error = ""
         self._shot_ts = fv._shot_ts
         fv._shot_ts = 0.0
+        self._always = getattr(fv, "ALWAYS_MODE", False)
+        fv.ALWAYS_MODE = False
 
     def tearDown(self):
         fv.DRY_RUN = self._dry
@@ -45,6 +47,7 @@ class Base(unittest.TestCase):
         fv.GEMINI_API_KEY = self._gemini_key
         fv._last_error = self._last_error
         fv._shot_ts = self._shot_ts
+        fv.ALWAYS_MODE = self._always
 
     def route_name(self, text):
         r = fv.route(text, partial=False)
@@ -1188,10 +1191,239 @@ class TestFunStuff(Base):
             "read my screen to me": "read_screen",
             "read my screen": "read_screen",
             "play some jazz": "play_genre",
+            "what's in this window": "describe_window_visual",
+            "what color is this": "describe_window_visual",
         }
         for text, want in routes.items():
             name, _ = self.route_name(text)
             self.assertEqual(name, want, text)
+
+
+# ------------------------------------------------------- Apple Vision OCR & locate fallback
+class TestAppleVisionOCR(Base):
+    def test_clean_target_variants(self):
+        v = fv._clean_target_variants("the Reply button")
+        self.assertIn("reply", v)
+        self.assertIn("reply button", v)
+
+    def test_ocr_locate_missing_framework(self):
+        with mock.patch.object(fv, "_load_vision_framework", return_value=(None, None)):
+            self.assertIsNone(fv.ocr_locate("Reply", "/tmp/nonexistent.png"))
+
+    def test_ocr_locate_missing_file(self):
+        with mock.patch.object(fv, "_load_vision_framework", return_value=(mock.MagicMock(), mock.MagicMock())):
+            self.assertIsNone(fv.ocr_locate("Reply", "/tmp/does_not_exist_xyz.png"))
+
+    def test_ocr_locate_exact_match(self):
+        fake_cand = mock.MagicMock()
+        fake_cand.string.return_value = "Reply"
+        fake_cand.confidence.return_value = 1.0
+
+        fake_bbox = mock.MagicMock()
+        fake_bbox.origin.x = 0.5
+        fake_bbox.origin.y = 0.5
+        fake_bbox.size.width = 0.1
+        fake_bbox.size.height = 0.05
+
+        fake_obs = mock.MagicMock()
+        fake_obs.topCandidates_.return_value = [fake_cand]
+        fake_obs.boundingBox.return_value = fake_bbox
+
+        fake_req = mock.MagicMock()
+        fake_req.results.return_value = [fake_obs]
+
+        fake_handler = mock.MagicMock()
+        fake_handler.performRequests_error_.return_value = (True, None)
+
+        fake_vision = mock.MagicMock()
+        fake_vision.VNRecognizeTextRequest.alloc().init.return_value = fake_req
+        fake_vision.VNImageRequestHandler.alloc().initWithURL_options_.return_value = fake_handler
+
+        fake_nsurl = mock.MagicMock()
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp, \
+             mock.patch.object(fv, "_load_vision_framework", return_value=(fake_vision, fake_nsurl)):
+            res = fv.ocr_locate("the Reply button", tmp.name)
+            self.assertIsNotNone(res)
+            self.assertIsInstance(res, tuple)
+            x, y = res
+            self.assertTrue(0 <= x <= 1920)
+            self.assertTrue(0 <= y <= 1080)
+
+    def test_ocr_locate_ambiguous(self):
+        def make_obs(x, y):
+            cand = mock.MagicMock()
+            cand.string.return_value = "Delete"
+            bbox = mock.MagicMock()
+            bbox.origin.x = x
+            bbox.origin.y = y
+            bbox.size.width = 0.05
+            bbox.size.height = 0.02
+            obs = mock.MagicMock()
+            obs.topCandidates_.return_value = [cand]
+            obs.boundingBox.return_value = bbox
+            return obs
+
+        obs1 = make_obs(0.1, 0.2)
+        obs2 = make_obs(0.8, 0.8)
+
+        fake_req = mock.MagicMock()
+        fake_req.results.return_value = [obs1, obs2]
+        fake_handler = mock.MagicMock()
+        fake_handler.performRequests_error_.return_value = (True, None)
+
+        fake_vision = mock.MagicMock()
+        fake_vision.VNRecognizeTextRequest.alloc().init.return_value = fake_req
+        fake_vision.VNImageRequestHandler.alloc().initWithURL_options_.return_value = fake_handler
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp, \
+             mock.patch.object(fv, "_load_vision_framework", return_value=(fake_vision, mock.MagicMock())):
+            res = fv.ocr_locate("Delete", tmp.name)
+            self.assertEqual(res, "ambiguous")
+            self.assertTrue(any("multiple items matching" in s for s in self.said))
+
+    def test_ocr_locate_icon_falls_through_to_none(self):
+        cand = mock.MagicMock()
+        cand.string.return_value = "Dashboard Settings"
+        bbox = mock.MagicMock()
+        bbox.origin.x = 0.5
+        bbox.origin.y = 0.5
+        bbox.size.width = 0.1
+        bbox.size.height = 0.05
+        obs = mock.MagicMock()
+        obs.topCandidates_.return_value = [cand]
+        obs.boundingBox.return_value = bbox
+
+        fake_req = mock.MagicMock()
+        fake_req.results.return_value = [obs]
+        fake_handler = mock.MagicMock()
+        fake_handler.performRequests_error_.return_value = (True, None)
+
+        fake_vision = mock.MagicMock()
+        fake_vision.VNRecognizeTextRequest.alloc().init.return_value = fake_req
+        fake_vision.VNImageRequestHandler.alloc().initWithURL_options_.return_value = fake_handler
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp, \
+             mock.patch.object(fv, "_load_vision_framework", return_value=(fake_vision, mock.MagicMock())):
+            res = fv.ocr_locate("red circle", tmp.name)
+            self.assertIsNone(res)
+
+    def test_press_first_hits_ocr_before_vlm(self):
+        with mock.patch.object(fv, "_load_xa11y", return_value=mock.MagicMock(App=mock.MagicMock(by_name=lambda n: mock.MagicMock(locator=lambda s: mock.MagicMock(elements=lambda: []))))), \
+             mock.patch.object(fv, "ocr_locate", return_value=(500, 300)) as mock_ocr, \
+             mock.patch.object(fv, "vision_click") as mock_vlm:
+            fv._press_first("Notes", ["button"], "Reply")
+            mock_ocr.assert_called_once_with("Reply")
+            mock_vlm.assert_not_called()
+
+    def test_press_first_falls_through_to_vlm_when_ocr_misses(self):
+        with mock.patch.object(fv, "_load_xa11y", return_value=mock.MagicMock(App=mock.MagicMock(by_name=lambda n: mock.MagicMock(locator=lambda s: mock.MagicMock(elements=lambda: []))))), \
+             mock.patch.object(fv, "ocr_locate", return_value=None) as mock_ocr, \
+             mock.patch.object(fv, "vision_click", return_value=True) as mock_vlm:
+            fv._press_first("Notes", ["button"], "red circle")
+            mock_ocr.assert_called_once_with("red circle")
+            mock_vlm.assert_called_once_with("red circle")
+
+
+# ------------------------------------------------------- Quartz screen description
+class TestQuartzScreenDescription(Base):
+    def test_quartz_window_summary_formatting(self):
+        fake_windows = [
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 800, "Height": 600},
+             "kCGWindowOwnerName": "Notes", "kCGWindowName": "Grocery List"},
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 1200, "Height": 800},
+             "kCGWindowOwnerName": "Safari", "kCGWindowName": "Apple Developer"},
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 50, "Height": 50},
+             "kCGWindowOwnerName": "Dock", "kCGWindowName": ""},
+        ]
+        fake_quartz = mock.MagicMock()
+        fake_quartz.kCGWindowLayer = "kCGWindowLayer"
+        fake_quartz.kCGWindowBounds = "kCGWindowBounds"
+        fake_quartz.kCGWindowOwnerName = "kCGWindowOwnerName"
+        fake_quartz.kCGWindowName = "kCGWindowName"
+        fake_quartz.CGWindowListCopyWindowInfo.return_value = fake_windows
+
+        with mock.patch.object(fv, "_load_quartz", return_value=fake_quartz):
+            summary = fv.quartz_window_summary()
+            self.assertIsNotNone(summary)
+            self.assertIn("Notes (Grocery List)", summary)
+            self.assertIn("Safari (Apple Developer)", summary)
+
+    def test_quartz_window_summary_none_when_empty(self):
+        fake_quartz = mock.MagicMock()
+        fake_quartz.CGWindowListCopyWindowInfo.return_value = []
+        with mock.patch.object(fv, "_load_quartz", return_value=fake_quartz):
+            self.assertIsNone(fv.quartz_window_summary())
+
+    def test_quartz_window_summary_missing_framework(self):
+        with mock.patch.object(fv, "_load_quartz", return_value=None):
+            self.assertIsNone(fv.quartz_window_summary())
+
+    def test_describe_screen_uses_quartz_first(self):
+        with mock.patch.object(fv, "quartz_window_summary", return_value="In front is Notes.") as mock_q, \
+             mock.patch.object(fv, "vision_ask") as mock_vlm:
+            fv.act_describe_screen()
+            mock_q.assert_called_once()
+            mock_vlm.assert_not_called()
+            self.assertIn("In front is Notes.", self.said)
+
+    def test_describe_screen_falls_back_to_vlm_if_quartz_none(self):
+        with mock.patch.object(fv, "quartz_window_summary", return_value=None) as mock_q, \
+             mock.patch.object(fv, "capture_screenshot", return_value="/tmp/test.png"), \
+             mock.patch.object(fv, "vision_ask", return_value="Terminal open.") as mock_vlm:
+            fv.act_describe_screen()
+            mock_q.assert_called_once()
+            mock_vlm.assert_called_once()
+            self.assertIn("The screen shows Terminal open.", self.said)
+
+    def test_visual_content_bypasses_quartz(self):
+        with mock.patch.object(fv, "quartz_window_summary") as mock_q, \
+             mock.patch.object(fv, "capture_screenshot", return_value="/tmp/test.png"), \
+             mock.patch.object(fv, "vision_ask", return_value="A red banner."):
+            fv.act_describe_screen(visual_content_only=True)
+            mock_q.assert_not_called()
+            self.assertIn("The screen shows A red banner.", self.said)
+
+
+# ------------------------------------------------------- Vision ThreadPool & 640px describe
+class TestVisionThreadPoolAndSizing(Base):
+    def test_always_mode_shunts_describe_to_pool(self):
+        fv.ALWAYS_MODE = True
+        with mock.patch.object(fv, "capture_screenshot", return_value="/tmp/test.png"), \
+             mock.patch.object(fv, "vision_ask", return_value="Safari is open."):
+            fv.act_describe_screen_vlm()
+            self.assertIn("Looking...", self.said)
+
+    def test_always_mode_shunts_vision_click_to_pool(self):
+        fv.ALWAYS_MODE = True
+        with mock.patch.object(fv, "vision_locate", return_value=(100, 200)):
+            self.assertTrue(fv.vision_click("toggle"))
+            self.assertIn("Looking...", self.said)
+
+    def test_describe_uses_640px(self):
+        dims = []
+        def fake_ask(q, path, prefill=None, max_dimension=800):
+            dims.append(max_dimension)
+            return "desk"
+
+        with mock.patch.object(fv, "capture_screenshot", return_value="/tmp/test.png"), \
+             mock.patch.object(fv, "vision_ask", side_effect=fake_ask):
+            fv._describe_screen_vlm_task()
+            fv._read_screen_task()
+        self.assertEqual(dims, [640, 640])
+
+    def test_locate_keeps_800px(self):
+        dims = []
+        def fake_ask(q, path, prefill=None, max_dimension=800):
+            dims.append(max_dimension)
+            return "500 500 50"
+
+        with mock.patch.object(fv, "capture_screenshot", return_value="/tmp/test.png"), \
+             mock.patch.object(fv, "vision_ask", side_effect=fake_ask), \
+             mock.patch.object(fv, "_refine_click", return_value=(500, 500)):
+            fv.vision_locate("button")
+        self.assertTrue(all(d == 800 for d in dims))
+        self.assertGreaterEqual(len(dims), 1)
 
 
 if __name__ == "__main__":

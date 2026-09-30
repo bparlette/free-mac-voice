@@ -136,23 +136,25 @@ Fresh benchmark run on Apple M4 Mac mini (16 GB unified RAM, macOS Darwin arm64,
 
 | Component / Benchmark | Samples (\(n\)) | Mean | Median (\(p50\)) | 95th %tile (\(p95\)) | Status / Notes |
 |---|---|---|---|---|---|
-| **Tier 0 Routing** | 200 | 0.2 ms | **0.2 ms** | 0.3 ms | Regex matcher across 23 commands |
-| **Tier 0 Partial Gating** | 200 | 0.1 ms | **0.1 ms** | 0.2 ms | 10 prefixes of “open notes” |
-| **Chain Dispatch Overhead** | 50 | 0.3 ms | **0.3 ms** | 0.6 ms | Multi-intent sequential dispatch |
-| **Tier 1 Cold (Model Reload)** | 1 | 3.97s | **3.97s** | 3.97s | First call reloading model into memory |
-| **Tier 1 Warm (`num_ctx=1024`)** | 5 | 1.27s | **1.26s** | 1.29s | Resident Ollama route with prefill |
-| **Screenshot Capture** | 5 | 0.17s | **0.18s** | 0.21s | Native macOS `screencapture` to temp file |
-| **Vision: Describe Screen** | 3 | 12.08s | **10.61s** | 15.10s | Screenshot + `sips` 800px + `qwen3-vl:8b` |
-| **Vision: Locate Element** | 3 | 20.81s | **20.80s** | 20.85s | Coordinate query; adaptive skip for $\ge 480\text{px}$ targets |
-| **Whisper STT (`tiny.en`)** | 3 | 1.88s | **1.28s** | 3.17s | On-device STT encode/decode pipeline |
-| **Earcon Audio Feedback** | 5 | 2.2 ms | **1.8 ms** | 3.8 ms | Non-blocking `afplay` sound trigger |
+| **Tier 0 Routing** | 200 | 0.3 ms | **0.3 ms** | 0.3 ms | Regex matcher across 23 commands |
+| **Tier 0 Partial Gating** | 200 | 0.2 ms | **0.2 ms** | 0.2 ms | 10 prefixes of “open notes” |
+| **Chain Dispatch Overhead** | 50 | 0.4 ms | **0.3 ms** | 0.5 ms | Multi-intent sequential dispatch |
+| **Quartz Window Summary** | 20 | 2.2 ms | **1.3 ms** | 15.8 ms | Window list orientation: no screenshot, no VLM |
+| **Apple Vision OCR Locate** | 5 | 0.49s | **0.46s** | 0.60s | Native OCR text locate: ~45x faster than VLM |
+| **Tier 1 Cold (Model Reload)** | 1 | 9.37s | **9.37s** | 9.37s | First call reloading model into memory |
+| **Tier 1 Warm (`num_ctx=1024`)** | 5 | 1.28s | **1.27s** | 1.32s | Resident Ollama route with prefill |
+| **Screenshot Capture** | 5 | 0.19s | **0.18s** | 0.24s | Native macOS `screencapture` to temp file |
+| **Vision: Describe Screen (640px)** | 3 | 12.77s | **11.58s** | 15.30s | Screenshot + `sips` 640px + `qwen3-vl:8b` fallback |
+| **Vision: Locate Element (800px)** | 3 | 21.16s | **21.12s** | 21.25s | Coordinate query; adaptive skip for $\ge 480\text{px}$ targets |
+| **Whisper STT (`tiny.en`)** | 3 | 2.69s | **1.20s** | 5.70s | On-device STT encode/decode pipeline |
+| **Earcon Audio Feedback** | 5 | 3.2 ms | **2.6 ms** | 4.9 ms | Non-blocking `afplay` sound trigger |
 
 ## Tests & benchmarks
 
 No mic, model, or Mac required — the suite stubs all hardware:
 
 ```bash
-python3 -m unittest discover -s tests   # 113 unit tests, stdlib only
+python3 -m unittest discover -s tests   # 131 unit tests, stdlib only
 ```
 
 Component benchmarks (Tier 0 routing, Tier 1 cold vs warm, screenshot,
