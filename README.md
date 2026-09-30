@@ -9,10 +9,12 @@ Hold **Right Option ⌥**, speak, release. Your Mac does it.
 ```bash
 git clone https://github.com/bparlette/free-mac-voice.git
 cd free-mac-voice
-bash install.sh
+bash install.sh        # interactive setup
+# Or for zero-touch unattended setup (accepts defaults, enables login service):
+bash install.sh --yes
 ```
 
-The installer sets up everything: Homebrew packages, a Python environment, the local AI fallback model, and then pops up a 60-second visual start guide (`welcome.html`).
+The installer sets up everything: Homebrew packages, whisper.cpp with Metal acceleration, a Python environment, the local AI fallback model, and opens a 60-second visual start guide (`welcome.html`).
 
 ## Use
 
@@ -79,6 +81,9 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | “switch to computer” / “switch to tv” | Switches Samsung TV input (needs one-time SmartThings setup, see below) |
 | “switch input to HDMI 2” | Sets Samsung TV to a named input source |
 | “turn on the tv” / “turn off the tv” | Powers the Samsung TV on/off |
+| “set tv volume to 25” / “tv volume up” / “tv volume down by 5” | Sets or steps Samsung TV volume (0–100) |
+| “mute tv” / “unmute tv” | Mutes or unmutes Samsung TV audio |
+| “pause tv” / “play tv” / “stop tv” | Controls Samsung TV media playback |
 
 Say **“help”** anytime to hear available commands. Or double-click **Voice Control.command** — no terminal needed. Includes instant audio earcons (subtle audio chime on keypress, release click on completion).
 
@@ -95,6 +100,33 @@ Always-listening uses the wake word **"Mac"** by default:
 - Normal room conversation is ignored so ambient chatter never triggers accidental actions.
 - In push-to-talk mode (Right Option ⌥), the wake word is optional — the keypress itself signals intent.
 - Change the wake word in `~/.free-voice/.env` (`VOICE_WAKE_WORD=mac`), pass `--wake-word <name>`, or disable it for open-mic mode with `--no-wake-word`.
+- **Wake feedback:** customize audio response when "Mac" is heard alone via `VOICE_WAKE_FEEDBACK="both"` (`both`, `chime`, `voice`, or `silent`) and `VOICE_WAKE_CHIME="Tink.aiff"` (any sound in `/System/Library/Sounds/`).
+
+### Real-Time Streaming Mode (sub-500ms mid-speech firing)
+
+Run with `--stream` for instant mid-sentence recognition powered by `whisper-stream` (Metal GPU accelerated):
+
+```bash
+python3 free_voice.py --stream
+```
+
+Whisper streams incoming audio chunks continuously. The moment you finish speaking a valid command (e.g. *"Mac, open notes"*), Tier 0 reflex triggers immediately without waiting for silence or utterance boundary timeouts.
+
+### Menu Bar Status Indicator
+
+Keep visual track of listening state with the lightweight native macOS menu bar app:
+
+```bash
+python3 menu_bar.py
+```
+
+Reflects real-time state:
+- 🎙️ **Listening** — mic open, waiting for wake word or command
+- 👂 **Heard Wake Word** — "Mac" detected, listening window active (8s)
+- ⚙️ **Working** — executing action / running vision OCR or model
+- 💤 **Idle** — standby / muted
+
+Click the menu bar item to view current status or quit.
 
 ## Use your iPhone as the mic
 
@@ -160,7 +192,7 @@ export GEMINI_API_KEY="AIzaSy..."
 If unset (the default), `free-voice` runs completely local and private on your hardware.
 
 ### Samsung TV control (optional)
-Control input switching and power on your Samsung Smart TV over Wi-Fi via the SmartThings cloud API.
+Control input switching, power, volume, mute, and media playback on your Samsung Smart TV over Wi-Fi via the SmartThings cloud API.
 
 **One-time setup (about 5 minutes):**
 1. **SmartThings app:** On iPhone/Android, open the SmartThings app, sign in with your Samsung account, and add your Samsung TV (usually auto-detected on the same Wi-Fi).

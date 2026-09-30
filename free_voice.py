@@ -115,9 +115,44 @@ VOICE_MIC = os.environ.get("VOICE_MIC", "")
 VOICE_USER_EMAIL = os.environ.get("VOICE_USER_EMAIL", "").strip()
 # Wake word for always-listening mode. Default is "mac". Empty string disables.
 VOICE_WAKE_WORD = os.environ.get("VOICE_WAKE_WORD", "mac").strip().lower()
+# Wake word feedback style: "both" (chime + "Yes?"), "chime" (chime only), "voice" ("Yes?" only), "silent"
+VOICE_WAKE_FEEDBACK = os.environ.get("VOICE_WAKE_FEEDBACK", "both").strip().lower()
+VOICE_WAKE_CHIME = os.environ.get("VOICE_WAKE_CHIME", "Tink.aiff").strip()
 WAKE_WINDOW_SEC = float(os.environ.get("VOICE_WAKE_WINDOW", "8.0"))
 _wake_window_until = 0.0
 DRY_RUN = False
+
+
+def acknowledge_wake() -> None:
+    """Provide audio feedback when wake word is heard alone."""
+    fb = VOICE_WAKE_FEEDBACK
+    if fb in ("chime", "both"):
+        play_chime(VOICE_WAKE_CHIME or "Tink.aiff")
+    if fb in ("voice", "both"):
+        say("Yes?")
+
+
+_STATE_FILE = os.path.join(tempfile.gettempdir(), "free-voice-state.json")
+
+
+def update_state(state: str, **kwargs) -> None:
+    """Publish current status for menu bar / external observers."""
+    if DRY_RUN:
+        return
+    try:
+        data = {
+            "state": state,
+            "wake_word": VOICE_WAKE_WORD,
+            "always": ALWAYS_MODE,
+            "ts": time.time(),
+            **kwargs,
+        }
+        tmp = _STATE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, _STATE_FILE)
+    except Exception:
+        pass
 
 
 def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
@@ -546,6 +581,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 3.0, wake_word: str = 
             vad = VoiceActivityDetector(sensitivity=sensitivity)
             capturing: list[np.ndarray] = []
             log(f"microphone: {describe_input_device()} — listening")
+            update_state("listening", wake_word=wake_word)
             play_chime("Tink.aiff")
             try:
                 with sd.RawInputStream(samplerate=16000, channels=1, dtype="int16",
@@ -2519,6 +2555,59 @@ def act_tv_power(on: bool) -> None:
     say(f"Turning the TV {'on' if on else 'off'}")
 
 
+def act_tv_volume_set(level: int) -> None:
+    """'set tv volume to 25' — set the Samsung TV volume."""
+    if not _tv_configured():
+        say("Samsung TV isn't set up yet — see samsung_tv.py for the one-time setup")
+        return
+    try:
+        shell([sys.executable, _TV_SCRIPT, "set-volume", str(level)])
+    except Exception:  # noqa: BLE001
+        say("I couldn't reach the Samsung TV")
+        return
+    say(f"TV volume {level}")
+
+
+def act_tv_volume_delta(delta: int) -> None:
+    """'tv volume up' / 'tv volume down' — adjust Samsung TV volume."""
+    if not _tv_configured():
+        say("Samsung TV isn't set up yet — see samsung_tv.py for the one-time setup")
+        return
+    try:
+        cmd = "volume-up" if delta > 0 else "volume-down"
+        shell([sys.executable, _TV_SCRIPT, cmd, str(abs(delta))])
+    except Exception:  # noqa: BLE001
+        say("I couldn't reach the Samsung TV")
+        return
+    say(f"TV volume {'up' if delta > 0 else 'down'}")
+
+
+def act_tv_mute(mute: bool) -> None:
+    """'mute tv' / 'unmute tv' — toggle mute on the Samsung TV."""
+    if not _tv_configured():
+        say("Samsung TV isn't set up yet — see samsung_tv.py for the one-time setup")
+        return
+    try:
+        shell([sys.executable, _TV_SCRIPT, "mute" if mute else "unmute"])
+    except Exception:  # noqa: BLE001
+        say("I couldn't reach the Samsung TV")
+        return
+    say(f"TV {'muted' if mute else 'unmuted'}")
+
+
+def act_tv_media(action: str) -> None:
+    """'pause tv' / 'play tv' — control media playback on the Samsung TV."""
+    if not _tv_configured():
+        say("Samsung TV isn't set up yet — see samsung_tv.py for the one-time setup")
+        return
+    try:
+        shell([sys.executable, _TV_SCRIPT, "media", action])
+    except Exception:  # noqa: BLE001
+        say("I couldn't reach the Samsung TV")
+        return
+    say(f"TV {action}")
+
+
 # ---------------------------------------------------------------- Tier 0: regex router + completion gating
 # _p(rx, name, partial_ok): partial_ok=True ONLY for commands that are safe
 # to fire mid-sentence on a growing partial transcript. Free-text payloads
@@ -2539,6 +2628,11 @@ _p(r"^switch to (the )?(computer|mac|pc)$", "tv_computer", True)
 _p(r"^switch to (the )?tv$", "tv_tv", True)
 _p(r"^(switch|change)( the)? (input|source)( to)? (.+)$", "tv_input")
 _p(r"^turn (on|off)( the)? tv$", "tv_power", True)
+_p(r"^set( the)? tv volume to (\d+)$", "tv_vol_set")
+_p(r"^tv volume (up|down)( by \d+)?$", "tv_vol_delta", True)
+_p(r"^mute( the)? tv$", "tv_mute", True)
+_p(r"^unmute( the)? tv$", "tv_unmute", True)
+_p(r"^(pause|play|stop)( the)? tv$", "tv_media", True)
 # --- apps & tabs (specific "open tab" / "open X settings" / "open trash" BEFORE generic open)
 _p(r"^(new|open)( a)? tab$", "new_tab", True)
 _p(r"^close( the)? tab$", "close_tab", True)
@@ -2780,6 +2874,118 @@ class PartialSession:
         return True
 
 
+def stream_process_line(line: str, session: PartialSession, require_wake: bool = True) -> bool:
+    """Process a raw streaming transcript line from whisper-stream through PartialSession.
+
+    Strips timestamp headers and ANSI escape codes. Applies wake word filtering if required.
+    """
+    cleaned = re.sub(r"\[\d\d:\d\d:\d\d\.\d\d\d --> \d\d:\d\d:\d\d\.\d\d\d\]", "", line)
+    cleaned = re.sub(r"\x1b\[[0-9;]*m", "", cleaned).strip().rstrip(".!?").strip()
+    if not cleaned:
+        return False
+
+    cmd_text = cleaned
+    if require_wake and VOICE_WAKE_WORD:
+        is_wake, stripped = parse_wake_word(cleaned, VOICE_WAKE_WORD)
+        now = time.time()
+        global _wake_window_until
+        if is_wake:
+            if not stripped:
+                _wake_window_until = now + WAKE_WINDOW_SEC
+                log(f"streaming wake word {VOICE_WAKE_WORD!r} heard alone — listening for {WAKE_WINDOW_SEC}s...")
+                update_state("wake_heard", msg="listening for command")
+                acknowledge_wake()
+                return True
+            cmd_text = stripped
+        elif now < _wake_window_until:
+            cmd_text = cleaned
+        else:
+            return False
+
+    return session.feed(cmd_text)
+
+
+def ensure_ggml_model(model_name: str = "tiny.en") -> str | None:
+    """Ensure a GGML model file is available for whisper-stream."""
+    models_dir = os.path.expanduser("~/.free-voice/models")
+    os.makedirs(models_dir, exist_ok=True)
+    target = os.path.join(models_dir, f"ggml-{model_name}.bin")
+    if os.path.exists(target) and os.path.getsize(target) > 1000000:
+        return target
+    hb_sample = "/opt/homebrew/Cellar/whisper.cpp/1.9.4/share/whisper.cpp/for-tests-ggml-tiny.bin"
+    if os.path.exists(hb_sample):
+        return hb_sample
+    url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{model_name}.bin"
+    log(f"downloading {model_name} model for streaming ({url})…")
+    try:
+        urllib.request.urlretrieve(url, target)
+        return target
+    except Exception as e:  # noqa: BLE001
+        log(f"could not download ggml model ({e})")
+        return None
+
+
+def stream_whisper_loop(on_command, step_ms: int = 500, length_ms: int = 5000,
+                        wake_word: str = "mac") -> None:
+    """Run real-time streaming speech recognition via whisper-stream.
+
+    Tokens are processed incrementally through PartialSession.
+    Tier 0 commands fire instantly as soon as their words are completed.
+    """
+    stream_bin = "/opt/homebrew/bin/whisper-stream"
+    if not os.path.exists(stream_bin):
+        import shutil
+        stream_bin = shutil.which("whisper-stream")
+
+    if not stream_bin or not os.path.exists(stream_bin):
+        log("whisper-stream binary not found — falling back to standard always-listen loop")
+        always_listen_loop(
+            lambda audio: on_utterance(audio, quiet_miss=True, require_wake_word=bool(wake_word)),
+            wake_word=wake_word,
+        )
+        return
+
+    model_path = ensure_ggml_model(WHISPER_MODEL or "tiny.en")
+    if not model_path:
+        log("ggml model unavailable — falling back to standard always-listen loop")
+        always_listen_loop(
+            lambda audio: on_utterance(audio, quiet_miss=True, require_wake_word=bool(wake_word)),
+            wake_word=wake_word,
+        )
+        return
+
+    def on_fire(name, m):
+        log(f"streaming Tier 0 hit: {name} <- {m.group(0)!r}")
+        update_state("processing", command=m.group(0))
+        on_command(name, m)
+
+    session = PartialSession(on_fire)
+    cmd = [
+        stream_bin,
+        "-m", model_path,
+        "--step", str(step_ms),
+        "--length", str(length_ms),
+        "-t", "4",
+        "-l", "en",
+    ]
+    log(f"starting real-time streaming STT: {' '.join(cmd)}")
+    log(f"speak commands prefixed with '{wake_word.title()}' (fires instantly mid-speech)")
+    update_state("listening", mode="streaming", wake_word=wake_word)
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        for line in proc.stdout:
+            stream_process_line(line, session, require_wake=bool(wake_word))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+
+
 def _num(m: re.Match, i: int) -> int:
     return int(m.group(i))
 
@@ -2984,6 +3190,22 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             src = m.group(5).strip(); act_tv_input(src, src)
         elif name == "tv_power":
             act_tv_power(m.group(1) == "on")
+        elif name == "tv_vol_set":
+            act_tv_volume_set(int(m.group(2)))
+        elif name == "tv_vol_delta":
+            direction = m.group(1).lower()
+            delta = 1
+            if m.group(2):
+                nums = re.findall(r"\d+", m.group(2))
+                if nums:
+                    delta = int(nums[0])
+            act_tv_volume_delta(delta if direction == "up" else -delta)
+        elif name == "tv_mute":
+            act_tv_mute(True)
+        elif name == "tv_unmute":
+            act_tv_mute(False)
+        elif name == "tv_media":
+            act_tv_media(m.group(1).lower())
         elif name == "lock":
             act_lock()
         elif name == "sleep":
@@ -3474,8 +3696,8 @@ def handle_command(text: str, confirm_audio_fn=None,
                     # Spoke wake word alone: open a listening window
                     _wake_window_until = now + WAKE_WINDOW_SEC
                     log(f"wake word {VOICE_WAKE_WORD!r} heard alone — listening for {WAKE_WINDOW_SEC}s...")
-                    play_chime("Tink.aiff")
-                    say("Yes?")
+                    update_state("wake_heard", msg="listening for command")
+                    acknowledge_wake()
                     return True
                 # Wake word + command in one sentence
                 _wake_window_until = 0.0
@@ -3496,6 +3718,7 @@ def handle_command(text: str, confirm_audio_fn=None,
         return False
 
     log(f"heard: {t!r}")
+    update_state("processing", command=t)
 
     # Tier 0: instant regex (final transcript — no gating needed)
     r = route(t, partial=False)
@@ -3626,7 +3849,7 @@ def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = Fals
 
 
 def main() -> None:
-    global DRY_RUN, VOICE_MIC, VOICE_WAKE_WORD
+    global DRY_RUN, VOICE_MIC, VOICE_WAKE_WORD, ALWAYS_MODE
     ap = argparse.ArgumentParser(description="Free voice control for macOS")
     ap.add_argument("--text", help="run one command from text, no mic")
     ap.add_argument("--partial", metavar="TEXT",
@@ -3642,6 +3865,9 @@ def main() -> None:
     ap.add_argument("--always", action="store_true",
                     help="listen continuously with voice activity detection; "
                          "Ctrl-C quits (requires wake word by default)")
+    ap.add_argument("--stream", action="store_true",
+                    help="listen continuously using real-time whisper.cpp streaming "
+                         "(sub-500ms mid-speech firing via PartialSession)")
     ap.add_argument("--sensitivity", type=float, default=3.0, metavar="X",
                     help="always-listen mic sensitivity multiplier "
                          "(higher = easier to trigger; default 3.0)")
@@ -3682,8 +3908,16 @@ def main() -> None:
         except Exception as e:
             log(f"couldn't record ({e})")
         return
+    if args.stream:
+        ALWAYS_MODE = True
+        require_wake = bool(VOICE_WAKE_WORD) and not args.no_wake_word
+        active_wake = VOICE_WAKE_WORD if require_wake else ""
+        stream_whisper_loop(
+            lambda name, m: execute_match(name, m),
+            wake_word=active_wake,
+        )
+        return
     if args.always:
-        global ALWAYS_MODE
         ALWAYS_MODE = True
         require_wake = bool(VOICE_WAKE_WORD) and not args.no_wake_word
         active_wake = VOICE_WAKE_WORD if require_wake else ""

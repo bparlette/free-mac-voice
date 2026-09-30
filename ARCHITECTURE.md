@@ -240,38 +240,36 @@ are approximate and never used for destructive or sensitive actions.
   costs a transcription and nothing else. Tune with `--sensitivity`
   (higher = easier to trigger).
 
-**Why no wake word:** the standard free engine, openWakeWord, does not work
-natively on Apple Silicon — its ONNX models score near zero on ARM64
-([issue #309](https://github.com/dscripka/openwakeword/issues/309),
-[#336](https://github.com/dscripka/openwakeword/issues/336)); the only
-workaround is a ~500 MB TensorFlow install plus a runtime shim, which fails
-the "one command, no fiddling" bar. The energy VAD needs no new
-dependencies and works out of the box; the honest tradeoff is that any
-speech — TV included — gets transcribed. In a noisy room, push-to-talk
-wins. A real wake word remains a documented future upgrade, not a shipped
-claim.
+**Wake word & conversation protection:**
+Always-listening protects against ambient room conversation and TV noise using the wake word **"Mac"** (default, configurable via `VOICE_WAKE_WORD` in `.env` or `--wake-word`):
+- **Single-breath:** `"Mac, open notes"` executes immediately.
+- **Two-stage:** Saying `"Mac"` alone produces instant audio feedback (`VOICE_WAKE_FEEDBACK="both"|"chime"|"voice"|"silent"`, chime sound `VOICE_WAKE_CHIME="Tink.aiff"`) and activates an 8-second wake window where subsequent speech executes directly without repeating the wake word.
+- Non-commands and ambient talk outside the wake window are silently ignored (`quiet_miss=True`). Push-to-talk (Right Option ⌥) bypasses the wake word since the physical keypress explicitly confirms intent.
 
-**Start at login:** `install.sh` can install `com.free-mac-voice.plist` as a
-LaunchAgent (`RunAtLoad` + `KeepAlive`), so `--always` survives reboots and
-restarts on crash. Logs go to `/tmp/free-mac-voice.log`. Note: macOS grants
-Microphone per-binary, so the first autostart prompts once for Python —
-allow it and it sticks. Remove with
-`launchctl unload -w ~/Library/LaunchAgents/com.free-mac-voice.plist`.
+**Start at login:** `install.sh` (or `install.sh --yes` for zero-touch setup) installs `com.free-mac-voice.plist` as a LaunchAgent (`RunAtLoad` + `KeepAlive`), so `--always` survives reboots and restarts on crash. Logs go to `/tmp/free-mac-voice.log`. Remove anytime with `launchctl unload -w ~/Library/LaunchAgents/com.free-mac-voice.plist`.
 
-**Next:** true mid-sentence execution. The router side is already built for
-it — `PartialSession.feed(partial)` with gating + dedup is exactly what a
-streaming STT loop should drive. The remaining work is Mac-side: run
-`whisper.cpp --stream` (installed by `install.sh`) and feed its partial
-hypotheses into `feed()`, firing Tier 0 the moment a command completes while
-the user is still talking. That is the Andy Gao effect; everything it needs
-except the audio plumbing is in this repo.
+**Real-Time Streaming Whisper (`--stream`):**
+In addition to energy-VAD batching, `free-voice` provides true mid-sentence streaming execution via `whisper.cpp --stream` (`whisper-stream` with Apple Silicon Metal acceleration):
+- Sub-500ms mid-speech firing: `stream_whisper_loop()` streams partial transcription lines directly from `whisper-stream`.
+- Timestamps and ANSI control sequences are cleanly stripped.
+- `PartialSession.feed(chunk)` gates Tier 0 commands so the moment a complete command is heard (e.g. *"Mac, open notes"*), Tier 0 reflex triggers immediately while the speaker is still finishing their sentence.
+- If the wake word is spoken alone, `acknowledge_wake()` triggers audio feedback and opens the wake window.
+
+**Menu Bar Status (`menu_bar.py`):**
+A native macOS status item (PyObjC `AppKit`) tracks system activity via `/tmp/free-voice-state.json`:
+- `🎙️` Listening: mic active, waiting for wake word or command
+- `👂` Heard Wake Word: wake window open (8s countdown)
+- `⚙️` Working: executing action, OCR locate, or VLM inference
+- `💤` Idle: standby or muted
 
 ## 7. Files
 
 | File | What it is |
 |---|---|
-| `free_voice.py` | the whole system: audio, 3 tiers, actions, CLI |
-| `install.sh` | one-command macOS setup (re-runnable) |
+| `free_voice.py` | the whole system: audio, 3 tiers, streaming STT, actions, CLI |
+| `menu_bar.py` | native macOS menu bar status indicator (🎙️/👂/⚙️/💤) |
+| `samsung_tv.py` | SmartThings cloud API bridge: power, input, volume, mute, media |
+| `install.sh` | one-command macOS setup (re-runnable, supports `--yes` unattended) |
 | `upgrade.sh` | one-command update for existing installs (git or zip) |
 | `welcome.html` | 60-second visual start guide, opened post-install |
 | `Voice Control.command` | double-click launcher: push-to-talk |

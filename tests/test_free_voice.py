@@ -21,6 +21,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import free_voice as fv
 import samsung_tv
+import menu_bar
 
 
 class Base(unittest.TestCase):
@@ -1768,6 +1769,56 @@ class TestSamsungTV(Base):
             sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "power", "off"])
             self.assertIn("Turning the TV off", self.said[-1])
 
+    def test_routing_tv_volume_and_mute(self):
+        cases = [
+            ("set tv volume to 25", "tv_vol_set", "25"),
+            ("set the tv volume to 50", "tv_vol_set", "50"),
+            ("tv volume up", "tv_vol_delta", "up"),
+            ("tv volume down by 5", "tv_vol_delta", "down"),
+            ("mute tv", "tv_mute", None),
+            ("mute the tv", "tv_mute", None),
+            ("unmute tv", "tv_unmute", None),
+            ("pause tv", "tv_media", "pause"),
+            ("play the tv", "tv_media", "play"),
+            ("stop tv", "tv_media", "stop"),
+        ]
+        for text, want_name, want_val in cases:
+            name, m = self.route_name(text)
+            self.assertEqual(name, want_name, text)
+            if want_name == "tv_vol_set":
+                self.assertEqual(m.group(2), want_val)
+            elif want_name == "tv_vol_delta":
+                self.assertEqual(m.group(1), want_val)
+            elif want_name == "tv_media":
+                self.assertEqual(m.group(1), want_val)
+
+    def test_act_tv_volume_and_mute_execution(self):
+        with mock.patch.object(fv, "_tv_configured", return_value=True), \
+             mock.patch.object(fv, "shell") as sh:
+            fv.act_tv_volume_set(30)
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "set-volume", "30"])
+            self.assertIn("TV volume 30", self.said[-1])
+
+            fv.act_tv_volume_delta(5)
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "volume-up", "5"])
+            self.assertIn("TV volume up", self.said[-1])
+
+            fv.act_tv_volume_delta(-2)
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "volume-down", "2"])
+            self.assertIn("TV volume down", self.said[-1])
+
+            fv.act_tv_mute(True)
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "mute"])
+            self.assertIn("TV muted", self.said[-1])
+
+            fv.act_tv_mute(False)
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "unmute"])
+            self.assertIn("TV unmuted", self.said[-1])
+
+            fv.act_tv_media("pause")
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "media", "pause"])
+            self.assertIn("TV pause", self.said[-1])
+
 
 class TestSamsungTVScript(unittest.TestCase):
     def test_script_resolve_source_aliases(self):
@@ -1824,6 +1875,56 @@ class TestSamsungTVScript(unittest.TestCase):
                     "component": "main",
                     "capability": "switch",
                     "command": "off",
+                    "arguments": []
+                }]}
+            )
+
+    def test_script_cmd_volume_and_media_post_shape(self):
+        with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
+            # Set volume
+            samsung_tv.cmd_set_volume(25)
+            mock_req.assert_called_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "audioVolume",
+                    "command": "setVolume",
+                    "arguments": [25]
+                }]}
+            )
+            # Volume delta
+            samsung_tv.cmd_volume_delta(2)
+            mock_req.assert_called_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [
+                    {"component": "main", "capability": "audioVolume", "command": "volumeUp", "arguments": []},
+                    {"component": "main", "capability": "audioVolume", "command": "volumeUp", "arguments": []}
+                ]}
+            )
+            # Mute
+            samsung_tv.cmd_mute(True)
+            mock_req.assert_called_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "audioMute",
+                    "command": "mute",
+                    "arguments": []
+                }]}
+            )
+            # Media
+            samsung_tv.cmd_media("pause")
+            mock_req.assert_called_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "mediaPlayback",
+                    "command": "pause",
                     "arguments": []
                 }]}
             )
@@ -1953,6 +2054,107 @@ class TestWakeWord(Base):
             handled = fv.handle_command("open notes", require_wake_word=True)
             self.assertTrue(handled)
             mock_open.assert_called_once_with("notes")
+
+    def test_wake_feedback_styles(self):
+        with mock.patch.object(fv, "play_chime") as mock_chime:
+            # "both" (default)
+            fv.VOICE_WAKE_FEEDBACK = "both"
+            fv.acknowledge_wake()
+            mock_chime.assert_called_with("Tink.aiff")
+            self.assertIn("Yes?", self.said)
+
+            # "chime" only
+            self.said.clear()
+            mock_chime.reset_mock()
+            fv.VOICE_WAKE_FEEDBACK = "chime"
+            fv.acknowledge_wake()
+            mock_chime.assert_called_with("Tink.aiff")
+            self.assertEqual(len(self.said), 0)
+
+            # "voice" only
+            self.said.clear()
+            mock_chime.reset_mock()
+            fv.VOICE_WAKE_FEEDBACK = "voice"
+            fv.acknowledge_wake()
+            mock_chime.assert_not_called()
+            self.assertIn("Yes?", self.said)
+
+            # "silent"
+            self.said.clear()
+            mock_chime.reset_mock()
+            fv.VOICE_WAKE_FEEDBACK = "silent"
+            fv.acknowledge_wake()
+            mock_chime.assert_not_called()
+            self.assertEqual(len(self.said), 0)
+
+
+# ------------------------------------------------------- Menu bar & state tracking
+class TestMenuBarAndState(Base):
+    def test_state_publishing_and_reading(self):
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            with mock.patch.object(fv, "_STATE_FILE", tmp_path), \
+                 mock.patch.object(menu_bar, "STATE_FILE", tmp_path):
+                # By default DRY_RUN is True in Base, so set it False to write state
+                fv.DRY_RUN = False
+                fv.update_state("listening", command="open notes")
+                st = menu_bar.read_state()
+                self.assertEqual(st.get("state"), "listening")
+                self.assertEqual(st.get("command"), "open notes")
+                self.assertEqual(st.get("wake_word"), "mac")
+                self.assertIn("ts", st)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def test_menu_bar_read_empty_on_missing_file(self):
+        with mock.patch.object(menu_bar, "STATE_FILE", "/tmp/nonexistent-state-12345.json"):
+            self.assertEqual(menu_bar.read_state(), {})
+
+
+# ------------------------------------------------------- Streaming Whisper STT
+class TestStreamingWhisper(Base):
+    def test_stream_process_line_with_wake_word_fires_command(self):
+        fired = []
+        session = fv.PartialSession(lambda name, m: fired.append((name, m.group(0))))
+        raw_line = "[00:00:00.000 --> 00:00:02.000] Mac open notes\n"
+        res = fv.stream_process_line(raw_line, session, require_wake=True)
+        self.assertTrue(res)
+        self.assertEqual(len(fired), 1)
+        self.assertEqual(fired[0], ("open_app", "open notes"))
+
+    def test_stream_process_line_ignores_non_wake_words(self):
+        fired = []
+        session = fv.PartialSession(lambda name, m: fired.append((name, m.group(0))))
+        raw_line = "[00:00:00.000 --> 00:00:02.000] open notes\n"
+        res = fv.stream_process_line(raw_line, session, require_wake=True)
+        self.assertFalse(res)
+        self.assertEqual(len(fired), 0)
+
+    def test_stream_process_line_two_stage_streaming(self):
+        fired = []
+        session = fv.PartialSession(lambda name, m: fired.append((name, m.group(0))))
+        # Utterance 1: "Mac" alone
+        res1 = fv.stream_process_line("Mac\n", session, require_wake=True)
+        self.assertTrue(res1)
+        self.assertEqual(len(fired), 0)
+        self.assertGreater(fv._wake_window_until, 0.0)
+
+        # Utterance 2: "open notes" within active wake window
+        res2 = fv.stream_process_line("open notes\n", session, require_wake=True)
+        self.assertTrue(res2)
+        self.assertEqual(len(fired), 1)
+        self.assertEqual(fired[0], ("open_app", "open notes"))
+
+    def test_stream_process_line_no_wake_required(self):
+        fired = []
+        session = fv.PartialSession(lambda name, m: fired.append((name, m.group(0))))
+        raw_line = "open notes\n"
+        res = fv.stream_process_line(raw_line, session, require_wake=False)
+        self.assertTrue(res)
+        self.assertEqual(len(fired), 1)
+        self.assertEqual(fired[0], ("open_app", "open notes"))
 
 
 if __name__ == "__main__":

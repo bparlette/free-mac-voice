@@ -14,9 +14,13 @@
 set -euo pipefail
 
 UPDATE_MODE=0
-if [[ "${1:-}" == "--update" ]]; then
-  UPDATE_MODE=1
-fi
+YES_MODE=0
+for arg in "$@"; do
+  case "$arg" in
+    --update) UPDATE_MODE=1 ;;
+    --yes|-y|--unattended) YES_MODE=1 ;;
+  esac
+done
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,7 +39,7 @@ step "Checking Xcode Command Line Tools…"
 if ! xcode-select -p >/dev/null 2>&1; then
   note "Installing — a macOS popup will ask you to confirm."
   xcode-select --install || true
-  if [[ -t 0 ]]; then
+  if [[ -t 0 && "$YES_MODE" != "1" ]]; then
     read -rp "Press Enter once the Command Line Tools install has finished… " _ || true
   else
     # non-interactive (automation): poll instead of blocking on read forever
@@ -165,7 +169,10 @@ else
 step "Start automatically at login?"
 note "This keeps voice control always listening, even after a reboot."
 note "It restarts itself if it ever crashes."
-if [[ -t 0 ]]; then
+if [[ "$YES_MODE" == "1" ]]; then
+  login_ans="Y"
+  note "unattended mode: automatically enabling always-listening at login"
+elif [[ -t 0 ]]; then
   read -rp "Enable always-listening at login? [y/N] " login_ans || true
 else
   login_ans="N"  # non-interactive: default to no, re-run install.sh to enable

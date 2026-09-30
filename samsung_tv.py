@@ -151,7 +151,65 @@ def cmd_status() -> str:
     main = st.get("components", {}).get("main", {})
     src = main.get("mediaInputSource", {}).get("inputSource", {}).get("value")
     power = main.get("switch", {}).get("switch", {}).get("value")
-    msg = f"TV power: {power}, input: {src}"
+    vol = main.get("audioVolume", {}).get("volume", {}).get("value")
+    mute = main.get("audioMute", {}).get("mute", {}).get("value")
+    msg = f"TV power: {power}, input: {src}, volume: {vol}, mute: {mute}"
+    print(msg)
+    return msg
+
+
+def cmd_set_volume(level: int) -> str:
+    dev = _need_device()
+    level = max(0, min(100, int(level)))
+    _req("POST", f"/devices/{dev}/commands", {
+        "commands": [{"component": "main",
+                      "capability": "audioVolume",
+                      "command": "setVolume",
+                      "arguments": [level]}]})
+    msg = f"TV volume -> {level}"
+    print(msg)
+    return msg
+
+
+def cmd_volume_delta(delta: int) -> str:
+    dev = _need_device()
+    cmd = "volumeUp" if delta > 0 else "volumeDown"
+    steps = abs(delta)
+    commands = [{"component": "main",
+                 "capability": "audioVolume",
+                 "command": cmd,
+                 "arguments": []} for _ in range(min(10, max(1, steps)))]
+    _req("POST", f"/devices/{dev}/commands", {"commands": commands})
+    direction = "up" if delta > 0 else "down"
+    msg = f"TV volume {direction} by {steps}"
+    print(msg)
+    return msg
+
+
+def cmd_mute(mute: bool) -> str:
+    dev = _need_device()
+    command = "mute" if mute else "unmute"
+    _req("POST", f"/devices/{dev}/commands", {
+        "commands": [{"component": "main",
+                      "capability": "audioMute",
+                      "command": command,
+                      "arguments": []}]})
+    msg = f"TV {'muted' if mute else 'unmuted'}"
+    print(msg)
+    return msg
+
+
+def cmd_media(action: str) -> str:
+    dev = _need_device()
+    action = action.lower().strip()
+    if action not in ("play", "pause", "stop", "fastforward", "rewind"):
+        raise TVError(f"unsupported media action: {action}")
+    _req("POST", f"/devices/{dev}/commands", {
+        "commands": [{"component": "main",
+                      "capability": "mediaPlayback",
+                      "command": action,
+                      "arguments": []}]})
+    msg = f"TV media {action}"
     print(msg)
     return msg
 
@@ -159,7 +217,8 @@ def cmd_status() -> str:
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(__doc__.strip().split("\n\n")[0])
-        print("commands: discover | set-input <name> | power on|off | status")
+        print("commands: discover | set-input <name> | power on|off | status | "
+              "set-volume <0-100> | volume-up [n] | volume-down [n] | mute | unmute | media play|pause|stop")
         return 2
     cmd, rest = argv[1], argv[2:]
     try:
@@ -171,6 +230,20 @@ def main(argv: list[str]) -> int:
             cmd_power(rest[0])
         elif cmd == "status":
             cmd_status()
+        elif cmd == "set-volume" and rest:
+            cmd_set_volume(int(rest[0]))
+        elif cmd == "volume-up":
+            delta = int(rest[0]) if rest else 1
+            cmd_volume_delta(delta)
+        elif cmd == "volume-down":
+            delta = int(rest[0]) if rest else 1
+            cmd_volume_delta(-delta)
+        elif cmd == "mute":
+            cmd_mute(True)
+        elif cmd == "unmute":
+            cmd_mute(False)
+        elif cmd == "media" and rest:
+            cmd_media(rest[0])
         else:
             print(f"unknown command: {cmd}", file=sys.stderr)
             return 2
