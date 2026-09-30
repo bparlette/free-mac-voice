@@ -1103,7 +1103,10 @@ class TestFunStuff(Base):
         self.assertIn(self.said[-1], fv._JOKES)
 
     def test_ascii_art_renders_and_opens(self):
-        from PIL import Image
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow not installed in current environment")
         img_path = os.path.join(tempfile.gettempdir(), "t-ascii.png")
         Image.new("RGB", (64, 32), "white").save(img_path)
         with mock.patch.object(fv, "capture_screenshot", return_value=img_path), \
