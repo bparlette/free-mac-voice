@@ -1349,6 +1349,40 @@ class TestQuartzScreenDescription(Base):
             self.assertIn("Notes (Grocery List)", summary)
             self.assertIn("Safari (Apple Developer)", summary)
 
+    def test_quartz_window_summary_pluralization(self):
+        # 1 front app + 3 behind apps => rem = 1 => '1 other app'
+        fake_windows_3_behind = [
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 800, "Height": 600},
+             "kCGWindowOwnerName": "Notes", "kCGWindowName": "List"},
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 800, "Height": 600},
+             "kCGWindowOwnerName": "Safari", "kCGWindowName": "Web"},
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 800, "Height": 600},
+             "kCGWindowOwnerName": "Terminal", "kCGWindowName": "zsh"},
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 800, "Height": 600},
+             "kCGWindowOwnerName": "Music", "kCGWindowName": "Music"},
+        ]
+        # 1 front app + 4 behind apps => rem = 2 => '2 other apps'
+        fake_windows_4_behind = fake_windows_3_behind + [
+            {"kCGWindowLayer": 0, "kCGWindowBounds": {"Width": 800, "Height": 600},
+             "kCGWindowOwnerName": "Mail", "kCGWindowName": "Inbox"},
+        ]
+        fake_quartz = mock.MagicMock()
+        fake_quartz.kCGWindowLayer = "kCGWindowLayer"
+        fake_quartz.kCGWindowBounds = "kCGWindowBounds"
+        fake_quartz.kCGWindowOwnerName = "kCGWindowOwnerName"
+        fake_quartz.kCGWindowName = "kCGWindowName"
+
+        with mock.patch.object(fv, "_load_quartz", return_value=fake_quartz):
+            fake_quartz.CGWindowListCopyWindowInfo.return_value = fake_windows_3_behind
+            s1 = fv.quartz_window_summary()
+            self.assertIn("1 other app", s1)
+            self.assertNotIn("app(s)", s1)
+
+            fake_quartz.CGWindowListCopyWindowInfo.return_value = fake_windows_4_behind
+            s2 = fv.quartz_window_summary()
+            self.assertIn("2 other apps", s2)
+            self.assertNotIn("app(s)", s2)
+
     def test_quartz_window_summary_none_when_empty(self):
         fake_quartz = mock.MagicMock()
         fake_quartz.CGWindowListCopyWindowInfo.return_value = []
@@ -1385,7 +1419,7 @@ class TestQuartzScreenDescription(Base):
             self.assertIn("The screen shows A red banner.", self.said)
 
 
-# ------------------------------------------------------- Vision ThreadPool & 640px describe
+# ------------------------------------------------------- Vision ThreadPool & 800px describe
 class TestVisionThreadPoolAndSizing(Base):
     def test_always_mode_shunts_describe_to_pool(self):
         fv.ALWAYS_MODE = True
@@ -1400,7 +1434,7 @@ class TestVisionThreadPoolAndSizing(Base):
             self.assertTrue(fv.vision_click("toggle"))
             self.assertIn("Looking...", self.said)
 
-    def test_describe_uses_640px(self):
+    def test_describe_uses_800px(self):
         dims = []
         def fake_ask(q, path, prefill=None, max_dimension=800):
             dims.append(max_dimension)
@@ -1410,7 +1444,7 @@ class TestVisionThreadPoolAndSizing(Base):
              mock.patch.object(fv, "vision_ask", side_effect=fake_ask):
             fv._describe_screen_vlm_task()
             fv._read_screen_task()
-        self.assertEqual(dims, [640, 640])
+        self.assertEqual(dims, [800, 800])
 
     def test_locate_keeps_800px(self):
         dims = []
@@ -1424,6 +1458,50 @@ class TestVisionThreadPoolAndSizing(Base):
             fv.vision_locate("button")
         self.assertTrue(all(d == 800 for d in dims))
         self.assertGreaterEqual(len(dims), 1)
+
+    def test_tier0_click_routing_and_extraction(self):
+        # Buttons
+        name, m = self.route_name("click on the save button")
+        self.assertEqual(name, "click_button")
+        self.assertEqual(m.group(3), "save")
+
+        name, m = self.route_name("press the cancel button")
+        self.assertEqual(name, "click_button")
+        self.assertEqual(m.group(3), "cancel")
+
+        name, m = self.route_name("tap the submit button")
+        self.assertEqual(name, "click_button")
+        self.assertEqual(m.group(3), "submit")
+
+        name, m = self.route_name("hit the reply button")
+        self.assertEqual(name, "click_button")
+        self.assertEqual(m.group(3), "reply")
+
+        # Links
+        name, m = self.route_name("click on the Docs link")
+        self.assertEqual(name, "click_link")
+        self.assertEqual(m.group(2), "Docs")
+
+        # Clicks anywhere / buttons / items
+        name, m = self.route_name("click on save")
+        self.assertEqual(name, "click_any")
+        self.assertEqual(m.group(2), "save")
+
+        name, m = self.route_name("press save")
+        self.assertEqual(name, "click_any")
+        self.assertEqual(m.group(2), "save")
+
+        name, m = self.route_name("tap continue")
+        self.assertEqual(name, "click_any")
+        self.assertEqual(m.group(2), "continue")
+
+        name, m = self.route_name("hit allow")
+        self.assertEqual(name, "click_any")
+        self.assertEqual(m.group(2), "allow")
+
+        # Bare tap
+        name, _ = self.route_name("tap")
+        self.assertEqual(name, "click_here")
 
 
 if __name__ == "__main__":

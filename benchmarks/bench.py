@@ -252,7 +252,7 @@ bench_quartz_summary.check = _check_quartz
 
 
 def bench_ocr_locate():
-    path = fv.capture_screenshot()
+    path = fv.capture_screenshot(fresh=True)
     if not path:
         raise RuntimeError("screencapture_failed")
     try:
@@ -272,6 +272,21 @@ def _check_ocr():
 bench_ocr_locate.check = _check_ocr
 
 
+def bench_ocr_locate_cached():
+    path = fv.capture_screenshot(fresh=False)
+    if not path:
+        raise RuntimeError("screencapture_failed")
+    fv.ocr_locate("File", path)
+bench_ocr_locate_cached.check = _check_ocr
+
+
+def bench_tier0_click_e2e():
+    with mock.patch.object(fv, "_click_xy", return_value=True), \
+         mock.patch.object(fv, "say", lambda t: None):
+        fv.handle_command("click on the File button", quiet_miss=True)
+bench_tier0_click_e2e.check = _check_ocr
+
+
 BENCHMARKS = [
     ("tier0_route", "Tier 0 routing", bench_tier0_route, 200,
      "corpus of 23 commands incl. one chained command"),
@@ -279,10 +294,14 @@ BENCHMARKS = [
      "10 growing prefixes of 'open notes'"),
     ("chain_dispatch", "chain dispatch overhead", bench_chain_dispatch, 50,
      "handle_command('open notes and snap left'), executors mocked"),
+    ("tier0_click_e2e", "Tier 0 click e2e", bench_tier0_click_e2e, 10,
+     "Tier 0 regex -> xa11y -> cached OCR fast path -> click"),
     ("quartz_window_summary", "Quartz window summary", bench_quartz_summary, 20,
      "CGWindowListCopyWindowInfo layer-0 parse + spoken summary (no screenshot)"),
-    ("ocr_locate", "Apple Vision OCR locate", bench_ocr_locate, 5,
-     "screenshot + VNRecognizeTextRequest locate"),
+    ("ocr_locate_fresh", "Apple Vision OCR (fresh)", bench_ocr_locate, 5,
+     "fresh screencapture + Fast VNRecognizeTextRequest locate"),
+    ("ocr_locate_cached", "Apple Vision OCR (cached)", bench_ocr_locate_cached, 5,
+     "8s cached screenshot reuse + Fast VNRecognizeTextRequest locate"),
     ("tier1_cold", "Tier 1 cold (model load)", bench_tier1_cold, 1,
      "first ollama_route call; includes model load into memory"),
     ("tier1_warm", "Tier 1 warm", bench_tier1_warm, 5,
@@ -290,7 +309,7 @@ BENCHMARKS = [
     ("screenshot_capture", "screenshot capture", bench_screenshot, 5,
      "screencapture to temp file"),
     ("vision_describe_e2e", "vision: describe screen e2e", bench_vision_describe, 3,
-     "screenshot + qwen3-vl inference (640px), spoken output mocked"),
+     "screenshot + qwen3-vl inference (800px), spoken output mocked"),
     ("vision_locate", "vision: locate element", bench_vision_locate, 3,
      "screenshot + coordinate query inference (800px)"),
     ("transcribe_3s", "whisper tiny.en, 3s audio", bench_transcribe, 3,

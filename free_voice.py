@@ -1114,10 +1114,24 @@ def _load_vision_framework():
     return _vision_framework_mod or (None, None)
 
 
+def _extract_target_name(name: str) -> str:
+    """Normalize spoken element names by stripping conversational framing,
+    prepositions, modal prefixes ('pop up dialog', 'dialog'), and suffixes ('button', 'link')."""
+    s = name.replace("'", "").strip()
+    for pfx in ("on the ", "on a ", "on an ", "on ", "the ", "a ", "an ",
+                "pop up dialog ", "popup dialog ", "pop up ", "popup ", "dialog ", "alert "):
+        if s.lower().startswith(pfx):
+            s = s[len(pfx):].strip()
+    for sfx in (" button", " link", " icon", " tab", " menu", " checkbox", " item", " toggle"):
+        if s.lower().endswith(sfx):
+            s = s[:-len(sfx)].strip()
+    return s
+
+
 def _clean_target_variants(name: str) -> list[str]:
     """Generate clean search variants from a spoken element name."""
     s = name.strip().lower()
-    for prefix in ("the ", "a ", "an "):
+    for prefix in ("on the ", "on a ", "on an ", "on ", "the ", "a ", "an "):
         if s.startswith(prefix):
             s = s[len(prefix):].strip()
             break
@@ -1128,6 +1142,11 @@ def _clean_target_variants(name: str) -> list[str]:
             if base and base not in variants:
                 variants.append(base)
             break
+    for pfx in ("pop up dialog ", "popup dialog ", "pop up ", "popup ", "dialog ", "alert "):
+        if s.startswith(pfx):
+            base = s[len(pfx):].strip()
+            if base and base not in variants:
+                variants.append(base)
     return variants
 
 
@@ -1160,7 +1179,7 @@ def ocr_locate(name: str, screenshot_path: str | None = None) -> tuple[int, int]
 
     try:
         req = Vision.VNRecognizeTextRequest.alloc().init()
-        req.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+        req.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelFast)
         req.setUsesLanguageCorrection_(False)
         url = NSURL.fileURLWithPath_(path)
         handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)
@@ -1250,34 +1269,51 @@ def frontmost_app() -> str:
     )
 
 
+def _get_target_apps(primary_app: str) -> list[str]:
+    """Return candidate applications to query for UI elements.
+    Includes the frontmost app plus any running system modal/alert dialog apps."""
+    candidates = [primary_app] if primary_app else []
+    try:
+        from AppKit import NSWorkspace
+        running = {a.localizedName() for a in NSWorkspace.sharedWorkspace().runningApplications() if a.localizedName()}
+        for sys_app in ("SecurityAgent", "CoreServicesUIAgent", "UserNotificationCenter", "Notification Center"):
+            if sys_app in running and sys_app not in candidates:
+                candidates.append(sys_app)
+    except Exception:
+        pass
+    return candidates
+
+
 def _press_first(app_name: str, roles: list[str], name: str) -> None:
     xa = _load_xa11y()
     if xa is None:
         say("UI clicking needs the xa11y package: pip install xa11y")
         return
-    if not app_name:
-        say("I couldn't tell which app is in front")
-        return
-    safe = name.replace("'", "").strip()
+    safe = _extract_target_name(name)
     if not safe:
         say("Click what?")
         return
-    app = xa.App.by_name(app_name)
-    for role in roles:
+    candidate_apps = _get_target_apps(app_name)
+    for aname in candidate_apps:
         try:
-            els = app.locator(f"{role}[name*='{safe}']").elements()
-        except Exception as e:  # noqa: BLE001
-            log(f"xa11y query failed ({role}): {e}")
+            app = xa.App.by_name(aname)
+        except Exception:
             continue
-        if els:
+        for role in roles:
             try:
-                els[0].press()
+                els = app.locator(f"{role}[name*='{safe}']").elements()
             except Exception as e:  # noqa: BLE001
-                say("Couldn't click that")
-                log(f"xa11y press failed: {e}")
+                log(f"xa11y query failed ({aname} {role}): {e}")
+                continue
+            if els:
+                try:
+                    els[0].press()
+                except Exception as e:  # noqa: BLE001
+                    say("Couldn't click that")
+                    log(f"xa11y press failed: {e}")
+                    return
+                say(f"Clicked {safe}")
                 return
-            say(f"Clicked {safe}")
-            return
     # Tree had no match — Tier 1: Apple Vision OCR fast-path
     ocr_res = ocr_locate(safe)
     if ocr_res == "ambiguous":
@@ -1289,7 +1325,7 @@ def _press_first(app_name: str, roles: list[str], name: str) -> None:
     # Tree & OCR had no match — Tier 2 (last resort): locate it visually on a screenshot (VLM).
     if vision_click(safe):
         return
-    say(f"No control matching {safe} in {app_name}")
+    say(f"No control matching {safe}")
 
 
 def act_click_button(name: str) -> None:
@@ -1313,25 +1349,30 @@ def _locate_first(app_name: str, roles: list[str],
     xa = _load_xa11y()
     if xa is None or not app_name:
         return None
-    safe = name.replace("'", "").strip()
+    safe = _extract_target_name(name)
     if not safe:
         return None
-    app = xa.App.by_name(app_name)
-    for role in roles:
+    candidate_apps = _get_target_apps(app_name)
+    for aname in candidate_apps:
         try:
-            els = app.locator(f"{role}[name*='{safe}']").elements()
-        except Exception as e:  # noqa: BLE001
-            log(f"xa11y locate failed ({role}): {e}")
+            app = xa.App.by_name(aname)
+        except Exception:
             continue
-        if els:
+        for role in roles:
             try:
-                b = els[0].bounds
+                els = app.locator(f"{role}[name*='{safe}']").elements()
             except Exception as e:  # noqa: BLE001
-                log(f"xa11y bounds failed: {e}")
-                return None
-            if b is None:
-                return None
-            return (int(b.x + b.width / 2), int(b.y + b.height / 2))
+                log(f"xa11y locate failed ({aname} {role}): {e}")
+                continue
+            if els:
+                try:
+                    b = els[0].bounds
+                except Exception as e:  # noqa: BLE001
+                    log(f"xa11y bounds failed: {e}")
+                    return None
+                if b is None:
+                    return None
+                return (int(b.x + b.width / 2), int(b.y + b.height / 2))
     return None
 
 
@@ -1341,11 +1382,14 @@ def act_mouse_to(name: str) -> None:
     Accessibility tree first, Apple Vision OCR second, screenshot VLM as fallback.
     Moves only — it never clicks.
     """
-    safe = name.strip()
-    if not safe:
+    spoken = name.strip()
+    if not spoken:
         say("Move the mouse to what?")
         return
+    safe = _extract_target_name(spoken)
     loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], safe)
+    if loc is None and safe != spoken:
+        loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], spoken)
     if loc is None:
         ocr_res = ocr_locate(safe)
         if ocr_res == "ambiguous":
@@ -1354,19 +1398,63 @@ def act_mouse_to(name: str) -> None:
     if loc is None:
         loc = vision_locate(safe)
     if loc is None:
-        say(f"I couldn't find {safe} on screen")
+        say(f"I couldn't find {spoken} on screen")
         return
     x, y = loc
     if DRY_RUN:
-        log(f"DRY-RUN mouse move to ({x}, {y}) for {safe!r}")
-        say(f"Mouse is on {safe}")
+        log(f"DRY-RUN mouse move to ({x}, {y}) for {spoken!r}")
+        say(f"Mouse is on {spoken}")
         return
     mouse, _ = _mouse()
     if mouse is None:
         say("Mouse control isn't available on this Mac")
         return
     mouse.position = (x, y)
-    say(f"Mouse is on {safe}")
+    say(f"Mouse is on {spoken}")
+
+
+def act_close_notifications() -> None:
+    """Dismiss macOS Notification Center alert banners."""
+    xa = _load_xa11y()
+    if xa is None:
+        say("Accessibility control unavailable")
+        return
+    try:
+        app = xa.App.by_name("Notification Center")
+    except Exception:
+        say("No notifications open")
+        return
+    mouse, _ = _mouse()
+    closed = 0
+    for _ in range(3):
+        try:
+            groups = app.locator("group").elements()
+        except Exception:
+            break
+        closed_this_pass = False
+        for g in groups:
+            if g.name:
+                b = g.bounds
+                if b and b.width > 200 and b.x > 1000:
+                    if mouse:
+                        mouse.position = (b.x + 10, b.y + 10)
+                        time.sleep(0.1)
+                    try:
+                        for c in g.children():
+                            if c.role == "button" and c.name == "Close":
+                                c.press()
+                                closed += 1
+                                closed_this_pass = True
+                                time.sleep(0.2)
+                                break
+                    except Exception:
+                        pass
+        if not closed_this_pass:
+            break
+    if closed:
+        say(f"Closed {closed} notification{'s' if closed != 1 else ''}")
+    else:
+        say("No notifications to close")
 
 
 def act_mouse_move(direction: str, amount: str | None) -> None:
@@ -1456,7 +1544,6 @@ def prepare_vision_image(image_path: str, max_dimension: int = 800) -> str:
     Reduces payload ~95%, avoids Ollama context overflow, and cuts inference
     time by ~60%. 800px is the measured sweet spot (M4: ~7.7s vs ~19.6s at
     1280px); the full-res original is kept for the two-pass click crop.
-    Describe-screen uses 640px (~11.8s) for faster orientation.
     """
     if not image_path:
         return image_path
@@ -1465,8 +1552,7 @@ def prepare_vision_image(image_path: str, max_dimension: int = 800) -> str:
             return image_path
     except Exception:
         return image_path
-    opt_suffix = ".opt.jpg" if max_dimension == 800 else f".opt_{max_dimension}.jpg"
-    opt_path = f"{image_path}{opt_suffix}"
+    opt_path = f"{image_path}.opt.jpg"
     try:
         if os.path.exists(opt_path):
             try:
@@ -1610,7 +1696,9 @@ def quartz_window_summary() -> str | None:
         elif len(behind) == 2:
             behind_str = f"{behind[0]} and {behind[1]}"
         else:
-            behind_str = f"{behind[0]}, {behind[1]}, and {len(behind) - 2} other app(s)"
+            rem = len(behind) - 2
+            rem_str = "1 other app" if rem == 1 else f"{rem} other apps"
+            behind_str = f"{behind[0]}, {behind[1]}, and {rem_str}"
         summary = f"In front is {front_str}. Behind it, you have {behind_str}."
     else:
         summary = f"In front is {front_str}, with no other active windows behind it."
@@ -1647,7 +1735,6 @@ def _describe_screen_vlm_task() -> None:
         "open dialogs, playing media, or error messages. Plain text only.",
         path,
         prefill="The screen shows ",
-        max_dimension=640,
     )
     if text:
         # prefill seeded the model's reply; speak the full sentence.
@@ -2113,7 +2200,6 @@ def _read_screen_task() -> None:
         "and any dialogs or notifications. Plain text only.",
         path,
         prefill="Looking at the screen, ",
-        max_dimension=640,
     )
     if text:
         say(text)
@@ -2204,10 +2290,10 @@ _p(r"^redo$", "redo_", True)
 _p(r"^save$", "save_", True)
 _p(r"^select all$", "select_all", True)
 # --- UI clicks via accessibility tree (free-text names: final-only)
-_p(r"^(click|press)( the)? (.+?) button$", "click_button")
-_p(r"^click (the )?(.+?) link$", "click_link")
-_p(r"^click$", "click_here")
-_p(r"^click (the )?(.+)$", "click_any")
+_p(r"^(click|press|tap|hit)(?: on)?( the)? (.+?) button$", "click_button")
+_p(r"^(?:click|press|tap|hit)(?: on)? (the )?(.+?) link$", "click_link")
+_p(r"^(click|tap)$", "click_here")
+_p(r"^(?:click|press|tap|hit)(?: on)? (the )?(.+)$", "click_any")
 _p(r"^move (the )?mouse to (the )?(.+)$", "mouse_to")
 _p(r"^move (the )?mouse (up|down|left|right)( (\d+))?$", "mouse_move")
 _p(r"^scroll (up|down|left|right)( (\d+))?$", "scroll")

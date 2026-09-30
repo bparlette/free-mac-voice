@@ -141,23 +141,52 @@ the assistant never goes silent.
 Screen queries and UI control locate follow a fast-path additive cascade:
 
 1. **Quartz Window Summary (`quartz_window_summary()`) — Instant Orientation**:
-   "What's on my screen" / "describe my screen" routes through Quartz first using `CGWindowListCopyWindowInfo`. It filters for layer-0 active windows $\ge 100\text{px}$ in front-to-back z-order and speaks a concise summary naming the frontmost app + window title and what's behind it.
+   "What's on my screen" / "describe my screen" routes through Quartz first using `CGWindowListCopyWindowInfo`. It filters for layer-0 active windows $\ge 100\text{px}$ in front-to-back z-order and speaks a concise summary naming the frontmost app + window title and what's behind it (e.g. *"In front is Notes (Grocery List). Behind it, you have Safari and 2 other apps."*).
    - **~1.3 ms latency**: ~8,900× faster than VLM inference.
    - **Zero permissions barrier**: Does not require Screen Recording permissions, working instantly even before that grant.
    - **No screenshot overhead**: Completely skips `screencapture` and Ollama.
    - Orientation queries use Quartz; visual-content questions ("what's in this window", "what color is the button", "read my screen") seamlessly fall through to the VLM.
 
 2. **Apple Vision OCR Fast-Path (`ocr_locate()`) — High-Speed Text Clicking**:
-   When the accessibility tree (`xa11y`) has no node matching a clicked label (canvas UI, Flutter/web apps), the click chain queries Apple's native `VNRecognizeTextRequest` before falling back to the VLM.
-   - **0.46s p50 latency**: ~45× faster than the 21.1s VLM locate pass.
-   - **Fuzzy text matching**: Cleans button/link affixes and evaluates token overlap and fuzzy ratios across all on-screen text boxes.
+   When the accessibility tree (`xa11y`) has no node matching a clicked label (canvas UI, Flutter/web apps, or unmapped buttons), the click chain queries Apple's native `VNRecognizeTextRequest` before falling back to the VLM.
+   - **Fast vs. Accurate Benchmark (M4 Mac mini)**:
+     - `VNRequestTextRecognitionLevelFast`: Mean **61.4 ms**, $p50$ **60.1 ms**, min **59.3 ms** (80 bounding boxes).
+     - `VNRequestTextRecognitionLevelAccurate`: Mean **224.3 ms**, $p50$ **224.7 ms**, min **217.7 ms** (83 bounding boxes).
+     - UI text matching was 100% identical across all standard menu, button, and navigation targets. `Fast` was adopted as the active default, cutting OCR latency by ~3.6×.
+   - **Screenshot Cache Reuse**:
+     - `ocr_locate()` reuses the 8-second cached screenshot when fresh. With a warm cache, OCR text locate completes in **~61 ms** total (saving the ~189ms `screencapture` overhead).
+   - **Tier 0 Direct Click Routing**:
+     - Phrasings like *"click on the save button"*, *"press save"*, *"tap continue"*, *"hit allow"* route directly in Tier 0 (0.2 ms).
+     - `_extract_target_name()` automatically strips conversational noise, prepositions, and modal prefixes (`on the `, `pop up dialog `, `button`, `link`), achieving **~0.18s–0.28s end-to-end click execution**.
+   - **System Modal / Dialog Discovery (`_get_target_apps()`)**:
+     - macOS permission alerts (Microphone, Accessibility, Screen Recording) are owned by system daemons (`SecurityAgent`, `CoreServicesUIAgent`, `Notification Center`), not `frontmost_app()`. `_get_target_apps()` queries `NSWorkspace.runningApplications()` in ~2ms to dynamically include active system alert hosts in the accessibility and locate search, resolving "Allow" buttons in 10ms.
    - **Ambiguity protection**: When multiple identical or near-identical controls are found across disparate coordinates, it safely clarifies ("I found multiple items matching X. Which one did you want?") rather than misclicking.
    - **Iconographic fallback**: Purely iconographic targets ("the red circle") score 0 in OCR and gracefully fall through to `vision_locate()`.
 
 3. **Local VLM Fallback (`qwen3-vl:8b`)**:
-   - **Describe Screen (640px)**: Uses 640px downscaling (`prepare_vision_image(max_dimension=640)`), trimming latency down to ~11.58s p50 while maintaining high descriptive accuracy.
+   - **Describe Screen (800px)**: Empirical benchmarks measured 11.58s $p50$ at 640px vs 11.36s at 800px. Prompt evaluation and fixed inference overhead dominate over token count; the codebase uses a single unified 800px downscaled path (`.opt.jpg`), eliminating dimension-keyed cache fragmentation with zero fidelity loss.
    - **Locate Element (800px)**: Retains the measured 800px fidelity sweet spot for precise coordinate extraction, skipping the second crop pass when the target is large ($\ge 480\text{px}$).
    - **Vision ThreadPool for `--always` Mode**: In continuous listening mode, VLM inferences are shunted to a background single-worker `ThreadPoolExecutor`. It speaks an immediate "Looking..." acknowledgment and delivers the response when ready, ensuring 11–21s inferences never deafen the microphone loop.
+
+## 4c. Local-First Model Architecture & Gemini Options
+
+### Why 100% Local by Default
+`free-voice` runs completely offline on your Apple Silicon Mac by default:
+- **Zero API Keys & $0 Cost**: Out-of-the-box operation with Homebrew + Ollama.
+- **Zero Rate Limits**: Cloud free tiers enforce aggressive RPM/TPM caps and daily limits (frequently throwing HTTP 429s). Local inference provides unlimited continuous bandwidth.
+- **100% Private**: No voice audio, screenshots, window names, or clipboard text ever leave your computer.
+- **Zero Content Censorship**: Local open weights do not phone home to remote safety classifiers.
+
+### The Tier 1 Model Tradeoff: Single 8B vs. Smaller 1.5B/3B
+- **Single Model (Default: `qwen3-vl:8b`)**: Uses one unified model for both Tier 1 conversational routing and VLM vision fallback. Ollama keeps it warm in memory (`keep_alive=60m`), using ~5.5 GB unified RAM with **zero model-swapping latency**.
+- **Smaller Local Model for Tier 1 (`qwen2.5:1.5b` or `qwen2.5:3b`)**: A 1.5B model routes in ~250–320ms on M4 (vs 1.28s for 8B). However, keeping two distinct models loaded requires ~7 GB RAM, and if memory pressure forces an unload, swapping between models incurs a 2–4s reload penalty. Because Tier 0 regex + Quartz + Apple Vision OCR now handle >95% of commands without touching the LLM, the single 8B architecture is the cleanest default.
+- Users desiring dedicated sub-300ms routing can set `OLLAMA_ROUTER_MODEL="qwen2.5:1.5b"` in `~/.config/free-voice/.env`.
+
+### Optional Gemini Tier 2 Fallback
+If you set `GEMINI_API_KEY`, Tier 2 is enabled for:
+- Fast creative code/SVG generation (`draw a cat` in ~2s via cloud TPU vs ~8s locally).
+- Broad encyclopedic world trivia via Google Search grounding.
+If the API key is omitted, `free-voice` runs 100% locally.
 
 ## 5. Execution
 

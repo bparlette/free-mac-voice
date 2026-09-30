@@ -108,11 +108,25 @@ ASCII art", "draw a cat" (LLM-generated SVG opened in the browser),
 
 Three tiers, fastest first. The system only uses a slower tier when the faster one can't help:
 
-1. **Tier 0 — the reflex (<1 ms).** Pattern matching on your words. Handles every standard command instantly — even mid-sentence, but only when the command is complete (“open notes” fires; “open no” never misfires).
-2. **Tier 1 — the local fallback (~1–2 s).** A vision-language AI (Qwen3-VL 8B) running on your Mac translates unusual phrasing (“could you be a dear and open my browser thing”) into the same commands — and understands your screen (“what's on my screen”). Still $0, still on your Mac.
-3. **Tier 2 — the answerer (optional).** Google's free API tier answers open-ended questions aloud, with live web search for fresh answers. Needs a free API key; skip it and Tier 2 just stays quiet. If the free quota runs out mid-day, it falls back to the on-device model automatically.
+1. **Tier 0 — the reflex (<1 ms).** Pattern matching on your words. Handles standard commands instantly (0.2–0.3 ms) — even mid-sentence, but only when the command is complete (“open notes” fires; “open no” never misfires). Real UI clicks run through Accessibility (`xa11y`) with a native Apple Vision OCR fast path (**~0.25s end-to-end**).
+2. **Tier 1 — the local fallback (~1–2 s).** A vision-language AI (`qwen3-vl:8b`) running on your Mac translates unusual conversational phrasing (“could you be a dear and open my browser thing”) into the same commands — and understands your screen (“what's on my screen”). 100% offline, zero API keys, zero rate limits, zero data leaving your Mac.
+3. **Tier 2 — the answerer (optional).** Google's free Gemini API answers general trivia or open-ended web questions aloud.
 
-Full implementation details, latency math, and honest limits: **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+### Local by Default vs. Optional Gemini
+By default, **Free Mac Voice is 100% on-device and local**. No audio, screenshots, or metadata leave your Mac.
+
+**Why you might want Gemini:**
+- **Faster creative SVG generation:** Generating complex SVGs for "draw a cat" takes ~2 seconds via cloud TPU compared to ~8-10 seconds on local 8B model.
+- **Broad world trivia:** Provides live web-grounded answers for open-ended knowledge questions ("who won the game last night").
+
+**How to enable Gemini:**
+Add your free API key to `~/.config/free-voice/.env` or export it in your shell:
+```bash
+export GEMINI_API_KEY="AIzaSy..."
+```
+If unset (the default), `free-voice` runs completely local and private on your hardware.
+
+---
 
 ## Measured Performance (Apple M4 Mac mini, 16 GB)
 
@@ -124,6 +138,7 @@ Measured times on an Apple M4 Mac mini (including process spawn, command executi
 |---|---|---|---|
 | `close notes` | Tier 0 (Instant Regex) | < 1 ms | **1.94s - 2.06s** |
 | `open notes` | Tier 0 (Instant Regex) | < 1 ms | **2.18s - 3.30s** |
+| `click on the File button` | Tier 0 + Apple Vision OCR | ~61 ms | **0.18s - 0.28s** |
 | `what time is it` | Tier 0 (Instant Regex) | < 1 ms | **2.59s - 2.68s** |
 | `could you please open notes` | Tier 1 (`qwen2.5:1.5b` fallback) | **0.32s** | **2.53s** |
 | `could you please open notes` | Tier 1 (`qwen3-vl:8b` + `num_ctx=1024`) | **1.26s** | **3.66s** |
@@ -139,13 +154,15 @@ Fresh benchmark run on Apple M4 Mac mini (16 GB unified RAM, macOS Darwin arm64,
 | **Tier 0 Routing** | 200 | 0.3 ms | **0.3 ms** | 0.3 ms | Regex matcher across 23 commands |
 | **Tier 0 Partial Gating** | 200 | 0.2 ms | **0.2 ms** | 0.2 ms | 10 prefixes of “open notes” |
 | **Chain Dispatch Overhead** | 50 | 0.4 ms | **0.3 ms** | 0.5 ms | Multi-intent sequential dispatch |
+| **Tier 0 Click End-to-End** | 10 | 0.28s | **0.24s** | 0.65s | Tier 0 regex $\to$ xa11y $\to$ cached OCR $\to$ click |
 | **Quartz Window Summary** | 20 | 2.2 ms | **1.3 ms** | 15.8 ms | Window list orientation: no screenshot, no VLM |
-| **Apple Vision OCR Locate** | 5 | 0.49s | **0.46s** | 0.60s | Native OCR text locate: ~45x faster than VLM |
-| **Tier 1 Cold (Model Reload)** | 1 | 9.37s | **9.37s** | 9.37s | First call reloading model into memory |
-| **Tier 1 Warm (`num_ctx=1024`)** | 5 | 1.28s | **1.27s** | 1.32s | Resident Ollama route with prefill |
-| **Screenshot Capture** | 5 | 0.19s | **0.18s** | 0.24s | Native macOS `screencapture` to temp file |
-| **Vision: Describe Screen (640px)** | 3 | 12.77s | **11.58s** | 15.30s | Screenshot + `sips` 640px + `qwen3-vl:8b` fallback |
-| **Vision: Locate Element (800px)** | 3 | 21.16s | **21.12s** | 21.25s | Coordinate query; adaptive skip for $\ge 480\text{px}$ targets |
+| **Apple Vision OCR (Cached)** | 5 | 61.4 ms | **60.1 ms** | 64.7 ms | 8s screenshot cache reuse + Fast OCR level |
+| **Apple Vision OCR (Fresh)** | 5 | 0.25s | **0.24s** | 0.28s | Fresh `screencapture` + Fast OCR level |
+| **Tier 1 Cold (Model Reload)** | 1 | 9.65s | **9.65s** | 9.65s | First call reloading model into memory |
+| **Tier 1 Warm (`num_ctx=1024`)** | 5 | 1.30s | **1.29s** | 1.35s | Resident Ollama route with prefill |
+| **Screenshot Capture** | 5 | 0.23s | **0.23s** | 0.24s | Native macOS `screencapture` to temp file |
+| **Vision: Describe Screen (800px)** | 3 | 11.82s | **11.36s** | 12.76s | Screenshot + `sips` 800px + `qwen3-vl:8b` fallback |
+| **Vision: Locate Element (800px)** | 3 | 20.87s | **20.88s** | 20.92s | Coordinate query; adaptive skip for $\ge 480\text{px}$ targets |
 | **Whisper STT (`tiny.en`)** | 3 | 2.69s | **1.20s** | 5.70s | On-device STT encode/decode pipeline |
 | **Earcon Audio Feedback** | 5 | 3.2 ms | **2.6 ms** | 4.9 ms | Non-blocking `afplay` sound trigger |
 
