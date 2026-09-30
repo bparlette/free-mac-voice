@@ -2084,34 +2084,43 @@ def act_ascii_art() -> None:
 
 # --- SVG drawing -------------------------------------------------------
 
-def _llm_text(prompt: str, max_tokens: int = 2048) -> str | None:
-    """Raw text from the local model, else Gemini if configured. None if both fail."""
+def _llm_text(prompt: str, max_tokens: int = 1024) -> str | None:
+    """Raw text from a local model (fast qwen2.5 or vision qwen3), else Gemini."""
     system = ("You are an SVG generator. Reply with ONLY valid raw SVG code "
               "starting with <svg and ending with </svg>. "
               "No explanations, no conversational text, no markdown fences.")
-    # Local model first (100% on-device, private, offline)
-    try:
-        body = {
-            "model": OLLAMA_MODEL, "keep_alive": "60m", "think": False,
-            "options": {"temperature": 0.7, "num_predict": max_tokens},
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": prompt}],
-            "stream": False,
-        }
-        req = urllib.request.Request(
-            OLLAMA_HOST + "/api/chat", data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.load(r)
-        msg = data.get("message", {})
-        content = msg.get("content", "").strip()
-        if content:
-            return content
-        thinking = msg.get("thinking", "").strip()
-        if thinking and ("<svg" in thinking or "{" in thinking):
-            return thinking
-    except Exception as e:  # noqa: BLE001
-        log(f"draw: local model failed ({e}), trying gemini fallback if configured")
+    # Try fast local instruction model first if present (e.g. qwen2.5:1.5b generates SVGs in 3s without thinking trace),
+    # otherwise default to configured OLLAMA_MODEL
+    local_candidates = []
+    if OLLAMA_MODEL != "qwen2.5:1.5b":
+        local_candidates.append("qwen2.5:1.5b")
+    local_candidates.append(OLLAMA_MODEL)
+
+    for mod in local_candidates:
+        try:
+            body = {
+                "model": mod, "keep_alive": "60m", "think": False,
+                "options": {"temperature": 0.7, "num_predict": max_tokens},
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": prompt}],
+                "stream": False,
+            }
+            req = urllib.request.Request(
+                OLLAMA_HOST + "/api/chat", data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=45) as r:
+                data = json.load(r)
+            msg = data.get("message", {})
+            content = msg.get("content", "").strip()
+            if content and "<svg" in content:
+                return content
+            thinking = msg.get("thinking", "").strip()
+            if thinking and "<svg" in thinking:
+                return thinking
+            if content:
+                return content
+        except Exception as e:  # noqa: BLE001
+            log(f"draw: local model {mod} failed ({e})")
 
     if GEMINI_API_KEY:
         try:
