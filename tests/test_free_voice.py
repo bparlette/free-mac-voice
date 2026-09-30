@@ -935,8 +935,10 @@ class TestSayNonBlocking(Base):
         self.real_say = self._say  # Base swapped fv.say for a list.append
         fv.DRY_RUN = False
         fv._say_proc = None
+        fv.VOICE_TTS_ENGINE = "say"
         self.addCleanup(setattr, fv, "DRY_RUN", True)
         self.addCleanup(setattr, fv, "_say_proc", None)
+        self.addCleanup(setattr, fv, "VOICE_TTS_ENGINE", "kokoro")
 
     def test_default_is_nonblocking(self):
         with mock.patch.object(fv.subprocess, "Popen") as popen, \
@@ -977,6 +979,93 @@ class TestSayNonBlocking(Base):
             self.real_say("hello")
             popen.assert_not_called()
             run.assert_not_called()
+
+
+class TestKokoroTTS(Base):
+    def setUp(self):
+        super().setUp()
+        self.real_say = self._say
+        fv.DRY_RUN = False
+        fv._say_proc = None
+        fv.VOICE_TTS_ENGINE = "kokoro"
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        self.addCleanup(setattr, fv, "_say_proc", None)
+        self.addCleanup(setattr, fv, "VOICE_TTS_ENGINE", "kokoro")
+
+    def test_kokoro_plays_via_afplay_nonblocking(self):
+        with mock.patch.object(fv, "_synthesize_kokoro", return_value="/tmp/mock.wav") as synth, \
+             mock.patch("os.path.exists", return_value=True), \
+             mock.patch.object(fv.subprocess, "Popen") as popen, \
+             mock.patch.object(fv.subprocess, "run") as run:
+            self.real_say("hello world")
+            synth.assert_called_once_with("hello world", voice=None)
+            popen.assert_called_once()
+            self.assertEqual(popen.call_args[0][0], ["afplay", "/tmp/mock.wav"])
+            run.assert_not_called()
+
+    def test_kokoro_plays_via_afplay_blocking(self):
+        with mock.patch.object(fv, "_synthesize_kokoro", return_value="/tmp/mock.wav") as synth, \
+             mock.patch("os.path.exists", return_value=True), \
+             mock.patch.object(fv.subprocess, "Popen") as popen, \
+             mock.patch.object(fv.subprocess, "run") as run:
+            self.real_say("confirm this", blocking=True)
+            synth.assert_called_once_with("confirm this", voice=None)
+            run.assert_called_once()
+            self.assertEqual(run.call_args[0][0], ["afplay", "/tmp/mock.wav"])
+            popen.assert_not_called()
+
+    def test_kokoro_fallback_to_say_when_failed(self):
+        with mock.patch.object(fv, "_synthesize_kokoro", return_value=None), \
+             mock.patch.object(fv.subprocess, "Popen") as popen:
+            self.real_say("fallback phrase")
+            popen.assert_called_once()
+            self.assertEqual(popen.call_args[0][0], ["say", "fallback phrase"])
+
+
+class TestVoicePicker(Base):
+    def test_pick_voice_triggers_and_rotates(self):
+        for phrase in ("pick a voice", "choose a voice", "sample voices", "test voices", "rotate voices"):
+            matched = fv.route(phrase)
+            self.assertIsNotNone(matched, f"Failed to route {phrase}")
+            self.assertEqual(matched[0], "pick_voice")
+
+        spoken = []
+        with mock.patch.object(fv, "_get_kokoro", return_value=mock.Mock()), \
+             mock.patch.object(fv, "say", side_effect=lambda text, **kw: spoken.append((text, kw.get("voice")))):
+            fv.act_pick_voice()
+
+        self.assertTrue(len(spoken) >= 5)
+        voice_samples = [s[0] for s in spoken if "This is what I sound like on your Mac." in s[0]]
+        self.assertTrue(any(s.startswith("Heart. ") for s in voice_samples))
+        self.assertTrue(any(s.startswith("Adam. ") for s in voice_samples))
+
+    def test_set_voice_and_persistence(self):
+        for query in ("use voice adam", "set voice to heart", "change voice to sarah"):
+            matched = fv.route(query)
+            self.assertIsNotNone(matched, f"Failed to route {query}")
+            self.assertEqual(matched[0], "set_voice")
+
+        with tempfile.TemporaryDirectory() as td:
+            fake_cfg = os.path.join(td, "config.json")
+            with mock.patch.object(fv, "_CONFIG_FILE", fake_cfg), \
+                 mock.patch.object(fv, "_config_cache", None), \
+                 mock.patch.object(fv, "say") as mock_say:
+                fv.act_set_voice("adam")
+                self.assertEqual(fv.VOICE_KOKORO_VOICE, "am_adam")
+                mock_say.assert_called_with("Voice set to Adam.", blocking=True, voice="am_adam")
+
+                with open(fake_cfg) as f:
+                    saved = json.load(f)
+                self.assertEqual(saved.get("kokoro_voice"), "am_adam")
+
+    def test_get_voice(self):
+        for query in ("what is my voice", "what's the voice"):
+            matched = fv.route(query)
+            self.assertIsNotNone(matched, f"Failed to route {query}")
+            self.assertEqual(matched[0], "get_voice")
+        with mock.patch.object(fv, "say") as mock_say:
+            fv.act_get_voice()
+            mock_say.assert_called_once()
 
 
 class TestVisionPrefill(Base):

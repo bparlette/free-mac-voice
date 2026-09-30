@@ -82,7 +82,7 @@ fi
 source "$VENV/bin/activate"
 python -m pip install --upgrade pip >/dev/null
 step "Installing Python packages…"
-pip install -r "$REPO_DIR/requirements.txt"
+pip install -r "$REPO_DIR/requirements.txt" || pip install --ignore-requires-python -r "$REPO_DIR/requirements.txt"
 
 # --- 5. Ollama: make sure it's serving, then pull the tiny router model -----------
 step "Starting Ollama…"
@@ -109,7 +109,22 @@ else
   warn "Ollama isn't responding — Tier 1 fallback will be skipped until you run 'ollama serve'."
 fi
 
-# --- 6. Config dir + .env template --------------------------------------------------
+# --- 6. Kokoro Neural TTS (Default High-Definition Voice Engine) -----------------
+step "Configuring Kokoro Neural TTS..."
+KOKORO_DIR="$HOME/.config/free-voice/models/kokoro"
+mkdir -p "$KOKORO_DIR"
+if [[ ! -f "$KOKORO_DIR/voices-v1.0.bin" ]]; then
+  note "Downloading Kokoro voices library (~27 MB)..."
+  curl -sSL -o "$KOKORO_DIR/voices-v1.0.bin" \
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin" || true
+fi
+if [[ ! -f "$KOKORO_DIR/kokoro-v1.0.onnx" ]]; then
+  note "Downloading Kokoro 82M neural TTS model (~310 MB)..."
+  curl -sSL -o "$KOKORO_DIR/kokoro-v1.0.onnx" \
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx" || true
+fi
+
+# --- 7. Config dir + .env template --------------------------------------------------
 # Fixes the upgrade trap: an old .env that still points at a retired default
 # model is bumped to the new default; user-customized values are never touched.
 migrate_env() {

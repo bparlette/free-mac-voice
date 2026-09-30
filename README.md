@@ -93,6 +93,15 @@ flowchart TD
 | `“fullscreen”` / `“theater mode”` | Toggles macOS full screen (`Ctrl+Cmd+F`) |
 | `“airplay”` / `“screen mirroring”` | Opens AirPlay Receiver settings to cast from iPhone or iPad |
 
+### 🗣️ Voice Auditions & High-Definition Speech
+*Powered by Kokoro-82M (default neural TTS engine) with instant offline `say` fallback.*
+| Voice Command | Action |
+|---|---|
+| `“pick a voice”` / `“sample voices”` | Rotates through curated voices speaking: `"[Name]. This is what I sound like on your Mac."` |
+| `“use voice Adam”` / `“set voice to Heart”` | Selects active voice (saved permanently to `~/.config/free-voice/config.json`) |
+| `“switch voice to George”` / `“use voice Sarah”` | Switches persona and confirms in that exact voice |
+| `“what is my voice?”` | Reports the currently active voice and TTS engine |
+
 ### 🔊 Sound, System & Media
 | Voice Command | Action |
 |---|---|
@@ -226,6 +235,18 @@ Whenever the voice engine starts or reloads, it automatically discovers and bind
 
 ---
 
+## 🗣️ High-Definition Neural Voice (Kokoro-82M Default)
+
+`free-mac-voice` defaults to **Kokoro-82M** for spoken feedback, giving you **ElevenLabs-tier natural human speech** running 100% locally on your Mac with zero cloud fees, zero subscriptions, and zero API keys:
+
+- **Audition Voices by Voice:** Say *"Mac, pick a voice"* (or *"sample voices"* / *"choose a voice"*). The assistant rotates through curated personas speaking:
+  > *"[Name]. This is what I sound like on your Mac."*
+- **Choose Your Voice:** Say *"Mac, use voice Adam"* or *"Mac, set voice to Heart"*. The assistant confirms your choice in that exact voice.
+- **Update-Proof Persistence:** Your selected voice is saved directly to `~/.config/free-voice/config.json`, surviving software updates and reinstalls.
+- **Instant Fallback:** If offline, running in a minimal container, or if model files are uninitialized, it falls back seamlessly to macOS native `say` without interruption.
+
+---
+
 ## 📊 Measured Performance (Apple M4 Mac mini, 16 GB)
 
 ### Routing & Decision Latency
@@ -272,7 +293,7 @@ Control Samsung Smart TV power, inputs, volume, and playback over Wi-Fi:
 The test suite stubs all hardware (no mic, TV, or live Ollama instance required) for instant verification:
 
 ```bash
-# Run all 205 hermetic unit tests (completes in < 1 second):
+# Run all 211 hermetic unit tests (completes in < 1 second):
 python3 -m unittest discover -s tests
 
 # Run performance benchmarks:

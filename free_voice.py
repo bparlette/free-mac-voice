@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import html
 import json
 import os
@@ -208,15 +209,158 @@ def note_error(msg: str) -> None:
 
 # ---------------------------------------------------------------- speech out
 
-_say_proc = None  # in-flight `say` process, so new speech cuts off the old
+_CONFIG_DIR = os.path.join(HOME, ".config", "free-voice")
+_CONFIG_FILE = os.path.join(_CONFIG_DIR, "config.json")
+_config_cache: dict | None = None
 
 
-def say(text: str, blocking: bool = False) -> None:
-    """Speak text. Non-blocking by default: fire-and-forget Popen so the action
-    feels instant instead of waiting ~2s for the voice to finish. Any in-flight
-    speech is terminated first so rapid commands don't talk over each other.
-    Pass blocking=True when the full prompt must be heard before continuing
-    (spoken confirmations)."""
+def _load_config() -> dict:
+    global _config_cache
+    if _config_cache is None:
+        try:
+            with open(_CONFIG_FILE) as f:
+                data = json.load(f)
+            _config_cache = data if isinstance(data, dict) else {}
+        except Exception:
+            _config_cache = {}
+    return _config_cache
+
+
+def _save_config(cfg: dict) -> None:
+    global _config_cache
+    os.makedirs(_CONFIG_DIR, exist_ok=True)
+    try:
+        with open(_CONFIG_FILE, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+    _config_cache = cfg
+
+
+_cfg = _load_config()
+VOICE_TTS_ENGINE = os.environ.get("VOICE_TTS_ENGINE", _cfg.get("tts_engine", "kokoro")).strip().lower()
+VOICE_KOKORO_VOICE = os.environ.get("VOICE_KOKORO_VOICE", _cfg.get("kokoro_voice", "af_heart")).strip()
+VOICE_SAY_VOICE = os.environ.get("VOICE_SAY_VOICE", _cfg.get("say_voice", "Samantha")).strip()
+
+KOKORO_MODEL_PATH = os.environ.get(
+    "KOKORO_MODEL_PATH",
+    os.path.join(_CONFIG_DIR, "models", "kokoro", "kokoro-v1.0.onnx")
+)
+KOKORO_VOICES_PATH = os.environ.get(
+    "KOKORO_VOICES_PATH",
+    os.path.join(_CONFIG_DIR, "models", "kokoro", "voices-v1.0.bin")
+)
+
+_kokoro_instance = None
+_kokoro_failed = False
+_tts_cache_dir = os.path.join(tempfile.gettempdir(), "free-voice-tts-cache")
+
+_say_proc = None  # in-flight speech process (say or afplay), so new speech cuts off the old
+
+# Curated voice catalog for Kokoro
+KOKORO_VOICES: dict[str, tuple[str, str]] = {
+    # American Female
+    "heart": ("Heart", "af_heart"),
+    "sarah": ("Sarah", "af_sarah"),
+    "bella": ("Bella", "af_bella"),
+    "nicole": ("Nicole", "af_nicole"),
+    "nova": ("Nova", "af_nova"),
+    "sky": ("Sky", "af_sky"),
+    "alloy": ("Alloy", "af_alloy"),
+    "jessica": ("Jessica", "af_jessica"),
+    "river": ("River", "af_river"),
+    "kore": ("Kore", "af_kore"),
+    "aoede": ("Aoede", "af_aoede"),
+    # American Male
+    "adam": ("Adam", "am_adam"),
+    "fenrir": ("Fenrir", "am_fenrir"),
+    "michael": ("Michael", "am_michael"),
+    "liam": ("Liam", "am_liam"),
+    "echo": ("Echo", "am_echo"),
+    "eric": ("Eric", "am_eric"),
+    "onyx": ("Onyx", "am_onyx"),
+    "puck": ("Puck", "am_puck"),
+    "santa": ("Santa", "am_santa"),
+    # British Female
+    "emma": ("Emma", "bf_emma"),
+    "alice": ("Alice", "bf_alice"),
+    "isabella": ("Isabella", "bf_isabella"),
+    "lily": ("Lily", "bf_lily"),
+    # British Male
+    "george": ("George", "bm_george"),
+    "daniel": ("Daniel", "bm_daniel"),
+    "fable": ("Fable", "bm_fable"),
+    "lewis": ("Lewis", "bm_lewis"),
+}
+
+KOKORO_SHOWCASE: list[tuple[str, str]] = [
+    ("Heart", "af_heart"),
+    ("Adam", "am_adam"),
+    ("Sarah", "af_sarah"),
+    ("George", "bm_george"),
+    ("Nicole", "af_nicole"),
+    ("Fenrir", "am_fenrir"),
+    ("Emma", "bf_emma"),
+    ("Michael", "am_michael"),
+]
+
+MACOS_SHOWCASE: list[tuple[str, str]] = [
+    ("Samantha", "Samantha"),
+    ("Alex", "Alex"),
+    ("Daniel", "Daniel"),
+    ("Karen", "Karen"),
+    ("Fred", "Fred"),
+]
+
+
+def _get_kokoro():
+    """Lazily load Kokoro ONNX model session."""
+    global _kokoro_instance, _kokoro_failed
+    if _kokoro_failed:
+        return None
+    if _kokoro_instance is not None:
+        return _kokoro_instance
+    if not (os.path.isfile(KOKORO_MODEL_PATH) and os.path.isfile(KOKORO_VOICES_PATH)):
+        return None
+    try:
+        from kokoro_onnx import Kokoro
+        _kokoro_instance = Kokoro(KOKORO_MODEL_PATH, KOKORO_VOICES_PATH)
+        log("Kokoro TTS initialized successfully")
+        return _kokoro_instance
+    except Exception as e:
+        log(f"Kokoro initialization failed ({e}), falling back to native say")
+        _kokoro_failed = True
+        return None
+
+
+def _synthesize_kokoro(text: str, voice: str | None = None) -> str | None:
+    """Synthesize text using Kokoro-82M, caching common phrases. Returns wav path."""
+    kokoro = _get_kokoro()
+    if kokoro is None:
+        return None
+    v = voice or VOICE_KOKORO_VOICE
+    try:
+        import soundfile as sf
+        os.makedirs(_tts_cache_dir, exist_ok=True)
+        cache_key = hashlib.md5(f"{v}:{text}".encode("utf-8")).hexdigest()
+        wav_path = os.path.join(_tts_cache_dir, f"{cache_key}.wav")
+        if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+            return wav_path
+
+        samples, sample_rate = kokoro.create(text, voice=v, speed=1.0, lang="en-us")
+        sf.write(wav_path, samples, sample_rate)
+        return wav_path
+    except Exception as e:
+        log(f"Kokoro synthesis error ({e}), falling back to native say")
+        return None
+
+
+def say(text: str, blocking: bool = False, voice: str | None = None) -> None:
+    """Speak text. Default engine is Kokoro (neural speech) with instant fallback
+    to macOS native `say`. Non-blocking by default: fire-and-forget Popen so the
+    action feels instant instead of waiting ~2s for the voice to finish. Any
+    in-flight speech is terminated first so rapid commands don't talk over each other.
+    Pass blocking=True when the full prompt must be heard before continuing."""
     global _say_proc
     log(f"say: {text}")
     if DRY_RUN:
@@ -225,12 +369,31 @@ def say(text: str, blocking: bool = False) -> None:
         if _say_proc is not None and _say_proc.poll() is None:
             _say_proc.terminate()
             _say_proc = None
+
+        if VOICE_TTS_ENGINE == "kokoro":
+            wav = _synthesize_kokoro(text, voice=voice)
+            if wav and os.path.exists(wav):
+                if blocking:
+                    subprocess.run(["afplay", wav], check=False,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    _say_proc = subprocess.Popen(
+                        ["afplay", wav],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+
+        # Fallback / Native macOS say
+        cmd = ["say"]
+        if voice:
+            cmd.extend(["-v", voice])
+        cmd.append(text)
+
         if blocking:
-            subprocess.run(["say", text], check=False,
+            subprocess.run(cmd, check=False,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             _say_proc = subprocess.Popen(
-                ["say", text],
+                cmd,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass  # e.g. test environments without the macOS `say` binary
@@ -1287,6 +1450,62 @@ def act_type_email() -> None:
         act_type_text(email)
     else:
         say("No email set. Add VOICE_USER_EMAIL to your dot env file.")
+
+
+def act_pick_voice() -> None:
+    """Rotate through voice examples speaking the same sentence, starting with the voice name."""
+    is_kokoro = (VOICE_TTS_ENGINE == "kokoro" and _get_kokoro() is not None)
+    showcase = KOKORO_SHOWCASE if is_kokoro else MACOS_SHOWCASE
+
+    say("Sampling voices. Say use voice, followed by the name, to select one.", blocking=True)
+    for display_name, voice_id in showcase:
+        sample_sentence = f"{display_name}. This is what I sound like on your Mac."
+        say(sample_sentence, blocking=True, voice=voice_id)
+    say("Which voice would you like?", blocking=True)
+
+
+def act_set_voice(name: str) -> None:
+    """Set active voice and persist to ~/.config/free-voice/config.json."""
+    global VOICE_KOKORO_VOICE, VOICE_SAY_VOICE
+    clean = name.strip().lower().replace("-", "_")
+
+    # Match in Kokoro voices
+    found_kokoro = None
+    found_display = None
+    for key, (disp, vid) in KOKORO_VOICES.items():
+        if clean in (key, vid.lower(), disp.lower()):
+            found_kokoro = vid
+            found_display = disp
+            break
+
+    cfg = _load_config()
+    if found_kokoro:
+        VOICE_KOKORO_VOICE = found_kokoro
+        cfg["kokoro_voice"] = found_kokoro
+        _save_config(cfg)
+        say(f"Voice set to {found_display}.", blocking=True, voice=found_kokoro)
+        log(f"Voice changed to Kokoro {found_display} ({found_kokoro})")
+        return
+
+    # Fallback to macOS say voice (e.g. Samantha, Alex, Daniel)
+    VOICE_SAY_VOICE = name.strip().title()
+    cfg["say_voice"] = VOICE_SAY_VOICE
+    _save_config(cfg)
+    say(f"Voice set to {VOICE_SAY_VOICE}.", blocking=True, voice=VOICE_SAY_VOICE)
+    log(f"Voice changed to macOS {VOICE_SAY_VOICE}")
+
+
+def act_get_voice() -> None:
+    """Report current active voice."""
+    if VOICE_TTS_ENGINE == "kokoro" and _get_kokoro() is not None:
+        disp = VOICE_KOKORO_VOICE
+        for k, (d, vid) in KOKORO_VOICES.items():
+            if vid == VOICE_KOKORO_VOICE:
+                disp = d
+                break
+        say(f"Current voice is {disp} using Kokoro neural speech.")
+    else:
+        say(f"Current voice is {VOICE_SAY_VOICE} using macOS speech.")
 
 
 # ---------------------------------------------------------------- xa11y UI actions (Tier 0 execution for real UI nodes)
@@ -2956,10 +3175,14 @@ _p(r"^(take a )?screenshot$", "shot_full", True)
 _p(r"^(take a )?screenshot of (the )?window$", "shot_window", True)
 _p(r"^screenshot (a )?selection$", "shot_selection", True)
 _p(r"^(empty|empty the) trash$", "empty_trash")
-# --- timers / time / calc (time & date before calculate!)
+# --- timers / time / calc (time, date & voice queries before calculate!)
 _p(r"^(set|start)( a)? timer for (\d+) (seconds?|minutes?|hours?)$", "timer")
 _p(r"^what time is it\??$", "time", True)
 _p(r"^what('s| is) the date\??$", "date", True)
+# --- voice & tts engine selection
+_p(r"^(?:pick|choose|sample|test|rotate|audition)(?: a)? voices?$", "pick_voice", True)
+_p(r"^(?:use|set|choose|switch|change)(?: to)? voice(?: to)?\s+([a-zA-Z0-9_-]+)$", "set_voice")
+_p(r"^what(?:'s| is) (?:my|the) voice\??$", "get_voice", True)
 _p(r"^(calculate|what is|what's) (.+)$", "calculate")
 # --- meta
 _p(r"^(help|what can you say|list commands|commands)$", "help", True)
@@ -3496,6 +3719,12 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_macro_list()
         elif name == "macro_delete":
             act_macro_delete(m.group(1))
+        elif name == "pick_voice":
+            act_pick_voice()
+        elif name == "set_voice":
+            act_set_voice(m.group(1))
+        elif name == "get_voice":
+            act_get_voice()
         elif name == "ascii_art":
             act_ascii_art()
         elif name == "draw_ascii":
