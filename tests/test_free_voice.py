@@ -940,5 +940,47 @@ class TestVisionPrefill(Base):
             self.assertIn("800", args)
 
 
+# --------------------------------------------- adaptive vision refinement
+class TestAdaptiveRefinement(Base):
+    def _locate(self, reply):
+        with mock.patch.object(fv, "capture_screenshot",
+                               return_value="/tmp/fake.png"), \
+             mock.patch.object(fv, "vision_ask",
+                               return_value=reply) as va, \
+             mock.patch.object(fv, "_refine_click",
+                               return_value=(1, 2)) as rc:
+            return fv.vision_locate("the toggle"), va, rc
+
+    def test_large_target_skips_second_inference(self):
+        # 300/1000*1920 = 576px >= 480 crop: first-pass center is enough
+        loc, va, rc = self._locate("512 340 300")
+        self.assertEqual(loc, (983, 367))  # 512/1000*1920, 340/1000*1080
+        va.assert_called_once()
+        rc.assert_not_called()
+
+    def test_small_target_still_refines(self):
+        # 40/1000*1920 = 77px: precision matters, refinement runs
+        loc, va, rc = self._locate("512 340 40")
+        self.assertEqual(loc, (1, 2))
+        va.assert_called_once()
+        rc.assert_called_once()
+
+    def test_legacy_two_int_reply_refines(self):
+        # old format carries no size: conservative, refine as before
+        loc, va, rc = self._locate("512 340")
+        self.assertEqual(loc, (1, 2))
+        rc.assert_called_once()
+
+    def test_boundary_size_refines(self):
+        # 249/1000*1920 = 478px < 480: just under the threshold
+        _loc, _va, rc = self._locate("512 340 249")
+        rc.assert_called_once()
+
+    def test_none_still_none(self):
+        loc, _va, rc = self._locate("NONE")
+        self.assertIsNone(loc)
+        rc.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

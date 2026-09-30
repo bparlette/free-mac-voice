@@ -86,6 +86,9 @@ Browser and desktop control: "new tab" / "close tab" / "reopen tab" / "refresh" 
 confirmations no longer block: acknowledgments play fire-and-forget so actions
 feel instant, and vision queries send an 800px sips-downscaled copy (~60%
 faster inference) while click refinement still crops the full-res shot.
+Vision clicks now ask the model for the target's size too, and skip the
+second refinement inference (~5-8s) when the target is large enough that
+the first-pass center can't miss.
 
 ## How it stays free (30-second version)
 
@@ -116,7 +119,7 @@ Measured end-to-end execution times on an Apple M4 Mac mini (including process s
 No mic, model, or Mac required — the suite stubs all hardware:
 
 ```bash
-python3 -m unittest discover -s tests   # 86 unit tests, stdlib only
+python3 -m unittest discover -s tests   # 91 unit tests, stdlib only
 ```
 
 Component benchmarks (Tier 0 routing, Tier 1 cold vs warm, screenshot,
