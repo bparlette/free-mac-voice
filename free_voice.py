@@ -57,9 +57,11 @@ import base64
 import json
 import os
 import queue
+import random
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -1513,6 +1515,316 @@ def confirm_spoken(action_desc: str, audio_fn) -> bool:
     return "yes" in text or "confirm" in text or "do it" in text
 
 
+# --------------------------------- continuous dictation, macros, fun stuff
+
+_DICTATE_CHUNK = 8.0  # seconds of audio per typed chunk
+_DICTATE_STOP_EXACT = {
+    "stop", "stop dictating", "end dictation", "done", "done dictating",
+    "finish dictating", "that's all",
+}
+_DICTATE_STOP_TAIL = ("stop dictating", "end dictation", "done dictating")
+
+
+def act_dictate_start() -> None:
+    """Continuous dictation: type transcribed chunks until a stop phrase.
+
+    'start dictating' / 'dictate' / 'take notes'. Only a bare 'stop' or a
+    multi-word stop phrase ends the session, so 'stop' inside a sentence
+    ('I told him to stop calling') keeps dictating.
+    """
+    if DRY_RUN:
+        say("Dictation mode")
+        return
+    say("Dictating. Say stop dictating when you're done.")
+    try:
+        while True:
+            try:
+                text = transcribe(record_fixed(_DICTATE_CHUNK))
+            except Exception as e:  # noqa: BLE001
+                log(f"dictation chunk failed: {e}")
+                continue
+            if not text:
+                continue
+            low = text.strip().lower().rstrip(".!?").strip()
+            if low in _DICTATE_STOP_EXACT:
+                say("Done dictating")
+                return
+            for phrase in _DICTATE_STOP_TAIL:
+                if low.endswith(phrase):
+                    head = text[: -len(phrase)].strip().rstrip(".!?").strip()
+                    if head:
+                        act_type_text(head + " ")
+                    say("Done dictating")
+                    return
+            act_type_text(text + " ")
+    except KeyboardInterrupt:
+        say("Dictation stopped")
+
+
+# --- custom voice macros ----------------------------------------------
+
+_MACRO_FILE = os.path.join(HOME, ".config", "free-voice", "macros.json")
+_macros_cache: dict | None = None
+
+
+def _load_macros() -> dict:
+    global _macros_cache
+    if _macros_cache is None:
+        try:
+            with open(_MACRO_FILE) as f:
+                data = json.load(f)
+            _macros_cache = data if isinstance(data, dict) else {}
+        except Exception:
+            _macros_cache = {}
+    return _macros_cache
+
+
+def _save_macros(macros: dict) -> None:
+    global _macros_cache
+    os.makedirs(os.path.dirname(_MACRO_FILE), exist_ok=True)
+    with open(_MACRO_FILE, "w") as f:
+        json.dump(macros, f, indent=2)
+    _macros_cache = macros
+
+
+def act_macro_add(trigger: str, commands: str) -> None:
+    """'macro standup runs open slack and open zoom' — save a voice macro."""
+    parts = [p.strip() for p in
+             re.split(r"\s+then\s+|\s+and\s+|,\s*", commands, flags=re.IGNORECASE)
+             if p.strip()]
+    if not parts:
+        say("I didn't hear any commands for that macro")
+        return
+    macros = _load_macros()
+    macros[trigger.strip().lower()] = parts
+    _save_macros(macros)
+    say(f"Macro {trigger.strip()} saved with {len(parts)} "
+        f"command{'s' if len(parts) != 1 else ''}")
+
+
+def act_macro_list() -> None:
+    macros = _load_macros()
+    if not macros:
+        say("You have no macros yet. Say macro, a name, then runs, to make one.")
+        return
+    say(f"You have {len(macros)} macro{'s' if len(macros) != 1 else ''}: "
+        + ", ".join(sorted(macros)))
+
+
+def act_macro_delete(trigger: str) -> None:
+    macros = _load_macros()
+    key = trigger.strip().lower()
+    if key in macros:
+        del macros[key]
+        _save_macros(macros)
+        say(f"Deleted macro {trigger.strip()}")
+    else:
+        say(f"No macro called {trigger.strip()}")
+
+
+def run_macro(text: str, confirm_audio_fn=None,
+              allow_destructive: bool = False, quiet_miss: bool = False) -> bool:
+    """Run a user macro whose trigger exactly matches the utterance.
+
+    Checked after Tier 0 (built-ins always win) and before Tier 1, so macro
+    phrases never get misrouted to the LLM. Returns True if one ran.
+    """
+    parts = _load_macros().get(text.strip().lower())
+    if not parts:
+        return False
+    log(f"macro hit: {text.strip()!r} -> {parts}")
+    for p in parts:
+        handle_command(p, confirm_audio_fn=confirm_audio_fn,
+                       allow_destructive=allow_destructive,
+                       quiet_miss=quiet_miss)
+        time.sleep(0.3)
+    say("Macro done")
+    return True
+
+
+# --- ASCII art ---------------------------------------------------------
+
+_ASCII_RAMP = "@%#*+=-:. "
+
+
+def act_ascii_art() -> None:
+    """'turn my screen into ascii art' — render the screenshot as text art."""
+    path = capture_screenshot()
+    if not path:
+        say("I couldn't capture the screen")
+        return
+    try:
+        from PIL import Image
+    except ImportError:
+        say("ASCII art needs Pillow — install it with pip install pillow")
+        return
+    img = Image.open(path).convert("L")
+    w = 120
+    h = max(1, int(img.height * w / img.width * 0.5))  # glyphs are ~2x tall
+    img = img.resize((w, h))
+    px = img.load()
+    n = len(_ASCII_RAMP) - 1
+    lines = ["".join(_ASCII_RAMP[px[x, y] * n // 255] for x in range(w))
+             for y in range(h)]
+    out = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
+    with open(out, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    shell(["open", out])
+    say("Here's your screen as ASCII art")
+
+
+# --- SVG drawing -------------------------------------------------------
+
+def _llm_text(prompt: str, max_tokens: int = 800) -> str | None:
+    """Raw text from Gemini, else the local model. None if both fail."""
+    system = ("Reply with ONLY the requested code. "
+              "No explanations, no markdown fences.")
+    if GEMINI_API_KEY:
+        try:
+            body = {
+                "system_instruction": {"parts": [{"text": system}]},
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"maxOutputTokens": max_tokens,
+                                     "temperature": 0.7},
+            }
+            url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+                   f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+            req = urllib.request.Request(
+                url, data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.load(r)
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:  # noqa: BLE001
+            log(f"draw: gemini failed ({e}), trying local model")
+    try:
+        body = {
+            "model": OLLAMA_MODEL, "keep_alive": "60m", "think": False,
+            "options": {"temperature": 0.7, "num_predict": max_tokens},
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}],
+            "stream": False,
+        }
+        req = urllib.request.Request(
+            OLLAMA_HOST + "/api/chat", data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=90) as r:
+            data = json.load(r)
+        return data["message"]["content"]
+    except Exception as e:  # noqa: BLE001
+        log(f"draw: local model failed ({e})")
+        return None
+
+
+def act_draw_svg(subject: str) -> None:
+    """'draw a cat' — LLM-generated SVG opened in the browser."""
+    subject = subject.strip()
+    say(f"Drawing {subject}")
+    svg = _llm_text(
+        f"Create a simple, cute, flat cartoon SVG drawing of {subject}. "
+        f"Use a 400x400 viewBox, bright colors, simple shapes. Reply with "
+        f"ONLY the SVG code, starting with <svg and ending with </svg>.")
+    if not svg:
+        say("I couldn't draw that right now")
+        return
+    m = re.search(r"<svg.*?</svg>", svg, re.DOTALL | re.IGNORECASE)
+    if not m:
+        say("The drawing didn't come out right")
+        return
+    out = os.path.join(tempfile.gettempdir(), "drawing.svg")
+    with open(out, "w") as f:
+        f.write(m.group(0))
+    shell(["open", out])
+    say(f"Here's your {subject}")
+
+
+# --- easter eggs -------------------------------------------------------
+
+_JOKES = [
+    "Why don't programmers like nature? Too many bugs.",
+    "I told my computer I needed a break. Now it won't stop sending me KitKat ads.",
+    "Why did the developer go broke? He used up all his cache.",
+    "There are only 10 kinds of people: those who understand binary and those who don't.",
+    "Why do Java developers wear glasses? Because they don't C sharp.",
+    "I would tell you a UDP joke, but you might not get it.",
+    "Why was the computer cold? It left its Windows open.",
+    "A SQL query walks into a bar, sees two tables and asks: mind if I join you?",
+]
+
+_8BALL = [
+    "It is certain", "Without a doubt", "Yes definitely",
+    "Most likely", "Outlook good", "Signs point to yes",
+    "Reply hazy, try again", "Ask again later",
+    "Better not tell you now", "Cannot predict now",
+    "Don't count on it", "My reply is no",
+    "Outlook not so good", "Very doubtful",
+]
+
+
+def act_roll_dice() -> None:
+    say(f"You rolled a {random.randint(1, 6)}")
+
+
+def act_coin_flip() -> None:
+    say(f"It's {random.choice(['heads', 'tails'])}")
+
+
+def act_8ball() -> None:
+    say(random.choice(_8BALL))
+
+
+def act_joke() -> None:
+    say(random.choice(_JOKES))
+
+
+# --- reminders, read-screen, music -------------------------------------
+
+def act_reminder(amount: int, unit: str, message: str) -> None:
+    """'remind me in 10 minutes to check the oven'."""
+    seconds = amount * {"second": 1, "minute": 60, "hour": 3600}[unit.rstrip("s")]
+
+    def ring() -> None:
+        time.sleep(seconds)
+        say(f"Reminder: {message}")
+        shell(["afplay", "/System/Library/Sounds/Glass.aiff"])
+
+    threading.Thread(target=ring, daemon=True).start()
+    say(f"I'll remind you to {message} in {amount} {unit}")
+
+
+def act_read_screen() -> None:
+    """'read my screen to me' — a fuller spoken tour than describe."""
+    path = capture_screenshot()
+    if not path:
+        say("I couldn't capture the screen")
+        return
+    text = vision_ask(
+        "Read this macOS screenshot aloud in three to five short spoken "
+        "sentences, as if describing the screen to someone who can't see it. "
+        "Go through the frontmost window top to bottom: titles, text, buttons, "
+        "and any dialogs or notifications. Plain text only.",
+        path,
+        prefill="Looking at the screen, ",
+    )
+    if text:
+        say(text)
+    else:
+        say("I couldn't make out the screen")
+
+
+def act_play_genre(genre: str) -> None:
+    """'play some jazz' — play the first Music playlist matching the genre."""
+    g = genre.strip()
+    script = (f'tell application "Music"\nactivate\n'
+              f'play (first playlist whose name contains "{esc(g)}")\nend tell')
+    try:
+        shell(["osascript", "-e", script])
+    except Exception:  # noqa: BLE001
+        say(f"I couldn't find a {g} playlist in Music")
+        return
+    say(f"Playing {g}")
+
+
 # ---------------------------------------------------------------- Tier 0: regex router + completion gating
 # _p(rx, name, partial_ok): partial_ok=True ONLY for commands that are safe
 # to fire mid-sentence on a growing partial transcript. Free-text payloads
@@ -1526,6 +1838,8 @@ def _p(rx: str, name: str, partial_ok: bool = False) -> None:
     _PATTERNS.append((re.compile(rx, re.IGNORECASE), name, partial_ok))
 
 
+# --- continuous dictation BEFORE generic "open/start ..." (else "start dictating" opens an app)
+_p(r"^(start dictating|dictate|take notes)( until i say stop)?$", "dictate_start")
 # --- apps & tabs (specific "open tab" / "open X settings" / "open trash" BEFORE generic open)
 _p(r"^(new|open)( a)? tab$", "new_tab", True)
 _p(r"^close( the)? tab$", "close_tab", True)
@@ -1633,6 +1947,26 @@ _p(r"^what('s| is) the date\??$", "date", True)
 _p(r"^(calculate|what is|what's) (.+)$", "calculate")
 # --- meta
 _p(r"^(help|what can you say|list commands|commands)$", "help", True)
+# --- voice macros
+_p(r"^macro (.+?) runs (.+)$", "macro_add")
+_p(r"^(list|show)( my)? macros$", "macro_list", True)
+_p(r"^delete macro (.+)$", "macro_delete")
+# --- fun: ascii art & drawing
+_p(r"^(turn|make|convert)( my| the)? screen into ascii( art)?$", "ascii_art", True)
+_p(r"^ascii art( of my screen)?$", "ascii_art", True)
+_p(r"^draw( me)?( a| an| the)? (.+)$", "draw_svg")
+# --- easter eggs
+_p(r"^roll( a)? (die|dice)$", "roll_dice", True)
+_p(r"^flip( a)? coin$", "coin_flip", True)
+_p(r"^ask the (magic )?8[ -]?ball (.+)$", "eight_ball", True)
+_p(r"^(magic )?8[ -]?ball$", "eight_ball_bare", True)
+_p(r"^tell me a joke$", "joke", True)
+# --- reminders (plain timers already exist above)
+_p(r"^remind me in (\d+) (seconds?|minutes?|hours?) to (.+)$", "reminder")
+# --- read screen aloud (short describe already exists above)
+_p(r"^read (my|the) screen( to me| aloud)?$", "read_screen", True)
+# --- music
+_p(r"^play some (.+)$", "play_genre", True)
 
 
 def _partial_complete(name: str, m: re.Match) -> bool:
@@ -1905,6 +2239,34 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             cmds = sorted({n for _, n, _ in _PATTERNS})
             print("Commands: " + ", ".join(cmds))
             say("I printed the command list in the terminal")
+        elif name == "dictate_start":
+            act_dictate_start()
+        elif name == "macro_add":
+            act_macro_add(m.group(1), m.group(2))
+        elif name == "macro_list":
+            act_macro_list()
+        elif name == "macro_delete":
+            act_macro_delete(m.group(1))
+        elif name == "ascii_art":
+            act_ascii_art()
+        elif name == "draw_svg":
+            act_draw_svg(m.group(3))
+        elif name == "roll_dice":
+            act_roll_dice()
+        elif name == "coin_flip":
+            act_coin_flip()
+        elif name == "eight_ball":
+            act_8ball()
+        elif name == "eight_ball_bare":
+            say("Ask me a yes or no question")
+        elif name == "joke":
+            act_joke()
+        elif name == "reminder":
+            act_reminder(int(m.group(1)), m.group(2), m.group(3))
+        elif name == "read_screen":
+            act_read_screen()
+        elif name == "play_genre":
+            act_play_genre(m.group(1))
         else:
             return  # unknown handler name: treat as unrouted
     except Exception as e:  # noqa: BLE001
@@ -2290,6 +2652,14 @@ def handle_command(text: str, confirm_audio_fn=None,
         name, m = r
         log(f"Tier 0 hit: {name}")
         execute_match(name, m, confirm_audio_fn, allow_destructive)
+        return True
+
+    # Voice macros (user-defined): built-ins always win, so check here —
+    # before chaining and Tier 1 — and an exact trigger match runs instead
+    # of being misrouted to the LLM.
+    if run_macro(t, confirm_audio_fn=confirm_audio_fn,
+                 allow_destructive=allow_destructive,
+                 quiet_miss=quiet_miss):
         return True
 
     # Compound command chaining: if single Tier 0 missed, try chaining (e.g. "open notes and snap left")
