@@ -116,7 +116,9 @@ Full implementation details, latency math, and honest limits: **[ARCHITECTURE.md
 
 ## Measured Performance (Apple M4 Mac mini, 16 GB)
 
-Measured end-to-end execution times on an Apple M4 Mac mini (including process spawn, command execution, and macOS voice confirmation):
+### End-to-End Command Latency
+
+Measured times on an Apple M4 Mac mini (including process spawn, command execution, and macOS voice confirmation):
 
 | Command | Routing Path | Decision / Inference Latency | Total End-to-End Time |
 |---|---|---|---|
@@ -126,7 +128,24 @@ Measured end-to-end execution times on an Apple M4 Mac mini (including process s
 | `could you please open notes` | Tier 1 (`qwen2.5:1.5b` fallback) | **0.32s** | **2.53s** |
 | `could you please open notes` | Tier 1 (`qwen3-vl:8b` + `num_ctx=1024`) | **1.26s** | **3.66s** |
 
-*Note: `num_ctx=1024` caps the KV context window to give consistent 1.0–1.3s Tier 1 latency. Without it, qwen3-vl:8b's large default context produces 1.3–6.2s variance (p50=5.75s). Whisper STT (`tiny.en`, int8) runs in **109–139ms** on M4 for 1–3.5s of speech after a 360ms first-call model load — entirely local, no cloud dependency.*
+*Note: `num_ctx=1024` caps the KV context window to give consistent 1.0–1.3s Tier 1 latency. Without it, qwen3-vl:8b's large default context produces 1.3–6.2s variance (p50=5.75s). Whisper STT (`tiny.en`, int8) runs in **109–139ms** on M4 for 1–3.5s of real speech after a 360ms first-call model load — entirely local, no cloud dependency.*
+
+### Component Benchmark Breakdown (`benchmarks/bench.py`)
+
+Fresh benchmark run on Apple M4 Mac mini (16 GB unified RAM, macOS Darwin arm64, `qwen3-vl:8b` resident):
+
+| Component / Benchmark | Samples (\(n\)) | Mean | Median (\(p50\)) | 95th %tile (\(p95\)) | Status / Notes |
+|---|---|---|---|---|---|
+| **Tier 0 Routing** | 200 | 0.2 ms | **0.2 ms** | 0.3 ms | Regex matcher across 23 commands |
+| **Tier 0 Partial Gating** | 200 | 0.1 ms | **0.1 ms** | 0.2 ms | 10 prefixes of “open notes” |
+| **Chain Dispatch Overhead** | 50 | 0.3 ms | **0.3 ms** | 0.6 ms | Multi-intent sequential dispatch |
+| **Tier 1 Cold (Model Reload)** | 1 | 3.97s | **3.97s** | 3.97s | First call reloading model into memory |
+| **Tier 1 Warm (`num_ctx=1024`)** | 5 | 1.27s | **1.26s** | 1.29s | Resident Ollama route with prefill |
+| **Screenshot Capture** | 5 | 0.17s | **0.18s** | 0.21s | Native macOS `screencapture` to temp file |
+| **Vision: Describe Screen** | 3 | 12.08s | **10.61s** | 15.10s | Screenshot + `sips` 800px + `qwen3-vl:8b` |
+| **Vision: Locate Element** | 3 | 20.81s | **20.80s** | 20.85s | Coordinate query; adaptive skip for $\ge 480\text{px}$ targets |
+| **Whisper STT (`tiny.en`)** | 3 | 1.88s | **1.28s** | 3.17s | On-device STT encode/decode pipeline |
+| **Earcon Audio Feedback** | 5 | 2.2 ms | **1.8 ms** | 3.8 ms | Non-blocking `afplay` sound trigger |
 
 ## Tests & benchmarks
 
