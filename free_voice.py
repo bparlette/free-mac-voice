@@ -2443,6 +2443,42 @@ def act_play_genre(genre: str) -> None:
     say(f"Playing {g}")
 
 
+# --- Samsung TV control (SmartThings cloud API) ---------------------------
+_TV_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "samsung_tv.py")
+
+
+def _tv_configured() -> bool:
+    return bool(os.environ.get("SAMSUNG_ST_TOKEN", "").strip()
+                and os.environ.get("SAMSUNG_TV_DEVICE_ID", "").strip())
+
+
+def act_tv_input(alias: str, spoken_name: str) -> None:
+    """'switch to computer' — set the Samsung TV input via samsung_tv.py."""
+    if not _tv_configured():
+        say("Samsung TV isn't set up yet — see samsung_tv.py for the one-time setup")
+        return
+    try:
+        shell([sys.executable, _TV_SCRIPT, "set-input", alias])
+    except Exception:  # noqa: BLE001
+        say("I couldn't reach the Samsung TV")
+        return
+    say(f"Switching to {spoken_name}")
+
+
+def act_tv_power(on: bool) -> None:
+    """'turn on/off the tv' — power the Samsung TV via samsung_tv.py."""
+    if not _tv_configured():
+        say("Samsung TV isn't set up yet — see samsung_tv.py for the one-time setup")
+        return
+    try:
+        shell([sys.executable, _TV_SCRIPT, "power", "on" if on else "off"])
+    except Exception:  # noqa: BLE001
+        say("I couldn't reach the Samsung TV")
+        return
+    say(f"Turning the TV {'on' if on else 'off'}")
+
+
 # ---------------------------------------------------------------- Tier 0: regex router + completion gating
 # _p(rx, name, partial_ok): partial_ok=True ONLY for commands that are safe
 # to fire mid-sentence on a growing partial transcript. Free-text payloads
@@ -2458,6 +2494,11 @@ def _p(rx: str, name: str, partial_ok: bool = False) -> None:
 
 # --- continuous dictation BEFORE generic "open/start ..." (else "start dictating" opens an app)
 _p(r"^(start dictating|dictate|take notes)( until i say stop)?$", "dictate_start")
+# --- Samsung TV (BEFORE generic "switch to X" app pattern below)
+_p(r"^switch to (the )?(computer|mac|pc)$", "tv_computer", True)
+_p(r"^switch to (the )?tv$", "tv_tv", True)
+_p(r"^(switch|change)( the)? (input|source)( to)? (.+)$", "tv_input")
+_p(r"^turn (on|off)( the)? tv$", "tv_power", True)
 # --- apps & tabs (specific "open tab" / "open X settings" / "open trash" BEFORE generic open)
 _p(r"^(new|open)( a)? tab$", "new_tab", True)
 _p(r"^close( the)? tab$", "close_tab", True)
@@ -2895,6 +2936,14 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_media("next")
         elif name == "media_prev":
             act_media("previous")
+        elif name == "tv_computer":
+            act_tv_input("computer", "computer")
+        elif name == "tv_tv":
+            act_tv_input("tv", "TV")
+        elif name == "tv_input":
+            src = m.group(5).strip(); act_tv_input(src, src)
+        elif name == "tv_power":
+            act_tv_power(m.group(1) == "on")
         elif name == "lock":
             act_lock()
         elif name == "sleep":

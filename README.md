@@ -76,6 +76,9 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | “close” / “close this” / “close all windows” | Closes active tab/window or all windows |
 | “lock” / “lock it down” | Locks the screen |
 | “dim screen” / “brightness up” | Controls screen brightness |
+| “switch to computer” / “switch to tv” | Switches Samsung TV input (needs one-time SmartThings setup, see below) |
+| “switch input to HDMI 2” | Sets Samsung TV to a named input source |
+| “turn on the tv” / “turn off the tv” | Powers the Samsung TV on/off |
 
 Say **“help”** anytime to hear available commands. Or double-click **Voice Control.command** — no terminal needed. Includes instant audio earcons (subtle audio chime on keypress, release click on completion).
 
@@ -150,6 +153,22 @@ Add your free API key to `~/.config/free-voice/.env` or export it in your shell:
 export GEMINI_API_KEY="AIzaSy..."
 ```
 If unset (the default), `free-voice` runs completely local and private on your hardware.
+
+### Samsung TV control (optional)
+Control input switching and power on your Samsung Smart TV over Wi-Fi via the SmartThings cloud API.
+
+**One-time setup (about 5 minutes):**
+1. **SmartThings app:** On iPhone/Android, open the SmartThings app, sign in with your Samsung account, and add your Samsung TV (usually auto-detected on the same Wi-Fi).
+2. **Personal Access Token:** Go to [account.smartthings.com](https://account.smartthings.com) → *Personal Access Tokens* → *Generate new token*. Name it `mac-voice` and grant scopes `r:devices:*` (read) and `x:devices:*` (run commands). Copy the token.
+3. **Environment variables:** Add the token and device ID to `~/.config/free-voice/.env` (or export in shell):
+   ```bash
+   SAMSUNG_ST_TOKEN=your-token-here
+   SAMSUNG_TV_DEVICE_ID=your-device-id-here
+   # Optional overrides (defaults shown):
+   SAMSUNG_INPUT_COMPUTER=HDMI1
+   SAMSUNG_INPUT_TV=digitalTv
+   ```
+4. **Discover:** Run `python3 samsung_tv.py discover` to list your devices (copy the TV's device ID into step 3) and check supported input sources. If your Mac is connected to a different port than HDMI1, configure `SAMSUNG_INPUT_COMPUTER` accordingly.
 
 ---
 

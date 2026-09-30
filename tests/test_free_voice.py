@@ -20,6 +20,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import free_voice as fv
+import samsung_tv
 
 
 class Base(unittest.TestCase):
@@ -1666,7 +1667,171 @@ class TestVisionThreadPoolAndSizing(Base):
 
         # Bare tap
         name, _ = self.route_name("tap")
-        self.assertEqual(name, "click_here")
+
+# ------------------------------------------------------- Samsung TV
+class TestSamsungTV(Base):
+    def test_routing_switch_to_computer(self):
+        for text in ("switch to computer", "switch to the computer",
+                     "switch to mac", "switch to the mac",
+                     "switch to pc", "switch to the pc"):
+            name, _ = self.route_name(text)
+            self.assertEqual(name, "tv_computer", text)
+
+    def test_routing_switch_to_tv(self):
+        for text in ("switch to tv", "switch to the tv"):
+            name, _ = self.route_name(text)
+            self.assertEqual(name, "tv_tv", text)
+
+    def test_routing_not_hijacked_by_switch_app(self):
+        # Generic apps must still route to switch_app, not TV
+        for text, app in (("switch to Notes", "Notes"),
+                          ("switch to Safari", "Safari"),
+                          ("focus Terminal", "Terminal"),
+                          ("bring up Chrome", "Chrome")):
+            name, m = self.route_name(text)
+            self.assertEqual(name, "switch_app", text)
+            self.assertEqual(m.group(2), app)
+
+    def test_routing_switch_input(self):
+        cases = [
+            ("switch input to HDMI 2", "HDMI 2"),
+            ("switch the input to HDMI 2", "HDMI 2"),
+            ("switch source to HDMI1", "HDMI1"),
+            ("change input to pc", "pc"),
+            ("change the source to HDMI 3", "HDMI 3"),
+        ]
+        for text, want_src in cases:
+            name, m = self.route_name(text)
+            self.assertEqual(name, "tv_input", text)
+            self.assertEqual(m.group(5).strip(), want_src)
+
+    def test_routing_power_on_and_off(self):
+        for text, state in (("turn on the tv", "on"),
+                            ("turn on tv", "on"),
+                            ("turn off the tv", "off"),
+                            ("turn off tv", "off")):
+            name, m = self.route_name(text)
+            self.assertEqual(name, "tv_power", text)
+            self.assertEqual(m.group(1), state)
+
+    def test_partial_safety_gating(self):
+        # Fixed-phrase commands are safe for partial execution
+        for text in ("switch to computer", "switch to tv",
+                     "turn on the tv", "turn off the tv"):
+            r = fv.route(text, partial=True)
+            self.assertIsNotNone(r, f"expected partial match for {text!r}")
+
+        # Free-text payload (tv_input) is NOT partial safe
+        r = fv.route("switch input to HDMI 2", partial=True)
+        self.assertIsNone(r, "tv_input must not match on partial")
+
+    def test_act_tv_input_unconfigured_speaks_setup(self):
+        with mock.patch.object(fv, "_tv_configured", return_value=False):
+            fv.act_tv_input("computer", "computer")
+        self.assertIn("Samsung TV isn't set up yet", self.said[-1])
+
+    def test_act_tv_power_unconfigured_speaks_setup(self):
+        with mock.patch.object(fv, "_tv_configured", return_value=False):
+            fv.act_tv_power(True)
+        self.assertIn("Samsung TV isn't set up yet", self.said[-1])
+
+    def test_act_tv_input_unreachable_speaks_error(self):
+        with mock.patch.object(fv, "_tv_configured", return_value=True), \
+             mock.patch.object(fv, "shell", side_effect=RuntimeError("timeout")):
+            fv.act_tv_input("computer", "computer")
+        self.assertIn("I couldn't reach the Samsung TV", self.said[-1])
+
+    def test_act_tv_power_unreachable_speaks_error(self):
+        with mock.patch.object(fv, "_tv_configured", return_value=True), \
+             mock.patch.object(fv, "shell", side_effect=RuntimeError("timeout")):
+            fv.act_tv_power(True)
+        self.assertIn("I couldn't reach the Samsung TV", self.said[-1])
+
+    def test_act_tv_input_and_power_success_executes_script(self):
+        with mock.patch.object(fv, "_tv_configured", return_value=True), \
+             mock.patch.object(fv, "shell") as sh:
+            fv.act_tv_input("computer", "computer")
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "set-input", "computer"])
+            self.assertIn("Switching to computer", self.said[-1])
+
+            fv.act_tv_power(True)
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "power", "on"])
+            self.assertIn("Turning the TV on", self.said[-1])
+
+            fv.act_tv_power(False)
+            sh.assert_called_with([sys.executable, fv._TV_SCRIPT, "power", "off"])
+            self.assertIn("Turning the TV off", self.said[-1])
+
+
+class TestSamsungTVScript(unittest.TestCase):
+    def test_script_resolve_source_aliases(self):
+        self.assertEqual(samsung_tv._resolve_source("computer"), "HDMI1")
+        self.assertEqual(samsung_tv._resolve_source("mac"), "HDMI1")
+        self.assertEqual(samsung_tv._resolve_source("pc"), "HDMI1")
+        self.assertEqual(samsung_tv._resolve_source("tv"), "digitalTv")
+        self.assertEqual(samsung_tv._resolve_source("television"), "digitalTv")
+        self.assertEqual(samsung_tv._resolve_source("cable"), "digitalTv")
+
+    def test_script_resolve_source_raw_hdmi(self):
+        self.assertEqual(samsung_tv._resolve_source("HDMI 2"), "HDMI2")
+        self.assertEqual(samsung_tv._resolve_source("hdmi 2"), "HDMI2")
+        self.assertEqual(samsung_tv._resolve_source("hdmi1"), "HDMI1")
+        self.assertEqual(samsung_tv._resolve_source("customPort"), "customPort")
+
+    def test_script_cmd_set_input_post_shape(self):
+        with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
+            msg = samsung_tv.cmd_set_input("computer")
+            self.assertEqual(msg, "TV input -> HDMI1")
+            mock_req.assert_called_once_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "mediaInputSource",
+                    "command": "setInputSource",
+                    "arguments": ["HDMI1"]
+                }]}
+            )
+
+    def test_script_cmd_power_post_shape(self):
+        with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
+            msg_on = samsung_tv.cmd_power("on")
+            self.assertEqual(msg_on, "TV power on")
+            mock_req.assert_called_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "switch",
+                    "command": "on",
+                    "arguments": []
+                }]}
+            )
+            msg_off = samsung_tv.cmd_power("off")
+            self.assertEqual(msg_off, "TV power off")
+            mock_req.assert_called_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "switch",
+                    "command": "off",
+                    "arguments": []
+                }]}
+            )
+
+    def test_script_errors_unconfigured_and_invalid(self):
+        with mock.patch.object(samsung_tv, "TOKEN", ""):
+            with self.assertRaises(samsung_tv.TVError):
+                samsung_tv._req("GET", "/devices")
+        with mock.patch.object(samsung_tv, "DEVICE_ID", ""):
+            with self.assertRaises(samsung_tv.TVError):
+                samsung_tv._need_device()
+        with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"):
+            with self.assertRaises(samsung_tv.TVError):
+                samsung_tv.cmd_power("sleep")
 
 
 if __name__ == "__main__":
