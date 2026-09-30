@@ -129,17 +129,24 @@ flowchart TD
 | `“read my screen to me”` | Top-to-bottom window text readout |
 | `“screenshot”` / `“record screen”` | Native macOS capture shortcuts |
 
-### 🛠️ Dictation, Tools & Creative Fun
+### 🛠️ Dictation, Tools & Custom Shortcuts
 | Voice Command | Action |
 |---|---|
+| `“when I say party mode, set volume to 80 and play some jazz”` | Teaches a new multi-command shortcut |
+| `“when I say bedtime, turn off the tv and sleep”` | Teaches custom bedtime sequence |
+| `“alias surf to open safari”` | Teaches new custom trigger words |
+| `“when I say backup, run bash ~/backup.sh”` | Runs custom local shell scripts via voice |
+| `“what are my shortcuts”` / `“list shortcuts”` | Reads your active custom shortcuts aloud |
+| `“forget shortcut party mode”` | Deletes a custom shortcut |
 | `“start dictating”` | Continuous dictation until you say `“stop dictating”` |
 | `“read clipboard”` | Reads your copied clipboard text aloud |
 | `“type today's date”` / `“type the time”` | Types formatted date/time stamp |
-| `“macro standup runs open notes and open slack”` | Saves custom multi-step voice macros |
 | `“turn my screen into ascii art”` | Converts screenshot to dark-mode HTML page in browser |
-| `“draw ascii flower”` | Instant canonical ASCII art displayed in browser |
 | `“draw a cat”` | Local LLM generates an SVG vector art file and opens it |
 | `“tell me a joke”` / `“roll a die”` / `“flip a coin”` | Built-in conversational utilities |
+
+> [!TIP]
+> **Update-Proof Customization**: All spoken shortcuts and custom extensions are saved directly to `~/.config/free-voice/` (outside the git repository). You can pull updates, run `bash upgrade.sh`, or reinstall anytime—your custom phrases, aliases, and shell macros are preserved forever. Developers can also drop custom Python handlers into `~/.config/free-voice/extensions.py` to add arbitrary code.
 
 ---
 

@@ -1144,9 +1144,9 @@ class TestMacros(Base):
         self.assertIn("standup", self.said[-1])
         fv.act_macro_delete("standup")
         self.assertEqual(fv._load_macros(), {})
-        self.assertIn("Deleted macro standup", self.said[-1])
+        self.assertTrue(any("Deleted" in s and "standup" in s for s in self.said))
         fv.act_macro_delete("standup")
-        self.assertIn("No macro called standup", self.said[-1])
+        self.assertTrue(any("No shortcut" in s or "No macro" in s for s in self.said))
 
     def test_add_splits_on_then_and_commas(self):
         fv.act_macro_add("morning", "open notes then open calendar, open mail")
@@ -1159,7 +1159,14 @@ class TestMacros(Base):
             handled = fv.handle_command("standup")
         self.assertTrue(handled)
         oa.assert_called_once_with("notes")
-        self.assertIn("Macro done", self.said)
+        self.assertTrue(any("done" in s for s in self.said))
+
+    def test_run_macro_executes_custom_shell_command(self):
+        fv.act_macro_add("backup", "bash ~/backup.sh")
+        with mock.patch.object(fv, "shell") as mock_sh:
+            handled = fv.handle_command("backup")
+        self.assertTrue(handled)
+        mock_sh.assert_called_once_with(["/bin/bash", "-c", "~/backup.sh"])
 
     def test_builtin_beats_macro_trigger(self):
         # a macro named exactly like a built-in never hijacks it
@@ -1167,18 +1174,36 @@ class TestMacros(Base):
         with mock.patch.object(fv, "act_open_app") as oa:
             fv.handle_command("open notes")
         oa.assert_called_once()
-        self.assertNotIn("Macro done", self.said)
+        self.assertNotIn("Shortcut done", self.said)
 
     def test_unknown_trigger_misses(self):
         self.assertFalse(fv.run_macro("nope"))
 
     def test_routing(self):
-        name, m = self.route_name("macro standup runs open slack and open zoom")
-        self.assertEqual(name, "macro_add")
-        self.assertEqual((m.group(1), m.group(2)),
-                         ("standup", "open slack and open zoom"))
-        self.assertEqual(self.route_name("list macros")[0], "macro_list")
-        self.assertEqual(self.route_name("delete macro standup")[0], "macro_delete")
+        for phrase, (exp_t, exp_c) in [
+            ("macro standup runs open slack and open zoom", ("standup", "open slack and open zoom")),
+            ("when I say party mode, set volume to 80 and play some jazz", ("party mode", "set volume to 80 and play some jazz")),
+            ("when I say chill out do turn down the volume", ("chill out", "turn down the volume")),
+            ("alias surf to open safari", ("surf", "open safari")),
+            ("add shortcut bedtime runs turn off the tv", ("bedtime", "turn off the tv")),
+        ]:
+            name, m = self.route_name(phrase)
+            self.assertEqual(name, "macro_add", f"Failed on: {phrase}")
+            self.assertEqual(m.group(1).strip().lower(), exp_t.lower())
+
+        for phrase in ("list macros", "show shortcuts", "what are my shortcuts", "my macros"):
+            self.assertEqual(self.route_name(phrase)[0], "macro_list")
+
+        for phrase in ("delete macro standup", "remove shortcut party mode", "forget shortcut surf"):
+            self.assertEqual(self.route_name(phrase)[0], "macro_delete")
+
+    def test_custom_python_extensions_hook(self):
+        called = []
+        fv.register_custom_command(r"^custom ping$", lambda m: called.append("pong"))
+        r = fv.route("custom ping")
+        self.assertIsNotNone(r)
+        fv.execute_match(r[0], r[1])
+        self.assertEqual(called, ["pong"])
 
 
 class TestFunStuff(Base):

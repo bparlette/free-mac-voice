@@ -2218,58 +2218,89 @@ def _save_macros(macros: dict) -> None:
 
 
 def act_macro_add(trigger: str, commands: str) -> None:
-    """'macro standup runs open slack and open zoom' — save a voice macro."""
+    """'When I say party mode, set volume to 80 and play some jazz' — save shortcut."""
+    clean_trigger = trigger.strip().strip("'\"").lower()
+    commands = re.sub(r"^(?:do|run)\s+", "", commands.strip(), flags=re.IGNORECASE)
     parts = [p.strip() for p in
              re.split(r"\s+then\s+|\s+and\s+|,\s*", commands, flags=re.IGNORECASE)
              if p.strip()]
     if not parts:
-        say("I didn't hear any commands for that macro")
+        say("I didn't hear any commands for that shortcut")
         return
     macros = _load_macros()
-    macros[trigger.strip().lower()] = parts
+    macros[clean_trigger] = parts
     _save_macros(macros)
-    say(f"Macro {trigger.strip()} saved with {len(parts)} "
+    say(f"Shortcut {clean_trigger} saved with {len(parts)} "
         f"command{'s' if len(parts) != 1 else ''}")
 
 
 def act_macro_list() -> None:
     macros = _load_macros()
     if not macros:
-        say("You have no macros yet. Say macro, a name, then runs, to make one.")
+        say("You have no custom shortcuts yet. Say 'when I say', a phrase, then the commands, to make one.")
         return
-    say(f"You have {len(macros)} macro{'s' if len(macros) != 1 else ''}: "
+    say(f"You have {len(macros)} shortcut{'s' if len(macros) != 1 else ''}: "
         + ", ".join(sorted(macros)))
 
 
 def act_macro_delete(trigger: str) -> None:
     macros = _load_macros()
-    key = trigger.strip().lower()
+    key = trigger.strip().strip("'\"").lower()
     if key in macros:
         del macros[key]
         _save_macros(macros)
-        say(f"Deleted macro {trigger.strip()}")
+        say(f"Deleted shortcut {key}")
     else:
-        say(f"No macro called {trigger.strip()}")
+        say(f"No shortcut called {key}")
 
 
 def run_macro(text: str, confirm_audio_fn=None,
               allow_destructive: bool = False, quiet_miss: bool = False) -> bool:
-    """Run a user macro whose trigger exactly matches the utterance.
-
-    Checked after Tier 0 (built-ins always win) and before Tier 1, so macro
-    phrases never get misrouted to the LLM. Returns True if one ran.
-    """
+    """Run a user shortcut/macro whose trigger matches the utterance."""
     parts = _load_macros().get(text.strip().lower())
     if not parts:
         return False
-    log(f"macro hit: {text.strip()!r} -> {parts}")
+    log(f"shortcut/macro hit: {text.strip()!r} -> {parts}")
     for p in parts:
-        handle_command(p, confirm_audio_fn=confirm_audio_fn,
-                       allow_destructive=allow_destructive,
-                       quiet_miss=quiet_miss)
+        if p.startswith(("shell ", "bash ", "run script ")) or (p.startswith("run ") and "/" in p):
+            cmd_str = re.sub(r"^(?:shell|bash|run script|run)\s+", "", p).strip()
+            shell(["/bin/bash", "-c", cmd_str])
+            log(f"custom macro shell executed: {cmd_str}")
+        else:
+            handle_command(p, confirm_audio_fn=confirm_audio_fn,
+                           allow_destructive=allow_destructive,
+                           quiet_miss=quiet_miss)
         time.sleep(0.3)
-    say("Macro done")
+    say("Shortcut done")
     return True
+
+
+_CUSTOM_HANDLERS: dict = {}
+
+
+def register_custom_command(pattern: str, handler, partial_ok: bool = False) -> None:
+    """Allow user extensions to register custom voice patterns and handlers."""
+    name = f"custom_ext_{len(_PATTERNS)}"
+    _p(pattern, name, partial_ok)
+    _CUSTOM_HANDLERS[name] = handler
+
+
+def load_custom_extensions() -> None:
+    """Load user extensions from ~/.config/free-voice/extensions.py if present."""
+    ext_path = os.path.join(HOME, ".config", "free-voice", "extensions.py")
+    if not os.path.exists(ext_path):
+        return
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("user_extensions", ext_path)
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, "register"):
+                mod.register(register_custom_command)
+            log("loaded custom user extensions from ~/.config/free-voice/extensions.py")
+    except Exception as e:
+        log(f"warning: failed to load user extensions ({e})")
 
 
 # --- ASCII art ---------------------------------------------------------
@@ -2932,10 +2963,13 @@ _p(r"^what('s| is) the date\??$", "date", True)
 _p(r"^(calculate|what is|what's) (.+)$", "calculate")
 # --- meta
 _p(r"^(help|what can you say|list commands|commands)$", "help", True)
-# --- voice macros
+# --- user shortcuts & voice macros (saved locally in ~/.config/free-voice/macros.json, survives updates)
+_p(r"^when i say (.+?)(?:,\s*|\s+(?:then|do|run)\s+)(.+)$", "macro_add")
+_p(r"^(?:add|create) shortcut (.+?)(?: runs| to| that runs) (.+)$", "macro_add")
+_p(r"^(?:teach shortcut|alias) (.+?)(?: means| to) (.+)$", "macro_add")
 _p(r"^macro (.+?) runs (.+)$", "macro_add")
-_p(r"^(list|show)( my)? macros$", "macro_list", True)
-_p(r"^delete macro (.+)$", "macro_delete")
+_p(r"^(?:(?:list|show|what are)\s+)?(?:my\s+)?(?:shortcuts|macros)$", "macro_list", True)
+_p(r"^(?:delete|remove|forget) (?:shortcut|macro) (.+)$", "macro_delete")
 # --- fun: ascii art & drawing
 _p(r"^(turn|make|convert)( my| the)? screen into ascii( art)?$", "ascii_art", True)
 _p(r"^ascii art( of my screen)?$", "ascii_art", True)
@@ -2954,6 +2988,9 @@ _p(r"^remind me in (\d+) (seconds?|minutes?|hours?) to (.+)$", "reminder")
 _p(r"^read (my|the) screen( to me| aloud)?$", "read_screen", True)
 # --- music
 _p(r"^play some (.+)$", "play_genre", True)
+
+# --- user custom extensions (~/.config/free-voice/extensions.py)
+load_custom_extensions()
 
 
 def _partial_complete(name: str, m: re.Match) -> bool:
@@ -3151,6 +3188,9 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
                   allow_destructive: bool = False) -> None:
     """Run the action for a routed (name, match)."""
     try:
+        if name in _CUSTOM_HANDLERS:
+            _CUSTOM_HANDLERS[name](m)
+            return
         if name == "open_app":
             # both "open X" patterns keep the app phrase in group 2
             act_open_app(m.group(2))

@@ -154,6 +154,24 @@ else
   note "already exists, migrated stale defaults, kept your settings"
 fi
 
+# Ensure user config directory exists (survives all git updates)
+mkdir -p "$HOME/.config/free-voice"
+if [[ ! -f "$HOME/.config/free-voice/extensions.py.example" ]]; then
+  cat > "$HOME/.config/free-voice/extensions.py.example" <<'EOF'
+# ~/.config/free-voice/extensions.py
+# Custom user extensions and hooks that survive all updates.
+# Rename this file to extensions.py to activate.
+
+def register(add_command):
+    # Example: Register a custom spoken command with custom Python logic
+    def my_custom_action(match):
+        print("Running custom Python logic!")
+    
+    # add_command(regex_pattern, handler_function, partial_ok=False)
+    add_command(r"^my secret action$", my_custom_action)
+EOF
+fi
+
 # --- 7. Permissions -------------------------------------------------------------------
 if [[ "$UPDATE_MODE" == "1" ]]; then
   note "update mode — skipping permission dialogs (run install.sh without --update to re-prime)"
