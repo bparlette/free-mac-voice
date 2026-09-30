@@ -2401,6 +2401,94 @@ class TestAppleTVFeatures(Base):
             fv.handle_command("open airplay settings")
             mock_sh.assert_called_with(["open", "x-apple.systempreferences:com.apple.AirPlay-Settings.extension"])
 
+    def test_fullscreen_and_theater_mode(self):
+        for phrase in ("fullscreen", "full screen", "toggle full screen", "enter full screen", "exit full screen", "theater mode", "theatre mode"):
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "fullscreen")
+
+        with mock.patch.object(fv, "act_key_code") as mock_kc:
+            fv.handle_command("theater mode")
+            mock_kc.assert_called_with(3, "control down, command down")
+
+    def test_media_seek_step_calculations(self):
+        # 60s -> 6 steps
+        with mock.patch.object(fv, "act_key_code") as mock_kc:
+            fv.handle_command("skip 60 seconds")
+            self.assertEqual(mock_kc.call_count, 6)
+            self.assertEqual(mock_kc.call_args_list[0][0][0], 124)
+
+        # 5s -> max(1, round(0.5)) -> 1 step
+        with mock.patch.object(fv, "act_key_code") as mock_kc:
+            fv.handle_command("skip 5 seconds")
+            self.assertEqual(mock_kc.call_count, 1)
+
+        # rewind 50s -> 5 steps of 123
+        with mock.patch.object(fv, "act_key_code") as mock_kc:
+            fv.handle_command("rewind 50 seconds")
+            self.assertEqual(mock_kc.call_count, 5)
+            self.assertEqual(mock_kc.call_args_list[0][0][0], 123)
+
+    def test_apple_tv_chained_commands(self):
+        calls = []
+        with mock.patch.object(fv, "act_watch_stream", lambda s, query="": calls.append(("watch", s))), \
+             mock.patch.object(fv, "act_snap_window", lambda s: calls.append(("snap", s))), \
+             mock.patch("time.sleep"):
+            fv.handle_command("watch netflix and snap left")
+        self.assertIn(("watch", "netflix"), calls)
+        self.assertIn(("snap", "left"), calls)
+
+    def test_streaming_query_escaping(self):
+        r = fv.route("search youtube for rick & morty: season 1")
+        self.assertIsNotNone(r)
+        with mock.patch.object(fv, "shell") as mock_sh:
+            fv.handle_command("search youtube for rick & morty: season 1")
+            cmd = mock_sh.call_args[0][0]
+            self.assertIn("search_query=rick%20%26%20morty%3A%20season%201", cmd[1])
+
+    def test_unknown_streaming_service_fallback(self):
+        # Gracefully handle unexpected service strings without throwing
+        with mock.patch.object(fv, "say") as mock_say:
+            fv.act_watch_stream("vimeo")
+            mock_say.assert_called_with("Opening vimeo")
+
+    def test_wake_word_with_apple_tv_commands(self):
+        fv.VOICE_WAKE_WORD = "mac"
+        # Without wake word -> ignored
+        with mock.patch.object(fv, "act_keystroke") as mock_ks:
+            handled = fv.handle_command("turn subtitles on", require_wake_word=True)
+            self.assertFalse(handled)
+            self.assertFalse(mock_ks.called)
+
+        # With wake word -> handled
+        with mock.patch.object(fv, "act_keystroke") as mock_ks:
+            handled = fv.handle_command("Mac, turn subtitles on", require_wake_word=True)
+            self.assertTrue(handled)
+            mock_ks.assert_called_with("c")
+
+        # Wake word + what did they say
+        with mock.patch.object(fv, "act_key_code") as mock_kc, \
+             mock.patch.object(fv, "act_keystroke") as mock_ks:
+            handled = fv.handle_command("Mac, what did they say", require_wake_word=True)
+            self.assertTrue(handled)
+            self.assertEqual(mock_kc.call_count, 2)
+            mock_ks.assert_called_with("c")
+
+    def test_streaming_partial_safety(self):
+        # Incomplete enum must not fire on partial
+        self.assertIsNone(fv.route("watch you", partial=True))
+        # Complete enum fires on partial
+        r = fv.route("watch youtube", partial=True)
+        self.assertIsNotNone(r)
+        self.assertEqual(r[0], "watch_stream")
+        # Free-text search must NOT fire on partial
+        self.assertIsNone(fv.route("search youtube for lo-fi beats", partial=True))
+        # Free-text search DOES fire on final transcript
+        r_final = fv.route("search youtube for lo-fi beats", partial=False)
+        self.assertIsNotNone(r_final)
+        self.assertEqual(r_final[0], "search_youtube")
+
 
 if __name__ == "__main__":
     unittest.main()
