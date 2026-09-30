@@ -1227,6 +1227,23 @@ class TestFunStuff(Base):
             fv.act_draw_svg("a cat")
         self.assertIn("couldn't draw", self.said[-1])
 
+    def test_llm_text_prefers_draw_model(self):
+        called_models = []
+        def fake_urlopen(req, timeout=45):
+            body = json.loads(req.data.decode())
+            called_models.append(body["model"])
+            resp = mock.MagicMock()
+            resp.read.return_value = json.dumps({"message": {"content": "<svg></svg>"}}).encode()
+            resp.__enter__.return_value = resp
+            return resp
+
+        with mock.patch.object(fv, "OLLAMA_DRAW_MODEL", "qwen2.5:1.5b"), \
+             mock.patch.object(fv, "OLLAMA_MODEL", "qwen3-vl:8b"), \
+             mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            res = fv._llm_text("draw a cat")
+            self.assertEqual(res, "<svg></svg>")
+            self.assertEqual(called_models[0], "qwen2.5:1.5b")
+
     def test_reminder_schedules_thread(self):
         with mock.patch("threading.Thread") as th:
             fv.act_reminder(10, "minutes", "check the oven")

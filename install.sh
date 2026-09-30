@@ -97,6 +97,8 @@ if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
   WANT_MODEL="${WANT_MODEL:-qwen3-vl:8b}"
   step "Pulling $WANT_MODEL (one-time download, skipped if already present)…"
   ollama pull "$WANT_MODEL"
+  step "Pulling fast drawing model qwen2.5:1.5b (~1GB, skipped if already present)…"
+  ollama pull qwen2.5:1.5b || true
 else
   warn "Ollama isn't responding — Tier 1 fallback will be skipped until you run 'ollama serve'."
 fi
@@ -125,6 +127,8 @@ GEMINI_API_KEY=
 # Tier 1 local model (Ollama): vision-language model for routing, Q&A and
 # screen understanding. 8GB minis: ollama pull qwen3-vl:4b and set this to qwen3-vl:4b.
 OLLAMA_MODEL=qwen3-vl:8b
+# Fast text model for SVG vector generation ("draw a cat"):
+OLLAMA_DRAW_MODEL=qwen2.5:1.5b
 EOF
   note "created — paste a Gemini key in later if you want Tier 2 Q&A"
 else

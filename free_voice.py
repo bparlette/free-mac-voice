@@ -102,6 +102,8 @@ WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny.en")
 # routing, Q&A, AND screen understanding. 8GB minis: use qwen3-vl:4b instead.
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
+# Fast text model for SVG vector generation (qwen2.5:1.5b by default: ~2s generation, zero thinking overhead)
+OLLAMA_DRAW_MODEL = os.environ.get("OLLAMA_DRAW_MODEL", "qwen2.5:1.5b")
 OLLAMA_TIER1 = os.environ.get("OLLAMA_TIER1", "1") == "1"
 TIER1_MIN_CONFIDENCE = float(os.environ.get("TIER1_MIN_CONFIDENCE", "0.5"))
 # Microphone selection: case-insensitive substring matched against input
@@ -2092,8 +2094,8 @@ def _llm_text(prompt: str, max_tokens: int = 1024) -> str | None:
     # Try fast local instruction model first if present (e.g. qwen2.5:1.5b generates SVGs in 3s without thinking trace),
     # otherwise default to configured OLLAMA_MODEL
     local_candidates = []
-    if OLLAMA_MODEL != "qwen2.5:1.5b":
-        local_candidates.append("qwen2.5:1.5b")
+    if OLLAMA_DRAW_MODEL and OLLAMA_DRAW_MODEL != OLLAMA_MODEL:
+        local_candidates.append(OLLAMA_DRAW_MODEL)
     local_candidates.append(OLLAMA_MODEL)
 
     for mod in local_candidates:
