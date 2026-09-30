@@ -566,7 +566,7 @@ class TestOllama(Base):
 # ------------------------------------------------------- Tier 2 / Gemini
 class TestGemini(Base):
     def _http_error(self, code):
-        return urllib.error.HTTPError("http://x", code, "err", {}, None)
+        return urllib.error.HTTPError("http://x", code, "err", {}, io.BytesIO(b""))
 
     def test_429_falls_back_to_local(self):
         fv.GEMINI_API_KEY = "test-key"

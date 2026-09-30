@@ -3860,13 +3860,19 @@ def gemini_answer(prompt: str) -> bool:
         say(text)
         return True
     except urllib.error.HTTPError as e:
-        if e.code == 429:
-            log("gemini 429 — free-tier quota hit, falling back to local model")
-            say("Google's free limit is hit, answering from the on-device model")
-        else:
-            note_error(f"Gemini HTTP {e.code}")
-            log(f"gemini HTTP {e.code}: {e} — falling back to local model")
-            say("Google didn't answer, trying the on-device model")
+        try:
+            if e.code == 429:
+                log("gemini 429 — free-tier quota hit, falling back to local model")
+                say("Google's free limit is hit, answering from the on-device model")
+            else:
+                note_error(f"Gemini HTTP {e.code}")
+                log(f"gemini HTTP {e.code}: {e} — falling back to local model")
+                say("Google didn't answer, trying the on-device model")
+        finally:
+            try:
+                e.close()
+            except Exception:
+                pass
         return ollama_answer(prompt)
     except Exception as e:  # noqa: BLE001
         note_error("Gemini unreachable")

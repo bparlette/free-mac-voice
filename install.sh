@@ -101,6 +101,8 @@ if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
   WANT_MODEL="${WANT_MODEL:-qwen3-vl:8b}"
   step "Pulling $WANT_MODEL (one-time download, skipped if already present)…"
   ollama pull "$WANT_MODEL"
+  step "Pulling fast decision model tev1:0.8b (~800MB, skipped if already present)…"
+  ollama pull tev1:0.8b || true
   step "Pulling fast drawing model qwen2.5:1.5b (~1GB, skipped if already present)…"
   ollama pull qwen2.5:1.5b || true
 else
@@ -115,6 +117,10 @@ migrate_env() {
   if grep -q '^OLLAMA_MODEL=qwen2\.5:1\.5b$' "$env" 2>/dev/null; then
     sed -i.bak 's/^OLLAMA_MODEL=qwen2\.5:1\.5b$/OLLAMA_MODEL=qwen3-vl:8b/' "$env"
     note "migrated OLLAMA_MODEL qwen2.5:1.5b -> qwen3-vl:8b (backup: $env.bak)"
+  fi
+  if ! grep -q 'OLLAMA_DECISION_MODEL=' "$env" 2>/dev/null; then
+    printf '\n# Tier 0.5 decision model for ~50ms intent classification (leave blank to disable)\nOLLAMA_DECISION_MODEL=tev1:0.8b\n' >> "$env"
+    note "added OLLAMA_DECISION_MODEL default (tev1:0.8b) to .env"
   fi
   if ! grep -q 'VOICE_USER_EMAIL=' "$env" 2>/dev/null; then
     printf '\n# "type my email" types this address. Uncomment and set it.\n# VOICE_USER_EMAIL=\n' >> "$env"
@@ -135,6 +141,8 @@ GEMINI_API_KEY=
 # Tier 1 local model (Ollama): vision-language model for routing, Q&A and
 # screen understanding. 8GB minis: ollama pull qwen3-vl:4b and set this to qwen3-vl:4b.
 OLLAMA_MODEL=qwen3-vl:8b
+# Tier 0.5 decision model for sub-100ms intent classification (empty string disables):
+OLLAMA_DECISION_MODEL=tev1:0.8b
 # Fast text model for SVG vector generation ("draw a cat"):
 OLLAMA_DRAW_MODEL=qwen2.5:1.5b
 # Wake word for always-listening mode (default: mac). Leave blank to disable.
