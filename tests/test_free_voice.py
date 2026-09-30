@@ -1240,6 +1240,49 @@ class TestFunStuff(Base):
             fv.act_ascii_art()
         self.assertIn("Pillow", self.said[-1])
 
+    def test_draw_ascii_flower_routing_and_execution(self):
+        # Routing tests
+        name, m = self.route_name("draw ascii flower")
+        self.assertEqual(name, "draw_ascii")
+        self.assertEqual(m.group(m.lastindex), "flower")
+
+        name, m = self.route_name("ascii draw flower")
+        self.assertEqual(name, "draw_ascii")
+        self.assertEqual(m.group(m.lastindex), "flower")
+
+        name, m = self.route_name("draw a flower in ascii")
+        self.assertEqual(name, "draw_ascii")
+        self.assertEqual(m.group(m.lastindex), "flower")
+
+        # Execution test: canonical flower
+        with mock.patch.object(fv, "shell") as sh:
+            fv.act_draw_ascii("flower")
+        out_txt = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
+        self.assertTrue(os.path.exists(out_txt))
+        with open(out_txt) as f:
+            txt_content = f.read()
+        self.assertIn("@", txt_content)
+        self.assertIn("|", txt_content)
+
+        out_html = os.path.join(tempfile.gettempdir(), "ascii-art.html")
+        self.assertTrue(os.path.exists(out_html))
+        with open(out_html) as f:
+            html_content = f.read()
+        self.assertIn("<pre>", html_content)
+        self.assertIn("ui-monospace", html_content)
+        sh.assert_called_once_with(["open", out_html])
+        self.assertIn("ASCII flower", self.said[-1])
+
+    def test_draw_ascii_novel_subject_calls_llm(self):
+        with mock.patch.object(fv, "_llm_text", return_value="```\n<dragon>\n```") as lt, \
+             mock.patch.object(fv, "shell") as sh:
+            fv.act_draw_ascii("dragon")
+        lt.assert_called_once()
+        out_html = os.path.join(tempfile.gettempdir(), "ascii-art.html")
+        with open(out_html) as f:
+            self.assertIn("&lt;dragon&gt;", f.read())
+        sh.assert_called_once_with(["open", out_html])
+
     def test_draw_svg_opens_generated_svg(self):
         with mock.patch.object(fv, "_llm_text",
                                return_value="sure: <svg viewBox='0 0 400 400'></svg>"), \

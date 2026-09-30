@@ -34,7 +34,8 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | “start dictating” | Continuous dictation until “stop dictating” |
 | “macro standup runs open notes and open slack” | Saves custom voice macro (chained actions) |
 | “remind me in 10 minutes to check oven” | Spoken reminder with audio chime |
-| “turn my screen into ascii art” | Converts screenshot to ASCII text in TextEdit |
+| “turn my screen into ascii art” | Converts screenshot to dark-mode ASCII HTML page |
+| “draw ascii flower” | Instant ASCII art generated & opened in browser |
 | “draw a cat” | On-device LLM generates SVG & opens in browser |
 | “play some jazz” | Plays matching playlist in Apple Music |
 | “are you working” | Spoken health check: mic, models, last error |

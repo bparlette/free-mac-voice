@@ -2124,13 +2124,57 @@ def act_ascii_art() -> None:
     say("Here's your screen as ASCII art")
 
 
-# --- SVG drawing -------------------------------------------------------
+# --- ASCII & SVG drawing ------------------------------------------------
 
-def _llm_text(prompt: str, max_tokens: int = 1024) -> str | None:
+_CANONICAL_ASCII = {
+    "flower": (
+        "     _(_)_\n"
+        "   (_)@(_)\n"
+        "     (_)\n"
+        "      |\n"
+        "    \\ | /\n"
+        "     \\|/\n"
+        "      |"
+    ),
+    "rose": (
+        "      .-.\n"
+        "    .'   `.\n"
+        "   : (o)   :\n"
+        "    `-._.-'\n"
+        "       |\n"
+        "     \\ | /\n"
+        "      \\|/\n"
+        "       |"
+    ),
+    "cat": (
+        " /\\_/\\\n"
+        "( o.o )\n"
+        " > ^ <"
+    ),
+    "heart": (
+        "  .-.     .-.\n"
+        " (   `---'   )\n"
+        "  `-.     .-'\n"
+        "     `---'"
+    ),
+    "tree": (
+        "    /\\\n"
+        "   /  \\\n"
+        "  / /\\ \\\n"
+        " / /  \\ \\\n"
+        "/ /____\\ \\\n"
+        "    ||\n"
+        "    ||"
+    ),
+}
+
+
+def _llm_text(prompt: str, max_tokens: int = 1024, system: str | None = None) -> str | None:
     """Raw text from a local model (fast qwen2.5 or vision qwen3), else Gemini."""
-    system = ("You are an SVG generator. Reply with ONLY valid raw SVG code "
-              "starting with <svg and ending with </svg>. "
-              "No explanations, no conversational text, no markdown fences.")
+    if system is None:
+        system = ("You are an SVG generator. Reply with ONLY valid raw SVG code "
+                  "starting with <svg and ending with </svg>. "
+                  "No explanations, no conversational text, no markdown fences.")
     # Try fast local instruction model first if present (e.g. qwen2.5:1.5b generates SVGs in 3s without thinking trace),
     # otherwise default to configured OLLAMA_MODEL
     local_candidates = []
@@ -2142,7 +2186,7 @@ def _llm_text(prompt: str, max_tokens: int = 1024) -> str | None:
         try:
             body = {
                 "model": mod, "keep_alive": "60m", "think": False,
-                "options": {"temperature": 0.7, "num_predict": max_tokens},
+                "options": {"temperature": 0.5, "repeat_penalty": 1.15, "num_predict": max_tokens},
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": prompt}],
                 "stream": False,
@@ -2154,13 +2198,11 @@ def _llm_text(prompt: str, max_tokens: int = 1024) -> str | None:
                 data = json.load(r)
             msg = data.get("message", {})
             content = msg.get("content", "").strip()
-            if content and "<svg" in content:
-                return content
-            thinking = msg.get("thinking", "").strip()
-            if thinking and "<svg" in thinking:
-                return thinking
             if content:
                 return content
+            thinking = msg.get("thinking", "").strip()
+            if thinking:
+                return thinking
         except Exception as e:  # noqa: BLE001
             log(f"draw: local model {mod} failed ({e})")
 
@@ -2185,12 +2227,95 @@ def _llm_text(prompt: str, max_tokens: int = 1024) -> str | None:
     return None
 
 
+def act_draw_ascii(subject: str) -> None:
+    """'draw ascii flower' — ASCII art rendered and opened in the browser."""
+    subject = subject.strip()
+    clean_subj = re.sub(r"^(a|an|the)\s+", "", subject, flags=re.I).strip()
+    clean_subj = re.sub(r"^ascii\s+", "", clean_subj, flags=re.I).strip() or clean_subj
+    say(f"Drawing ASCII {clean_subj}")
+
+    art = _CANONICAL_ASCII.get(clean_subj.lower())
+    if not art:
+        art = _llm_text(
+            f"Generate recognizable ASCII art of {clean_subj}.\n"
+            f"Use standard monospace ASCII characters (@, #, *, +, =, -, :, ., |, /, \\).\n"
+            f"Keep it compact (under 30 cols wide, 8-16 lines tall).\n"
+            f"Output ONLY the ASCII art, without explanations.",
+            max_tokens=256,
+            system="You are an expert ASCII artist. Reply with ONLY raw ASCII art inside code fences, no extra text.",
+        )
+    if not art:
+        say("I couldn't draw that in ASCII right now")
+        return
+    cleaned = art.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    if not cleaned:
+        say("The ASCII drawing didn't come out right")
+        return
+
+    out_txt = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
+    with open(out_txt, "w") as f:
+        f.write(cleaned + "\n")
+
+    out_html = os.path.join(tempfile.gettempdir(), "ascii-art.html")
+    escaped = html.escape(cleaned)
+    html_content = (
+        "<!DOCTYPE html>\n"
+        "<html>\n"
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        f"<title>ASCII {html.escape(clean_subj)}</title>\n"
+        "<style>\n"
+        "  body {\n"
+        "    margin: 0;\n"
+        "    padding: 24px;\n"
+        "    background-color: #0d1117;\n"
+        "    color: #c9d1d9;\n"
+        "    display: flex;\n"
+        "    justify-content: center;\n"
+        "    align-items: center;\n"
+        "    min-height: 100vh;\n"
+        "    box-sizing: border-box;\n"
+        "  }\n"
+        "  pre {\n"
+        "    font-family: ui-monospace, Menlo, Consolas, monospace;\n"
+        "    font-size: 16px;\n"
+        "    line-height: 1.2;\n"
+        "    white-space: pre;\n"
+        "    margin: 0;\n"
+        "    padding: 24px 32px;\n"
+        "    background-color: #161b22;\n"
+        "    border: 1px solid #30363d;\n"
+        "    border-radius: 12px;\n"
+        "    box-shadow: 0 12px 32px rgba(0,0,0,0.6);\n"
+        "  }\n"
+        "</style>\n"
+        "</head>\n"
+        "<body>\n"
+        f"<pre>{escaped}</pre>\n"
+        "</body>\n"
+        "</html>\n"
+    )
+    with open(out_html, "w") as f:
+        f.write(html_content)
+
+    shell(["open", out_html])
+    say(f"Here's your ASCII {clean_subj}")
+
+
 def act_draw_svg(subject: str) -> None:
     """'draw a cat' — LLM-generated SVG opened in the browser."""
     subject = subject.strip()
     say(f"Drawing {subject}")
+    clean_subj = re.sub(r"^(a|an|the)\s+", "", subject, flags=re.I).strip() or subject
     svg = _llm_text(
-        f"Generate a clean, flat SVG drawing of {subject}. "
+        f"Generate a clean, flat SVG drawing of {clean_subj}. "
         f"Use a 400x400 viewBox with simple shapes and colors. "
         f"Output ONLY raw <svg> code immediately starting with <svg and ending with </svg>.")
     if not svg:
@@ -2200,10 +2325,26 @@ def act_draw_svg(subject: str) -> None:
     if not m:
         say("The drawing didn't come out right")
         return
-    out = os.path.join(tempfile.gettempdir(), "drawing.svg")
-    with open(out, "w") as f:
-        f.write(m.group(0))
-    shell(["open", out])
+    svg_code = m.group(0)
+    if 'xmlns="http://www.w3.org/2000/svg"' not in svg_code and "xmlns='http://www.w3.org/2000/svg'" not in svg_code:
+        svg_code = re.sub(r"<svg\b", '<svg xmlns="http://www.w3.org/2000/svg"', svg_code, count=1, flags=re.I)
+    out_svg = os.path.join(tempfile.gettempdir(), "drawing.svg")
+    with open(out_svg, "w") as f:
+        f.write(svg_code)
+
+    out_html = os.path.join(tempfile.gettempdir(), "drawing.html")
+    html_content = (
+        "<!DOCTYPE html>\n<html><head><meta charset='utf-8'>"
+        f"<title>{clean_subj}</title>"
+        "<style>body{margin:0;display:flex;justify-content:center;align-items:center;"
+        "min-height:100vh;background:#181825;}svg{max-width:85vmin;max-height:85vmin;"
+        "filter:drop-shadow(0 12px 30px rgba(0,0,0,0.4));}</style></head>"
+        f"<body>{svg_code}</body></html>"
+    )
+    with open(out_html, "w") as f:
+        f.write(html_content)
+
+    shell(["open", out_svg])
     say(f"Here's your {subject}")
 
 
@@ -2466,6 +2607,8 @@ _p(r"^delete macro (.+)$", "macro_delete")
 # --- fun: ascii art & drawing
 _p(r"^(turn|make|convert)( my| the)? screen into ascii( art)?$", "ascii_art", True)
 _p(r"^ascii art( of my screen)?$", "ascii_art", True)
+_p(r"^(?:draw(?: me)? ascii|ascii draw) (.+)$", "draw_ascii")
+_p(r"^draw( me)?( a| an| the)? (.+) in ascii$", "draw_ascii")
 _p(r"^draw( me)?( a| an| the)? (.+)$", "draw_svg")
 # --- easter eggs
 _p(r"^roll( a)? (die|dice)$", "roll_dice", True)
@@ -2829,6 +2972,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_macro_delete(m.group(1))
         elif name == "ascii_art":
             act_ascii_art()
+        elif name == "draw_ascii":
+            act_draw_ascii(m.group(m.lastindex))
         elif name == "draw_svg":
             act_draw_svg(m.group(3))
         elif name == "roll_dice":
