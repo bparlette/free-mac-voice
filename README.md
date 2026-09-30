@@ -30,6 +30,13 @@ The installer sets up everything: Homebrew packages, a Python environment, the l
 | “read clipboard” | Reads your copied text aloud |
 | “type today's date” | Types formatted date macro |
 | “what's on my screen” | AI screen vision & summary (Qwen3-VL) |
+| “read my screen to me” | Detailed top-to-bottom window readout |
+| “start dictating” | Continuous dictation until “stop dictating” |
+| “macro standup runs open notes and open slack” | Saves custom voice macro (chained actions) |
+| “remind me in 10 minutes to check oven” | Spoken reminder with audio chime |
+| “turn my screen into ascii art” | Converts screenshot to ASCII text in TextEdit |
+| “draw a cat” | On-device LLM generates SVG & opens in browser |
+| “play some jazz” | Plays matching playlist in Apple Music |
 | “are you working” | Spoken health check: mic, models, last error |
 | “quit spotify” | Quits the app (asks first) |
 | “set volume to 30” | Sets volume |
