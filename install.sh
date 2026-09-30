@@ -116,6 +116,10 @@ migrate_env() {
     printf '\n# "type my email" types this address. Uncomment and set it.\n# VOICE_USER_EMAIL=\n' >> "$env"
     note "added VOICE_USER_EMAIL placeholder to .env"
   fi
+  if ! grep -q 'VOICE_WAKE_WORD=' "$env" 2>/dev/null; then
+    printf '\n# Wake word for always-listening mode (default: mac). Leave blank to disable.\nVOICE_WAKE_WORD=mac\n' >> "$env"
+    note "added VOICE_WAKE_WORD default (mac) to .env"
+  fi
 }
 step "Setting up ~/.free-voice/.env…"
 mkdir -p "$HOME/.free-voice"
@@ -129,6 +133,8 @@ GEMINI_API_KEY=
 OLLAMA_MODEL=qwen3-vl:8b
 # Fast text model for SVG vector generation ("draw a cat"):
 OLLAMA_DRAW_MODEL=qwen2.5:1.5b
+# Wake word for always-listening mode (default: mac). Leave blank to disable.
+VOICE_WAKE_WORD=mac
 EOF
   note "created — paste a Gemini key in later if you want Tier 2 Q&A"
 else

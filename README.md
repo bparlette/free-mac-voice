@@ -89,7 +89,12 @@ Rather than holding a key, just talk:
 - **Try it once:** double-click **Voice Control (Always On).command**. Speak naturally; non-commands are ignored silently. Ctrl-C or close the window to stop.
 - **Every login, even after reboots:** re-run `bash install.sh` and answer **y** to the start-at-login prompt. It restarts itself if it ever crashes (logs at `/tmp/free-mac-voice.log`).
 
-There's no wake word — any speech is the trigger. In a noisy room, push-to-talk is calmer. If it triggers too easily, raise the bar: `python3 free_voice.py --always --sensitivity 4.5` (default 3.0).
+Always-listening uses the wake word **"Mac"** by default:
+- **Single breath:** `"Mac, open notes"` · `"Hey Mac, switch to TV"` · `"Mac turn on the TV"`
+- **Two-stage:** Say `"Mac"` (or `"Hey Mac"`), listen for the chime, then speak your command within 8 seconds.
+- Normal room conversation is ignored so ambient chatter never triggers accidental actions.
+- In push-to-talk mode (Right Option ⌥), the wake word is optional — the keypress itself signals intent.
+- Change the wake word in `~/.free-voice/.env` (`VOICE_WAKE_WORD=mac`), pass `--wake-word <name>`, or disable it for open-mic mode with `--no-wake-word`.
 
 ## Use your iPhone as the mic
 

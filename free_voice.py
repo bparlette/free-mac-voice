@@ -113,7 +113,44 @@ TIER1_MIN_CONFIDENCE = float(os.environ.get("TIER1_MIN_CONFIDENCE", "0.5"))
 # Overridable per-run with --mic.
 VOICE_MIC = os.environ.get("VOICE_MIC", "")
 VOICE_USER_EMAIL = os.environ.get("VOICE_USER_EMAIL", "").strip()
+# Wake word for always-listening mode. Default is "mac". Empty string disables.
+VOICE_WAKE_WORD = os.environ.get("VOICE_WAKE_WORD", "mac").strip().lower()
+WAKE_WINDOW_SEC = float(os.environ.get("VOICE_WAKE_WINDOW", "8.0"))
+_wake_window_until = 0.0
 DRY_RUN = False
+
+
+def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
+    """Check if text begins with the wake word (e.g. 'Mac', 'Hey Mac', 'Mack').
+
+    Returns (is_wake, command_text).
+    - If text starts with the wake word followed by a command:
+        (True, "stripped command")
+    - If text is ONLY the wake word (or wake greeting):
+        (True, "")
+    - If text does NOT start with the wake word:
+        (False, text)
+    """
+    t = text.strip()
+    if not t or not wake_word:
+        return bool(t), t
+    w = wake_word.strip().lower()
+    if w == "mac":
+        # Handle "mac", "mack", and common conversational prefixes ("hey", "hi", "ok", "okay", "yo")
+        rx = re.compile(
+            r"^(?:(?:hey|hi|ok|okay|yo)\s+)?(?:mac|mack)\b(?:[,\s:!\.-]+\s*(.*))?$",
+            re.IGNORECASE,
+        )
+    else:
+        rx = re.compile(
+            rf"^(?:(?:hey|hi|ok|okay|yo)\s+)?{re.escape(w)}\b(?:[,\s:!\.-]+\s*(.*))?$",
+            re.IGNORECASE,
+        )
+    m = rx.match(t)
+    if m:
+        cmd = (m.group(1) or "").strip()
+        return True, cmd
+    return False, t
 
 
 def log(msg: str) -> None:
@@ -484,13 +521,12 @@ class VoiceActivityDetector:
         return "speech"
 
 
-def always_listen_loop(on_utterance, sensitivity: float = 3.0) -> None:
+def always_listen_loop(on_utterance, sensitivity: float = 3.0, wake_word: str = "") -> None:
     """Listen continuously; transcribe each detected utterance. Ctrl-C quits.
 
-    No wake word: any speech is transcribed and routed through the normal
-    tiers. Non-commands are ignored silently (the caller passes
-    quiet_miss=True), so background chatter costs a transcription but no
-    noise. In a loud room, prefer push-to-talk.
+    In wake word mode, commands must start with the wake word (e.g. 'Mac, ...')
+    or follow a standalone wake word trigger within an 8-second window.
+    Ambient room chatter is ignored silently.
     """
     import sounddevice as sd
     import numpy as np
@@ -498,8 +534,12 @@ def always_listen_loop(on_utterance, sensitivity: float = 3.0) -> None:
     frame_len = int(16000 * 0.03)  # 30 ms frames
     max_frames = int(15 / 0.03)   # 15 s safety cap per utterance
 
-    log("always-listening: speak naturally, Ctrl-C quits. "
-        "(no wake word — speech itself is the trigger)")
+    if wake_word:
+        log(f"always-listening: say '{wake_word.title()}, <command>' "
+            f"(or say '{wake_word.title()}' and wait for chime). Ctrl-C quits.")
+    else:
+        log("always-listening: speak naturally, Ctrl-C quits. "
+            "(no wake word — speech itself is the trigger)")
     try:
         while True:  # outer: re-acquire the mic if it vanishes
             idx = wait_for_input_device()
@@ -3409,15 +3449,52 @@ def gemini_answer(prompt: str) -> bool:
 
 def handle_command(text: str, confirm_audio_fn=None,
                    allow_destructive: bool = False,
-                   quiet_miss: bool = False) -> bool:
+                   quiet_miss: bool = False,
+                   require_wake_word: bool = False) -> bool:
     """Route one transcript through the tiers. Returns True if handled.
 
     quiet_miss=True (always-listening mode): a total miss is logged, not
     spoken, so background chatter never makes the Mac talk to itself.
+
+    require_wake_word=True (always-listening mode): requires the utterance to
+    start with the wake word (e.g. 'Mac, ...') or to arrive within an active
+    wake window. Conversational background chatter is ignored.
     """
+    global _wake_window_until
     t = text.strip().rstrip(".!?").strip()
     if not t:
         return False
+
+    if VOICE_WAKE_WORD:
+        is_wake, cmd = parse_wake_word(t, VOICE_WAKE_WORD)
+        if require_wake_word:
+            now = time.time()
+            if is_wake:
+                if not cmd:
+                    # Spoke wake word alone: open a listening window
+                    _wake_window_until = now + WAKE_WINDOW_SEC
+                    log(f"wake word {VOICE_WAKE_WORD!r} heard alone — listening for {WAKE_WINDOW_SEC}s...")
+                    play_chime("Tink.aiff")
+                    say("Yes?")
+                    return True
+                # Wake word + command in one sentence
+                _wake_window_until = 0.0
+                t = cmd
+            elif now < _wake_window_until:
+                # Arrived within active wake window (two-stage trigger)
+                _wake_window_until = 0.0
+                log(f"within wake window: {t!r}")
+            else:
+                log(f"ignored (no wake word {VOICE_WAKE_WORD!r}): {t!r}")
+                return False
+        else:
+            # Wake word not strictly required, but strip if user said it
+            if is_wake and cmd:
+                t = cmd
+
+    if not t:
+        return False
+
     log(f"heard: {t!r}")
 
     # Tier 0: instant regex (final transcript — no gating needed)
@@ -3533,7 +3610,7 @@ def demo_partials(text: str) -> None:
     print("\nfinal transcript also runs Tier 1/2 if Tier 0 never fired.")
 
 
-def on_utterance(audio, quiet_miss: bool = False) -> None:
+def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = False) -> None:
     try:
         text = transcribe(audio)
     except Exception as e:  # noqa: BLE001
@@ -3544,11 +3621,12 @@ def on_utterance(audio, quiet_miss: bool = False) -> None:
     if not text:
         log("empty transcript")
         return
-    handle_command(text, confirm_audio_fn=record_fixed, quiet_miss=quiet_miss)
+    handle_command(text, confirm_audio_fn=record_fixed, quiet_miss=quiet_miss,
+                   require_wake_word=require_wake_word)
 
 
 def main() -> None:
-    global DRY_RUN
+    global DRY_RUN, VOICE_MIC, VOICE_WAKE_WORD
     ap = argparse.ArgumentParser(description="Free voice control for macOS")
     ap.add_argument("--text", help="run one command from text, no mic")
     ap.add_argument("--partial", metavar="TEXT",
@@ -3563,18 +3641,25 @@ def main() -> None:
                     help="allow destructive actions in --text mode")
     ap.add_argument("--always", action="store_true",
                     help="listen continuously with voice activity detection; "
-                         "Ctrl-C quits (no wake word — any speech triggers)")
+                         "Ctrl-C quits (requires wake word by default)")
     ap.add_argument("--sensitivity", type=float, default=3.0, metavar="X",
                     help="always-listen mic sensitivity multiplier "
                          "(higher = easier to trigger; default 3.0)")
+    ap.add_argument("--wake-word", metavar="WORD", default=VOICE_WAKE_WORD,
+                    help=f"wake word required in --always mode (default: {VOICE_WAKE_WORD!r})")
+    ap.add_argument("--no-wake-word", action="store_true",
+                    help="disable wake word requirement in --always mode (open mic)")
     ap.add_argument("--mic", metavar="NAME",
                     help="use the input device whose name contains NAME "
                          "(e.g. --mic iPhone); overrides VOICE_MIC")
     args = ap.parse_args()
     DRY_RUN = args.dry_run
-    global VOICE_MIC
     if args.mic:
         VOICE_MIC = args.mic
+    if args.wake_word is not None:
+        VOICE_WAKE_WORD = args.wake_word.strip().lower()
+    if args.no_wake_word:
+        VOICE_WAKE_WORD = ""
 
     if args.list:
         cmd_list()
@@ -3600,8 +3685,13 @@ def main() -> None:
     if args.always:
         global ALWAYS_MODE
         ALWAYS_MODE = True
-        always_listen_loop(lambda audio: on_utterance(audio, quiet_miss=True),
-                           sensitivity=args.sensitivity)
+        require_wake = bool(VOICE_WAKE_WORD) and not args.no_wake_word
+        active_wake = VOICE_WAKE_WORD if require_wake else ""
+        always_listen_loop(
+            lambda audio: on_utterance(audio, quiet_miss=True, require_wake_word=require_wake),
+            sensitivity=args.sensitivity,
+            wake_word=active_wake,
+        )
         return
     push_to_talk_loop(on_utterance)
 

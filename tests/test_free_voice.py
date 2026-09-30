@@ -40,6 +40,10 @@ class Base(unittest.TestCase):
         fv._shot_ts = 0.0
         self._always = getattr(fv, "ALWAYS_MODE", False)
         fv.ALWAYS_MODE = False
+        self._wake_window = fv._wake_window_until
+        fv._wake_window_until = 0.0
+        self._wake_word = fv.VOICE_WAKE_WORD
+        fv.VOICE_WAKE_WORD = "mac"
 
     def tearDown(self):
         fv.DRY_RUN = self._dry
@@ -49,6 +53,8 @@ class Base(unittest.TestCase):
         fv._last_error = self._last_error
         fv._shot_ts = self._shot_ts
         fv.ALWAYS_MODE = self._always
+        fv._wake_window_until = self._wake_window
+        fv.VOICE_WAKE_WORD = self._wake_word
 
     def route_name(self, text):
         r = fv.route(text, partial=False)
@@ -1832,6 +1838,121 @@ class TestSamsungTVScript(unittest.TestCase):
         with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"):
             with self.assertRaises(samsung_tv.TVError):
                 samsung_tv.cmd_power("sleep")
+
+
+# ------------------------------------------------------- Wake word ("Mac")
+class TestWakeWord(Base):
+    def test_parse_wake_word_formats(self):
+        cases = [
+            ("Mac open notes", "open notes"),
+            ("Mac, open notes", "open notes"),
+            ("Mack, open notes", "open notes"),
+            ("Hey Mac, open notes", "open notes"),
+            ("Hi Mac: open notes", "open notes"),
+            ("OK Mac open notes", "open notes"),
+            ("Okay Mack, open notes", "open notes"),
+            ("Yo Mac, what time is it", "what time is it"),
+            ("Mac! Open notes", "Open notes"),
+            ("Mac - open notes", "open notes"),
+        ]
+        for utterance, want_cmd in cases:
+            is_wake, cmd = fv.parse_wake_word(utterance, "mac")
+            self.assertTrue(is_wake, f"failed to match wake word in {utterance!r}")
+            self.assertEqual(cmd, want_cmd, f"mismatched stripped command for {utterance!r}")
+
+    def test_parse_wake_word_standalone(self):
+        for utterance in ("Mac", "Hey Mac", "Mack", "OK Mac!", "Yo Mac:"):
+            is_wake, cmd = fv.parse_wake_word(utterance, "mac")
+            self.assertTrue(is_wake, f"failed for standalone {utterance!r}")
+            self.assertEqual(cmd, "", f"expected empty command for {utterance!r}")
+
+    def test_parse_wake_word_non_matches(self):
+        non_matches = [
+            "open notes",
+            "Macbook pro",
+            "Machine learning",
+            "I told Mac to do it",
+            "turn off the tv",
+            "what time is it",
+        ]
+        for utterance in non_matches:
+            is_wake, cmd = fv.parse_wake_word(utterance, "mac")
+            self.assertFalse(is_wake, f"falsely matched wake word in {utterance!r}")
+            self.assertEqual(cmd, utterance)
+
+    def test_parse_wake_word_custom(self):
+        is_wake, cmd = fv.parse_wake_word("Computer, status", "computer")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "status")
+
+        is_wake, cmd = fv.parse_wake_word("Hey computer: status", "computer")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "status")
+
+        is_wake, cmd = fv.parse_wake_word("Mac, status", "computer")
+        self.assertFalse(is_wake)
+        self.assertEqual(cmd, "Mac, status")
+
+    def test_handle_command_requires_wake_word_ignores_ambient_speech(self):
+        with mock.patch.object(fv, "act_tv_power") as mock_power, \
+             mock.patch.object(fv, "act_open_app") as mock_open:
+            handled1 = fv.handle_command("turn off the tv", require_wake_word=True)
+            self.assertFalse(handled1)
+            mock_power.assert_not_called()
+
+            handled2 = fv.handle_command("open notes and snap left", require_wake_word=True)
+            self.assertFalse(handled2)
+            mock_open.assert_not_called()
+            self.assertEqual(len(self.said), 0)
+
+    def test_handle_command_executes_with_wake_word_prefix(self):
+        with mock.patch.object(fv, "act_open_app") as mock_open:
+            handled = fv.handle_command("Mac, open notes", require_wake_word=True)
+            self.assertTrue(handled)
+            mock_open.assert_called_once_with("notes")
+
+        with mock.patch.object(fv, "act_tv_input") as mock_tv:
+            handled = fv.handle_command("Hey Mac: switch to TV", require_wake_word=True)
+            self.assertTrue(handled)
+            mock_tv.assert_called_once_with("tv", "TV")
+
+    def test_handle_command_two_stage_wake_window(self):
+        # Stage 1: say "Mac" alone
+        handled = fv.handle_command("Mac", require_wake_word=True)
+        self.assertTrue(handled)
+        self.assertIn("Yes?", self.said)
+        self.assertGreater(fv._wake_window_until, 0.0)
+
+        # Stage 2: say command within wake window without repeating "Mac"
+        with mock.patch.object(fv, "act_open_app") as mock_open:
+            handled_followup = fv.handle_command("open notes", require_wake_word=True)
+            self.assertTrue(handled_followup)
+            mock_open.assert_called_once_with("notes")
+            self.assertEqual(fv._wake_window_until, 0.0)
+
+        # Stage 3: command after window expired is ignored
+        fv._wake_window_until = 1.0  # long expired
+        with mock.patch.object(fv, "act_open_app") as mock_open:
+            handled_expired = fv.handle_command("open notes", require_wake_word=True)
+            self.assertFalse(handled_expired)
+            mock_open.assert_not_called()
+
+    def test_push_to_talk_strips_wake_word_if_spoken(self):
+        with mock.patch.object(fv, "act_open_app") as mock_open:
+            # Without wake word
+            self.assertTrue(fv.handle_command("open notes", require_wake_word=False))
+            mock_open.assert_called_with("notes")
+
+            # With wake word spoken into push-to-talk
+            self.assertTrue(fv.handle_command("Mac, open notes", require_wake_word=False))
+            mock_open.assert_called_with("notes")
+
+    def test_disabled_wake_word(self):
+        fv.VOICE_WAKE_WORD = ""
+        with mock.patch.object(fv, "act_open_app") as mock_open:
+            handled = fv.handle_command("open notes", require_wake_word=True)
+            self.assertTrue(handled)
+            mock_open.assert_called_once_with("notes")
 
 
 if __name__ == "__main__":
