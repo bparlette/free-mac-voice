@@ -180,6 +180,52 @@ Start manually (`python3 menu_bar.py`) or let `install.sh` / `Voice Control (Alw
 
 ---
 
+## 🪄 Custom Shortcuts & Extensions (Update-Proof)
+
+Teach your assistant new words, aliases, multi-step macros, or custom Python code that **never get erased or overwritten** when you update the software.
+
+### 1. Teach New Words & Shortcuts by Voice (Zero Coding)
+You can teach new phrases naturally without touching a terminal:
+
+- **Create Multi-Action Sequences:**
+  - *"Mac, when I say party mode, set volume to 80 and play some jazz"*
+  - *"Mac, when I say bedtime, turn off the tv and sleep"*
+- **Create Colloquial Aliases:**
+  - *"Mac, alias surf to open safari"*
+  - *"Mac, when I say chill out, turn down the volume"*
+- **Run Local Shell Scripts / Terminal Commands:**
+  - *"Mac, when I say backup, run bash ~/backup.sh"*
+  - *"Mac, add shortcut clean temp runs rm -rf /tmp/scratch"*
+- **Manage Shortcuts by Voice:**
+  - *"Mac, what are my shortcuts?"* — Reads all active custom shortcuts aloud
+  - *"Mac, forget shortcut party mode"* — Deletes a shortcut
+
+*Saved directly to `~/.config/free-voice/macros.json` — completely outside the git repository.*
+
+### 2. Custom Python Extensions (`extensions.py`)
+For power users and developers who want custom Python code, API integrations, or hardware hooks:
+
+1. Drop a script into `~/.config/free-voice/extensions.py` (a starter template is auto-generated at `~/.config/free-voice/extensions.py.example`).
+2. Define a `register(add_command)` hook:
+
+```python
+# ~/.config/free-voice/extensions.py
+# Survives all updates, git pulls, and reinstalls.
+
+def register(add_command):
+    def handle_brew_update(match):
+        import subprocess
+        subprocess.Popen(["brew", "update"])
+        print("Homebrew update running!")
+
+    # add_command(regex_pattern, handler_function, partial_ok=False)
+    add_command(r"^update homebrew$", handle_brew_update)
+```
+
+Whenever the voice engine starts or reloads, it automatically discovers and binds your custom extensions without modifying core code.
+
+---
+
 ## 📊 Measured Performance (Apple M4 Mac mini, 16 GB)
 
 ### Routing & Decision Latency
@@ -226,7 +272,7 @@ Control Samsung Smart TV power, inputs, volume, and playback over Wi-Fi:
 The test suite stubs all hardware (no mic, TV, or live Ollama instance required) for instant verification:
 
 ```bash
-# Run all 187 hermetic unit tests (completes in < 1 second):
+# Run all 205 hermetic unit tests (completes in < 1 second):
 python3 -m unittest discover -s tests
 
 # Run performance benchmarks:
