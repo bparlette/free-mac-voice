@@ -103,6 +103,8 @@ WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny.en")
 # routing, Q&A, AND screen understanding. 8GB minis: use qwen3-vl:4b instead.
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
+# Local Jev/SystemOne decision model for sub-100ms intent classification (empty string disables)
+OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "tev1:0.8b")
 # Fast text model for SVG vector generation (qwen2.5:1.5b by default: ~2s generation, zero thinking overhead)
 OLLAMA_DRAW_MODEL = os.environ.get("OLLAMA_DRAW_MODEL", "qwen2.5:1.5b")
 OLLAMA_TIER1 = os.environ.get("OLLAMA_TIER1", "1") == "1"
@@ -166,24 +168,24 @@ def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
     - If text does NOT start with the wake word:
         (False, text)
     """
-    t = text.strip()
+    t = text.strip().lstrip(".-~ \t")
     if not t or not wake_word:
         return bool(t), t
     w = wake_word.strip().lower()
+
+    # Greetings can be followed by commas or spaces: "Hey, Mac", "Hello Mac", "Okay, Mac"
+    greeting = r"(?:(?:hey|hi|hello|ok|okay|yo)[,\s]+)*"
     if w == "mac":
-        # Handle "mac", "mack", and common conversational prefixes ("hey", "hi", "ok", "okay", "yo")
-        rx = re.compile(
-            r"^(?:(?:hey|hi|ok|okay|yo)\s+)?(?:mac|mack)\b(?:[,\s:!\.-]+\s*(.*))?$",
-            re.IGNORECASE,
-        )
+        # Handle "mac", "mack", and repeated stutters ("Mac, Mac...")
+        target = r"(?:(?:mac|mack)\b[,\s:!\.-]*)+"
     else:
-        rx = re.compile(
-            rf"^(?:(?:hey|hi|ok|okay|yo)\s+)?{re.escape(w)}\b(?:[,\s:!\.-]+\s*(.*))?$",
-            re.IGNORECASE,
-        )
+        target = r"(?:" + re.escape(w) + r"\b[,\s:!\.-]*)+"
+
+    rx = re.compile(rf"^{greeting}{target}(?:[,\s:!\.-]+\s*(.*)|(.*))?$", re.IGNORECASE)
     m = rx.match(t)
     if m:
-        cmd = (m.group(1) or "").strip()
+        cmd = (m.group(1) or m.group(2) or "").strip()
+        cmd = re.sub(r"^[,\s:!\.-]+", "", cmd).strip()
         return True, cmd
     return False, t
 
@@ -236,6 +238,8 @@ def say(text: str, blocking: bool = False) -> None:
 
 def play_chime(sound_name: str = "Tink.aiff") -> None:
     """Play a short macOS audio notification sound non-blockingly."""
+    if DRY_RUN:
+        return
     path = f"/System/Library/Sounds/{sound_name}"
     if os.path.exists(path):
         try:
@@ -626,20 +630,29 @@ def always_listen_loop(on_utterance, sensitivity: float = 3.0, wake_word: str = 
 
 _APP_ALIASES = {
     "chrome": "Google Chrome", "google chrome": "Google Chrome",
-    "safari": "Safari", "firefox": "Firefox", "edge": "Microsoft Edge",
-    "notes": "Notes", "mail": "Mail", "messages": "Messages",
-    "facetime": "FaceTime", "photos": "Photos", "music": "Music",
+    "safari": "Safari", "firefox": "Firefox", "edge": "Microsoft Edge", "browser": "Safari",
+    "notes": "Notes", "apple notes": "Notes", "mail": "Mail", "apple mail": "Mail", "email": "Mail",
+    "messages": "Messages", "imessage": "Messages", "imessages": "Messages", "text messages": "Messages",
+    "facetime": "FaceTime", "photos": "Photos", "music": "Music", "itunes": "Music", "apple music": "Music",
     "tv": "TV", "apple tv": "TV", "podcasts": "Podcasts",
-    "finder": "Finder", "settings": "System Settings",
+    "finder": "Finder", "settings": "System Settings", "system preferences": "System Settings",
     "preferences": "System Settings", "system settings": "System Settings",
-    "terminal": "Terminal", "iterm": "iTerm",
+    "terminal": "Terminal", "iterm": "iTerm", "iterm2": "iTerm",
     "calendar": "Calendar", "reminders": "Reminders", "maps": "Maps",
-    "preview": "Preview", "textedit": "TextEdit",
-    "app store": "App Store", "activity monitor": "Activity Monitor",
-    "calculator": "Calculator", "dictionary": "Dictionary",
+    "preview": "Preview", "textedit": "TextEdit", "text edit": "TextEdit",
+    "app store": "App Store", "activity monitor": "Activity Monitor", "task manager": "Activity Monitor",
+    "calculator": "Calculator", "calc": "Calculator", "dictionary": "Dictionary",
     "contacts": "Contacts", "freeform": "Freeform",
     "keynote": "Keynote", "pages": "Pages", "numbers": "Numbers",
-    "cursor": "Cursor", "vs code": "Visual Studio Code", "vscode": "Visual Studio Code",
+    "code": "Visual Studio Code", "vs code": "Visual Studio Code", "vscode": "Visual Studio Code", "vsc": "Visual Studio Code",
+    "cursor": "Cursor", "sublime": "Sublime Text", "sublime text": "Sublime Text",
+    "pycharm": "PyCharm", "intellij": "IntelliJ IDEA", "webstorm": "WebStorm",
+    "word": "Microsoft Word", "ms word": "Microsoft Word",
+    "excel": "Microsoft Excel", "ms excel": "Microsoft Excel",
+    "powerpoint": "Microsoft PowerPoint", "ms powerpoint": "Microsoft PowerPoint",
+    "outlook": "Microsoft Outlook", "teams": "Microsoft Teams",
+    "photoshop": "Adobe Photoshop", "illustrator": "Adobe Illustrator", "acrobat": "Adobe Acrobat",
+    "figma": "Figma", "notion": "Notion",
     "spotify": "Spotify", "zoom": "zoom.us", "slack": "Slack",
     "discord": "Discord", "steam": "Steam", "kodi": "Kodi",
     "retroarch": "RetroArch", "vlc": "VLC",
@@ -648,6 +661,19 @@ _APP_ALIASES = {
 }
 
 _app_cache: list[str] | None = None
+
+
+def running_apps() -> list[str]:
+    """Return list of localized names for currently running applications."""
+    try:
+        from AppKit import NSWorkspace
+        return [
+            a.localizedName()
+            for a in NSWorkspace.sharedWorkspace().runningApplications()
+            if a.localizedName()
+        ]
+    except Exception:
+        return []
 
 
 def installed_apps() -> list[str]:
@@ -702,64 +728,117 @@ def _phonetic_key(s: str) -> str:
     return "".join(_soundex(t) for t in tokens)
 
 
-def resolve_app(spoken: str) -> str | None:
+def resolve_app(spoken: str, prefer_running: bool = False) -> str | None:
     """Turn 'chrome' / 'notes' / 'es de' into a real app name.
 
-    Fuzzy: aliases, singulars, exact installed names, normalized alphanumeric,
+    Fuzzy: aliases, singulars, colloquial prefixes/suffixes, token-set matching,
+    exact installed names, running apps preference, normalized alphanumeric,
     substring, phonetic Soundex, then difflib similarity.
     Used for FINAL transcripts, where acting on a best guess is fine.
     """
     import difflib
 
-    s = spoken.strip().lower()
-    if s in _APP_ALIASES:
-        return _APP_ALIASES[s]
-    singular = s[:-1] if s.endswith("s") else s
-    if singular in _APP_ALIASES:
-        return _APP_ALIASES[singular]
+    raw = spoken.strip().lower()
+    # Strip conversational noise: "my notes" -> "notes", "the safari app" -> "safari"
+    clean_spoken = re.sub(r"^(?:my|the)\s+", "", raw, flags=re.IGNORECASE).strip()
+    clean_spoken = re.sub(r"\s+app$", "", clean_spoken, flags=re.IGNORECASE).strip()
 
-    clean_s = _clean_name(s)
-    clean_singular = _clean_name(singular)
-    clean_aliases = {_clean_name(k): v for k, v in _APP_ALIASES.items()}
-    if clean_s in clean_aliases:
-        return clean_aliases[clean_s]
+    variants = [raw]
+    if clean_spoken and clean_spoken not in variants:
+        variants.append(clean_spoken)
+
+    # 0. Check aliases first for all variants & their singular forms
+    clean_aliases = {_clean_name(k): val for k, val in _APP_ALIASES.items()}
+    for v in variants:
+        if v in _APP_ALIASES:
+            return _APP_ALIASES[v]
+        sing = v[:-1] if v.endswith("s") else v
+        if sing in _APP_ALIASES:
+            return _APP_ALIASES[sing]
+        clean_v = _clean_name(v)
+        if clean_v in clean_aliases:
+            return clean_aliases[clean_v]
+
+    # If prefer_running, check currently running applications first
+    if prefer_running:
+        active = running_apps()
+        if active:
+            act_low = {a.lower(): a for a in active}
+            act_clean = {_clean_name(a): a for a in active}
+            for v in variants:
+                sing = v[:-1] if v.endswith("s") else v
+                for k in (v, sing):
+                    if k in act_low:
+                        return act_low[k]
+                    cv = _clean_name(k)
+                    if cv in act_clean:
+                        return act_clean[cv]
+                for k in (v, sing):
+                    cands = [a for a in active if k in a.lower()]
+                    if cands:
+                        cands.sort(key=len)
+                        return cands[0]
 
     apps = installed_apps()
     low = {a.lower(): a for a in apps}
     clean_map = {_clean_name(a): a for a in apps}
 
     # 1. Exact raw or normalized match
-    for key in (s, singular):
-        if key in low:
-            return low[key]
-    for key in (clean_s, clean_singular):
-        if key in clean_map:
-            return clean_map[key]
+    for v in variants:
+        sing = v[:-1] if v.endswith("s") else v
+        for key in (v, sing):
+            if key in low:
+                return low[key]
+        clean_v = _clean_name(v)
+        clean_sing = _clean_name(sing)
+        for key in (clean_v, clean_sing):
+            if key in clean_map:
+                return clean_map[key]
 
-    # 2. Substring matching (raw first, then clean if >= 4 chars)
-    for key in (s, singular):
-        cands = [a for a in apps if key in a.lower()]
-        if cands:
-            cands.sort(key=len)
-            return cands[0]
+    # 2. Token-set matching: all spoken words exist in the app name
+    # e.g. "visual studio" -> "Visual Studio Code"
+    for v in variants:
+        tokens = set(re.findall(r"[a-z0-9]+", v))
+        if len(tokens) >= 2:
+            matches = []
+            for a in apps:
+                app_toks = set(re.findall(r"[a-z0-9]+", a.lower()))
+                if tokens.issubset(app_toks):
+                    matches.append(a)
+            if matches:
+                matches.sort(key=len)
+                return matches[0]
 
-    if len(clean_s) >= 4:
-        cands = [a for a in apps if clean_s in _clean_name(a)]
-        if cands:
-            cands.sort(key=len)
-            return cands[0]
+    # 3. Substring matching (raw first, then clean if >= 4 chars)
+    for v in variants:
+        sing = v[:-1] if v.endswith("s") else v
+        for key in (v, sing):
+            cands = [a for a in apps if key in a.lower()]
+            if cands:
+                cands.sort(key=len)
+                return cands[0]
 
-    # 3. Phonetic matching via Soundex (handles STT phonetic misspellings)
-    phone_s = _phonetic_key(s)
-    if phone_s:
-        phone_map = {_phonetic_key(a): a for a in apps if _phonetic_key(a)}
-        if phone_s in phone_map:
-            return phone_map[phone_s]
+        clean_v = _clean_name(v)
+        if len(clean_v) >= 4:
+            cands = [a for a in apps if clean_v in _clean_name(a)]
+            if cands:
+                cands.sort(key=len)
+                return cands[0]
 
-    # 4. Fuzzy similarity matching on normalized strings
-    matches = difflib.get_close_matches(clean_s, list(clean_map.keys()), n=1, cutoff=0.75)
-    if matches:
-        return clean_map[matches[0]]
+    # 4. Phonetic matching via Soundex (handles STT phonetic misspellings)
+    for v in variants:
+        phone_s = _phonetic_key(v)
+        if phone_s:
+            phone_map = {_phonetic_key(a): a for a in apps if _phonetic_key(a)}
+            if phone_s in phone_map:
+                return phone_map[phone_s]
+
+    # 5. Fuzzy similarity matching on normalized strings
+    for v in variants:
+        clean_v = _clean_name(v)
+        matches = difflib.get_close_matches(clean_v, list(clean_map.keys()), n=1, cutoff=0.75)
+        if matches:
+            return clean_map[matches[0]]
 
     return None
 
@@ -871,7 +950,7 @@ def act_hide(name: str = "") -> None:
 
 def act_switch_app(name: str) -> None:
     """Focus or switch to an already running or installed app."""
-    app = resolve_app(name)
+    app = resolve_app(name, prefer_running=True)
     if not app:
         say(f"I couldn't find an app called {name}")
         return
@@ -3353,11 +3432,134 @@ _TIER1_ACTIONS = {
 }
 
 _ollama_ok: bool | None = None  # None=untried, False=unreachable (cached)
+_decision_ok: bool | None = None
+
+_DECISION_CRITERIA = {
+    "open_app": "Open, launch, or focus an application or browser",
+    "close_app": "Close, quit, or exit an application",
+    "switch_app": "Switch, focus, or bring up a running application",
+    "set_volume": "Change, raise, lower, or mute audio volume",
+    "media": "Play, pause, skip, next, or control music/video playback",
+    "timer": "Set a timer, countdown, or reminder",
+    "web_search": "Search the web or Google for a topic",
+    "unknown": "None of the above, complex question, or ambiguous",
+}
+
+
+def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
+    """Tier 0.5: ask the local Jev/SystemOne decision model for fast intent classification (~50ms)."""
+    global _decision_ok
+    if not OLLAMA_DECISION_MODEL or _decision_ok is False:
+        return None
+    url = f"{OLLAMA_HOST}/v1/systemone"
+    payload = {
+        "model": OLLAMA_DECISION_MODEL,
+        "state": text,
+        "questions": {
+            "action": {
+                "type": "choice",
+                "instructions": "What voice action should be taken?",
+                "criteria": _DECISION_CRITERIA,
+            }
+        },
+    }
+    t0 = time.time()
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=3) as r:
+            data = json.load(r)
+        _decision_ok = True
+    except Exception:
+        # If /v1/systemone is unsupported or model missing, gracefully fall through
+        return None
+
+    dt = time.time() - t0
+    ans = data.get("answers", {}).get("action", {})
+    choice = ans.get("choice")
+    if not choice or choice == "unknown":
+        return None
+    prob = float(ans.get("probabilities", {}).get(choice, 0.0))
+    if prob < TIER1_MIN_CONFIDENCE:
+        return None
+
+    params = {}
+    if choice in ("open_app", "switch_app", "close_app"):
+        app = resolve_app(text, prefer_running=(choice == "switch_app"))
+        if not app:
+            sub = re.sub(
+                r"^(?:could you|please|can you|would you|be a dear and|go ahead and)\s+",
+                "", text, flags=re.IGNORECASE,
+            )
+            sub = re.sub(
+                r"^(?:open|launch|switch to|focus|quit|close|get rid of)\s+",
+                "", sub, flags=re.IGNORECASE,
+            )
+            app = resolve_app(sub, prefer_running=(choice == "switch_app"))
+        if not app:
+            return None
+        params["app"] = app
+    elif choice == "set_volume":
+        m = re.search(r"\b(\d{1,3})\b", text)
+        if m:
+            params["level"] = int(m.group(1))
+        elif any(w in text.lower() for w in ("down", "lower", "softer", "quiet")):
+            params["direction"] = "down"
+        elif any(w in text.lower() for w in ("up", "raise", "louder")):
+            params["direction"] = "up"
+        elif "mute" in text.lower():
+            params["level"] = 0
+        else:
+            return None
+    elif choice == "media":
+        if any(w in text.lower() for w in ("next", "skip")):
+            params["op"] = "next"
+        elif any(w in text.lower() for w in ("prev", "back", "previous")):
+            params["op"] = "previous"
+        elif any(w in text.lower() for w in ("pause", "stop")):
+            params["op"] = "pause"
+        elif any(w in text.lower() for w in ("play", "resume")):
+            params["op"] = "play"
+        else:
+            params["op"] = "play"
+    elif choice == "timer":
+        m = re.search(r"\b(\d+)\s*(min|minute|sec|second|hour)", text, re.IGNORECASE)
+        if m:
+            params["duration"] = int(m.group(1))
+            params["unit"] = m.group(2)
+        else:
+            word_map = {
+                "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+                "ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30,
+            }
+            found = False
+            for w, val in word_map.items():
+                if w in text.lower():
+                    params["duration"] = val
+                    params["unit"] = "minutes"
+                    found = True
+                    break
+            if not found:
+                return None
+    elif choice == "web_search":
+        sub = re.sub(r"^(?:search for|google|search)\s+", "", text, flags=re.IGNORECASE).strip()
+        if sub:
+            params["query"] = sub
+        else:
+            return None
+    else:
+        return None
+
+    log(f"Tier 0.5 ({OLLAMA_DECISION_MODEL}) -> {choice} {params} conf={prob:.2f} in {dt:.2f}s")
+    return choice, params, prob
 
 
 def ollama_route(text: str):
     """Tier 1: ask the local model for a typed action.
 
+    Tries Tier 0.5 fast local decision model first, then falls back to VLM.
     Returns (action, params, confidence) or None on miss/unreachable.
     """
     global _ollama_ok
@@ -3365,6 +3567,12 @@ def ollama_route(text: str):
         return None
     if _ollama_ok is False:
         return None
+
+    # Tier 0.5: ultra-fast local decision classification (~50ms)
+    dec = ollama_decision_route(text)
+    if dec is not None:
+        return dec
+
     is_thinking_model = any(k in OLLAMA_MODEL.lower() for k in ("qwen3", "r1", "deepseek"))
     messages = [
         {"role": "system", "content": _TIER1_SYSTEM},

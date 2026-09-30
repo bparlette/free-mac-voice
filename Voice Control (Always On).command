@@ -9,4 +9,9 @@ if [[ ! -x ".venv/bin/python" ]]; then
   exit 1
 fi
 source .venv/bin/activate
+if ! pgrep -f "menu_bar.py" >/dev/null 2>&1; then
+  python3 menu_bar.py &
+  MENU_PID=$!
+  trap 'kill $MENU_PID 2>/dev/null' EXIT INT TERM
+fi
 exec python3 free_voice.py --always

@@ -45,6 +45,8 @@ class Base(unittest.TestCase):
         fv._wake_window_until = 0.0
         self._wake_word = fv.VOICE_WAKE_WORD
         fv.VOICE_WAKE_WORD = "mac"
+        self._decision_model = fv.OLLAMA_DECISION_MODEL
+        fv.OLLAMA_DECISION_MODEL = ""
 
     def tearDown(self):
         fv.DRY_RUN = self._dry
@@ -56,6 +58,7 @@ class Base(unittest.TestCase):
         fv.ALWAYS_MODE = self._always
         fv._wake_window_until = self._wake_window
         fv.VOICE_WAKE_WORD = self._wake_word
+        fv.OLLAMA_DECISION_MODEL = self._decision_model
 
     def route_name(self, text):
         r = fv.route(text, partial=False)
@@ -228,6 +231,11 @@ class TestChaining(Base):
 
 # ---------------------------------------------------------------- earcons (new)
 class TestEarcons(Base):
+    def setUp(self):
+        super().setUp()
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+
     def test_tink_on_press(self):
         with mock.patch("os.path.exists", return_value=True), \
              mock.patch("subprocess.Popen") as popen:
@@ -2105,6 +2113,7 @@ class TestMenuBarAndState(Base):
                 self.assertEqual(st.get("wake_word"), "mac")
                 self.assertIn("ts", st)
         finally:
+            fv.DRY_RUN = True
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
@@ -2155,6 +2164,131 @@ class TestStreamingWhisper(Base):
         self.assertTrue(res)
         self.assertEqual(len(fired), 1)
         self.assertEqual(fired[0], ("open_app", "open notes"))
+
+
+# ------------------------------------------------------- Wake Word Hardening (Punctuation & Stutter)
+class TestWakeWordHardening(Base):
+    def test_comma_after_greeting(self):
+        is_wake, cmd = fv.parse_wake_word("Hey, Mac", "mac")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "")
+
+        is_wake, cmd = fv.parse_wake_word("Hey, Mac, open notes", "mac")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "open notes")
+
+        is_wake, cmd = fv.parse_wake_word("Hello, Mac, switch to TV", "mac")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "switch to TV")
+
+        is_wake, cmd = fv.parse_wake_word("Okay, Mac", "mac")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "")
+
+    def test_stutter_and_repeated_wake_word(self):
+        is_wake, cmd = fv.parse_wake_word("Mac, Mac open notes", "mac")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "open notes")
+
+    def test_leading_punctuation(self):
+        is_wake, cmd = fv.parse_wake_word("...Mac open notes", "mac")
+        self.assertTrue(is_wake)
+        self.assertEqual(cmd, "open notes")
+
+
+# ------------------------------------------------------- Fuzzy App Matching
+class TestFuzzyAppMatching(Base):
+    def test_conversational_noise_stripped(self):
+        with mock.patch("free_voice.installed_apps", return_value=["Notes", "Safari", "Mail", "Calculator"]):
+            self.assertEqual(fv.resolve_app("my notes"), "Notes")
+            self.assertEqual(fv.resolve_app("the safari app"), "Safari")
+            self.assertEqual(fv.resolve_app("the calculator"), "Calculator")
+
+    def test_developer_and_productivity_aliases(self):
+        with mock.patch("free_voice.installed_apps", return_value=["Visual Studio Code", "Sublime Text", "Microsoft Word", "Activity Monitor"]):
+            self.assertEqual(fv.resolve_app("code"), "Visual Studio Code")
+            self.assertEqual(fv.resolve_app("vscode"), "Visual Studio Code")
+            self.assertEqual(fv.resolve_app("vsc"), "Visual Studio Code")
+            self.assertEqual(fv.resolve_app("sublime"), "Sublime Text")
+            self.assertEqual(fv.resolve_app("word"), "Microsoft Word")
+            self.assertEqual(fv.resolve_app("task manager"), "Activity Monitor")
+
+    def test_token_set_matching(self):
+        with mock.patch("free_voice.installed_apps", return_value=["Visual Studio Code"]):
+            self.assertEqual(fv.resolve_app("visual studio"), "Visual Studio Code")
+
+    def test_prefer_running_priority(self):
+        # Even if multiple apps match, running app should win when prefer_running is True
+        with mock.patch("free_voice.running_apps", return_value=["Google Chrome"]), \
+             mock.patch("free_voice.installed_apps", return_value=["Google Chrome", "Chromium"]):
+            self.assertEqual(fv.resolve_app("chrome", prefer_running=True), "Google Chrome")
+
+
+# ------------------------------------------------------- Decision Router (SystemOne)
+class TestDecisionRouter(Base):
+    def test_decision_route_volume(self):
+        fv.OLLAMA_DECISION_MODEL = "tev1:0.8b"
+        fake_resp = {
+            "answers": {
+                "action": {
+                    "choice": "set_volume",
+                    "probabilities": {"set_volume": 0.98},
+                }
+            }
+        }
+        with mock.patch("urllib.request.urlopen") as mock_url:
+            resp_mock = mock.MagicMock()
+            resp_mock.read.return_value = json.dumps(fake_resp).encode()
+            resp_mock.__enter__.return_value = resp_mock
+            mock_url.return_value = resp_mock
+
+            res = fv.ollama_decision_route("could you please turn the volume down a bit")
+            self.assertIsNotNone(res)
+            action, params, prob = res
+            self.assertEqual(action, "set_volume")
+            self.assertEqual(params.get("direction"), "down")
+            self.assertAlmostEqual(prob, 0.98)
+
+    def test_decision_route_media(self):
+        fv.OLLAMA_DECISION_MODEL = "tev1:0.8b"
+        fake_resp = {
+            "answers": {
+                "action": {
+                    "choice": "media",
+                    "probabilities": {"media": 0.89},
+                }
+            }
+        }
+        with mock.patch("urllib.request.urlopen") as mock_url:
+            resp_mock = mock.MagicMock()
+            resp_mock.read.return_value = json.dumps(fake_resp).encode()
+            resp_mock.__enter__.return_value = resp_mock
+            mock_url.return_value = resp_mock
+
+            res = fv.ollama_decision_route("skip to the next track please")
+            self.assertIsNotNone(res)
+            action, params, prob = res
+            self.assertEqual(action, "media")
+            self.assertEqual(params.get("op"), "next")
+
+    def test_decision_route_falls_back_on_unknown(self):
+        fv.OLLAMA_DECISION_MODEL = "tev1:0.8b"
+        fake_resp = {
+            "answers": {
+                "action": {
+                    "choice": "unknown",
+                    "probabilities": {"unknown": 0.55},
+                }
+            }
+        }
+        with mock.patch("urllib.request.urlopen") as mock_url:
+            resp_mock = mock.MagicMock()
+            resp_mock.read.return_value = json.dumps(fake_resp).encode()
+            resp_mock.__enter__.return_value = resp_mock
+            mock_url.return_value = resp_mock
+
+            res = fv.ollama_decision_route("what is the capital of France")
+            self.assertIsNone(res)
 
 
 if __name__ == "__main__":

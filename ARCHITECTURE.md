@@ -109,14 +109,13 @@ The system prompt constrains the model to a fixed action enum
    action or wrong app. `dispatch_tier1()` therefore validates every enum and
    param (unknown media op → safe default, bad timer unit → minutes) instead
    of trusting the model.
-2. **The confidence is self-reported, not calibrated.** A purpose-built
-   decision model (e.g. Jev) returns calibrated per-choice probabilities you
-   can threshold reliably; here the 0–1 is the model grading its own homework.
-   `TIER1_MIN_CONFIDENCE` (default 0.5) is a rough heuristic. Below it, the
-   request falls through to Tier 2 (or a polite "I didn't understand").
+2. **Tier 0.5 local decision model (~50 ms) with calibrated confidence:**
+   In Ollama 0.35+, we integrate the Jev-style System One API (`/v1/systemone` with `tev1:0.8b` or `nimble`). Unlike generative text decoding that produces tokens one-by-one, decision models evaluate labels in a single forward pass, returning real calibrated probabilities (`probabilities[action] > 0.85`) in ~50–120ms. When intent and parameters can be resolved immediately, the action executes without waiting for 8B VLM decoding.
 
-Disable with `OLLAMA_TIER1=0`. If Ollama isn't reachable, Tier 1 logs once and
-gets out of the way — Tier 0 and Tier 2 are unaffected.
+3. **Fallback to full VLM (`qwen3-vl:8b`)**:
+   Complex open-domain extraction, visual screen queries, or ambiguous phrases fall through to `qwen3-vl:8b`. The self-reported confidence from JSON mode is thresholded with `TIER1_MIN_CONFIDENCE` (default 0.5).
+
+Disable with `OLLAMA_TIER1=0` or `OLLAMA_DECISION_MODEL=""`. If Ollama isn't reachable, Tier 1 logs once and gets out of the way — Tier 0 and Tier 2 are unaffected.
 
 ## 4. Tier 2 — Gemini free tier (optional)
 

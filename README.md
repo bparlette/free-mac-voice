@@ -171,11 +171,12 @@ ASCII art", "draw a cat" (LLM-generated SVG opened in the browser),
 
 ## How it stays free (30-second version)
 
-Three tiers, fastest first. The system only uses a slower tier when the faster one can't help:
+Four tiers, fastest first. The system only uses a slower tier when the faster one can't help:
 
-1. **Tier 0 — the reflex (<1 ms).** Pattern matching on your words. Handles standard commands instantly (0.2–0.3 ms) — even mid-sentence, but only when the command is complete (“open notes” fires; “open no” never misfires). Real UI clicks run through Accessibility (`xa11y`) with a native Apple Vision OCR fast path (**~0.25s end-to-end**).
-2. **Tier 1 — the local fallback (~1–2 s).** A vision-language AI (`qwen3-vl:8b`) running on your Mac translates unusual conversational phrasing (“could you be a dear and open my browser thing”) into the same commands — and understands your screen (“what's on my screen”). 100% offline, zero API keys, zero rate limits, zero data leaving your Mac.
-3. **Tier 2 — the answerer (optional).** Google's free Gemini API answers general trivia or open-ended web questions aloud.
+1. **Tier 0 — the reflex (<1 ms).** Pattern matching on your words with fuzzy app matching and conversational noise stripping. Handles standard commands instantly (0.2–0.3 ms) — even mid-sentence, but only when the command is complete (“open notes” fires; “open no” never misfires). Real UI clicks run through Accessibility (`xa11y`) with a native Apple Vision OCR fast path (**~0.25s end-to-end**).
+2. **Tier 0.5 — local decision model (~50 ms).** Using Ollama 0.35's Jev-style System One API (`tev1:0.8b`), conversational commands that miss regex (*"turn the sound down a little bit"*, *"could you open my browser"*) are classified in a single forward pass with calibrated probabilities (~50–120ms), bypassing token-by-token generation.
+3. **Tier 1 — local vision-language AI (~1–2 s).** A full vision-language model (`qwen3-vl:8b`) running on your Mac extracts complex open entities and understands your screen (“what's on my screen”). 100% offline, zero API keys, zero rate limits, zero data leaving your Mac.
+4. **Tier 2 — the answerer (optional).** Google's free Gemini API answers general trivia or open-ended web questions aloud (with fallback to local model).
 
 ### Local by Default vs. Optional Gemini
 By default, **Free Mac Voice is 100% on-device and local**. No audio, screenshots, or metadata leave your Mac.
