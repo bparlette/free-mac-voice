@@ -239,7 +239,7 @@ def _save_config(cfg: dict) -> None:
 
 _cfg = _load_config()
 VOICE_TTS_ENGINE = os.environ.get("VOICE_TTS_ENGINE", _cfg.get("tts_engine", "kokoro")).strip().lower()
-VOICE_KOKORO_VOICE = os.environ.get("VOICE_KOKORO_VOICE", _cfg.get("kokoro_voice", "af_heart")).strip()
+VOICE_KOKORO_VOICE = os.environ.get("VOICE_KOKORO_VOICE", _cfg.get("kokoro_voice", "am_fenrir")).strip()
 VOICE_SAY_VOICE = os.environ.get("VOICE_SAY_VOICE", _cfg.get("say_voice", "Samantha")).strip()
 
 KOKORO_MODEL_PATH = os.environ.get(
@@ -272,8 +272,8 @@ KOKORO_VOICES: dict[str, tuple[str, str]] = {
     "kore": ("Kore", "af_kore"),
     "aoede": ("Aoede", "af_aoede"),
     # American Male
-    "adam": ("Adam", "am_adam"),
     "fenrir": ("Fenrir", "am_fenrir"),
+    "adam": ("Adam", "am_adam"),
     "michael": ("Michael", "am_michael"),
     "liam": ("Liam", "am_liam"),
     "echo": ("Echo", "am_echo"),
@@ -294,12 +294,12 @@ KOKORO_VOICES: dict[str, tuple[str, str]] = {
 }
 
 KOKORO_SHOWCASE: list[tuple[str, str]] = [
+    ("Fenrir", "am_fenrir"),
     ("Heart", "af_heart"),
     ("Adam", "am_adam"),
     ("Sarah", "af_sarah"),
     ("George", "bm_george"),
     ("Nicole", "af_nicole"),
-    ("Fenrir", "am_fenrir"),
     ("Emma", "bf_emma"),
     ("Michael", "am_michael"),
 ]

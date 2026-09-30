@@ -9,7 +9,7 @@
 #### 1. 🗣️ High-Definition Neural Voice (Kokoro-82M Default)
 - **ElevenLabs Quality at $0:** Defaults to an 82M-parameter StyleTTS2 neural model running locally on Apple Silicon unified memory. Produces natural, human-grade voice inflection with zero cloud fees, zero subscriptions, and zero API keys.
 - **Voice Auditioning by Voice:** Say *"Mac, pick a voice"* (or *"sample voices"*) to hear the assistant rotate through distinct human personas, each speaking a personalized sample sentence starting with their name.
-- **Voice Selection & Switching:** Say *"Mac, use voice Adam"* or *"Mac, set voice to Heart"* to switch voices. The assistant confirms your choice in that exact voice.
+- **Voice Selection & Switching:** Say *"Mac, use voice Heart"* or *"Mac, set voice to Adam"* to switch voices (defaults to **Fenrir**, second recommended: **Heart**). The assistant confirms your choice in that exact voice.
 - **Update-Proof Persistence:** Preferences are saved in `~/.config/free-voice/config.json` outside the Git repository.
 - **Instant Fallback:** Automatically degrades to native macOS `say` if models or dependencies are uninitialized, ensuring speech never breaks.
 

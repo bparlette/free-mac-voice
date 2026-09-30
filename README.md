@@ -255,17 +255,17 @@ Whenever the voice engine starts or reloads, it automatically discovers and bind
 
 - **Audition Voices by Voice:** Say *"Mac, pick a voice"* (or *"sample voices"* / *"choose a voice"*). The assistant rotates through curated personas speaking:
   > *"[Name]. This is what I sound like on your Mac."*
-- **Choose Your Voice:** Say *"Mac, use voice Adam"* or *"Mac, set voice to Heart"*. The assistant confirms your choice in that exact voice.
+- **Choose Your Voice:** Say *"Mac, use voice Heart"* or *"Mac, set voice to Adam"*. The assistant confirms your choice in that exact voice (default: **Fenrir**, second recommended: **Heart**).
 - **Update-Proof Persistence:** Your selected voice is saved directly to `~/.config/free-voice/config.json`, surviving software updates and reinstalls.
 - **Instant Fallback:** If offline, running in a minimal container, or if model files are uninitialized, it falls back seamlessly to macOS native `say` without interruption.
 
 #### 🎧 Audio Previews (Listen to Local Synthesis):
-- [🔊 Heart Sample (Warm American Female — Default)](docs/audio_samples/heart_sample.wav)
+- [🔊 Fenrir Sample (Rich Cinematic American Male — Default)](docs/audio_samples/fenrir_sample.wav)
+- [🔊 Heart Sample (Warm American Female — Recommended)](docs/audio_samples/heart_sample.wav)
 - [🔊 Adam Sample (Deep American Male)](docs/audio_samples/adam_sample.wav)
 - [🔊 Sarah Sample (Clear American Female)](docs/audio_samples/sarah_sample.wav)
 - [🔊 Nicole Sample (Friendly American Female)](docs/audio_samples/nicole_sample.wav)
 - [🔊 George Sample (Refined British Male)](docs/audio_samples/george_sample.wav)
-- [🔊 Fenrir Sample (Cinematic American Male)](docs/audio_samples/fenrir_sample.wav)
 - [🔊 Emma Sample (Crisp British Female)](docs/audio_samples/emma_sample.wav)
 
 ---

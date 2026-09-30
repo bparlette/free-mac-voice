@@ -1036,6 +1036,7 @@ class TestVoicePicker(Base):
 
         self.assertTrue(len(spoken) >= 5)
         voice_samples = [s[0] for s in spoken if "This is what I sound like on your Mac." in s[0]]
+        self.assertTrue(any(s.startswith("Fenrir. ") for s in voice_samples))
         self.assertTrue(any(s.startswith("Heart. ") for s in voice_samples))
         self.assertTrue(any(s.startswith("Adam. ") for s in voice_samples))
 
