@@ -187,6 +187,20 @@ A lightweight status icon in your macOS menu bar reflects live state:
 
 Start manually (`python3 menu_bar.py`) or let `install.sh` / `Voice Control (Always On).command` run it automatically.
 
+### 5. Persistent Background Daemon (`service.sh`)
+Run completely hands-free as a native macOS `LaunchAgent` without keeping a terminal open:
+```bash
+# Install and auto-start on macOS login:
+./service.sh install
+
+# Check status, PID, and health:
+./service.sh status
+
+# Manage lifecycle anytime:
+./service.sh {start|stop|restart|logs|uninstall}
+```
+Supervises `free_voice.py --always` and the `menu_bar.py` status indicator with automated restart on failure.
+
 ---
 
 ## 🪄 Custom Shortcuts & Extensions (Update-Proof)
@@ -245,6 +259,11 @@ Whenever the voice engine starts or reloads, it automatically discovers and bind
 - **Update-Proof Persistence:** Your selected voice is saved directly to `~/.config/free-voice/config.json`, surviving software updates and reinstalls.
 - **Instant Fallback:** If offline, running in a minimal container, or if model files are uninitialized, it falls back seamlessly to macOS native `say` without interruption.
 
+#### 🎧 Audio Previews (Listen to Local Synthesis):
+- [🔊 Heart Sample (Warm American Female)](docs/audio_samples/heart_sample.wav)
+- [🔊 Adam Sample (Deep American Male)](docs/audio_samples/adam_sample.wav)
+- [🔊 George Sample (Refined British Male)](docs/audio_samples/george_sample.wav)
+
 ---
 
 ## 📊 Measured Performance (Apple M4 Mac mini, 16 GB)
@@ -293,7 +312,7 @@ Control Samsung Smart TV power, inputs, volume, and playback over Wi-Fi:
 The test suite stubs all hardware (no mic, TV, or live Ollama instance required) for instant verification:
 
 ```bash
-# Run all 211 hermetic unit tests (completes in < 1 second):
+# Run all 213 hermetic unit tests (completes in < 1 second):
 python3 -m unittest discover -s tests
 
 # Run performance benchmarks:

@@ -2604,5 +2604,23 @@ class TestAppleTVFeatures(Base):
         self.assertEqual(r_final[0], "search_youtube")
 
 
+class TestDaemonAndService(Base):
+    def test_scripts_exist_and_executable(self):
+        repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        service_sh = os.path.join(repo_dir, "service.sh")
+        runner_py = os.path.join(repo_dir, "daemon_runner.py")
+        self.assertTrue(os.path.isfile(service_sh))
+        self.assertTrue(os.access(service_sh, os.X_OK))
+        self.assertTrue(os.path.isfile(runner_py))
+        self.assertTrue(os.access(runner_py, os.X_OK))
+
+    def test_service_status_command(self):
+        repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        service_sh = os.path.join(repo_dir, "service.sh")
+        res = fv.subprocess.run([service_sh, "status"], capture_output=True, text=True, check=False)
+        self.assertEqual(res.returncode, 0)
+        self.assertIn("Service Status: com.free-mac-voice", res.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

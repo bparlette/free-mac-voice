@@ -219,21 +219,11 @@ else
   login_ans="N"  # non-interactive: default to no, re-run install.sh to enable
 fi
 if [[ "${login_ans:-N}" =~ ^[Yy] ]]; then
-  PLIST="$HOME/Library/LaunchAgents/com.free-mac-voice.plist"
-  MENU_PLIST="$HOME/Library/LaunchAgents/com.free-mac-voice.menubar.plist"
-  mkdir -p "$HOME/Library/LaunchAgents"
-  sed -e "s#__VENV__#$VENV#g" -e "s#__REPO__#$REPO_DIR#g" \
-    "$REPO_DIR/com.free-mac-voice.plist" > "$PLIST"
-  sed -e "s#__VENV__#$VENV#g" -e "s#__REPO__#$REPO_DIR#g" \
-    "$REPO_DIR/com.free-mac-voice.menubar.plist" > "$MENU_PLIST"
-  launchctl unload "$PLIST" >/dev/null 2>&1 || true
-  launchctl unload "$MENU_PLIST" >/dev/null 2>&1 || true
-  launchctl load -w "$PLIST"
-  launchctl load -w "$MENU_PLIST"
+  bash "$REPO_DIR/service.sh" install
   note "installed — voice control and menu bar indicator now start at every login"
   note "first run will ask for Microphone permission for Python — allow it"
-  note "logs: /tmp/free-mac-voice.log and /tmp/free-mac-voice-menubar.log"
-  note "to remove later: launchctl unload -w \"$PLIST\" \"$MENU_PLIST\""
+  note "check logs anytime: ./service.sh logs"
+  note "manage service: ./service.sh {start|stop|restart|status|uninstall}"
 else
   note "skipped — double-click 'Voice Control (Always On).command' to start manually"
 fi

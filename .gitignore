@@ -21,6 +21,7 @@ benchmarks/results.jsonl
 *.wav
 *.mp3
 *.m4a
+!docs/audio_samples/*.wav
 
 # Editor & OS artifacts
 .vscode/

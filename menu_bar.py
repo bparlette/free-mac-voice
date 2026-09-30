@@ -88,16 +88,43 @@ def run_menu_bar() -> None:
             subprocess.Popen(["afplay", "/System/Library/Sounds/Tink.aiff"])
 
         @objc.typedSelector(b"v@:@")
+        def pickVoice_(self, sender):
+            repo = os.path.dirname(os.path.abspath(__file__))
+            py = os.path.join(repo, ".venv", "bin", "python")
+            if not os.path.exists(py):
+                py = sys.executable
+            subprocess.Popen([py, os.path.join(repo, "free_voice.py"), "--text", "pick a voice"], cwd=repo)
+
+        @objc.typedSelector(b"v@:@")
+        def restartDaemon_(self, sender):
+            repo = os.path.dirname(os.path.abspath(__file__))
+            svc = os.path.join(repo, "service.sh")
+            if os.path.exists(svc):
+                subprocess.Popen(["/bin/bash", svc, "restart"], cwd=repo)
+
+        @objc.typedSelector(b"v@:@")
         def quitApp_(self, sender):
             AppKit.NSApp.terminate_(self)
 
     handler = ActionHandler.alloc().init()
+
+    item_voice = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Audition Voices (Kokoro)", "pickVoice:", ""
+    )
+    item_voice.setTarget_(handler)
+    menu.addItem_(item_voice)
 
     item_chime = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         "Test Wake Chime", "testChime:", ""
     )
     item_chime.setTarget_(handler)
     menu.addItem_(item_chime)
+
+    item_restart = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Restart Voice Service", "restartDaemon:", ""
+    )
+    item_restart.setTarget_(handler)
+    menu.addItem_(item_restart)
 
     item_cfg = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         "Open Config (.env)", "openConfig:", ""
