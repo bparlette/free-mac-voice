@@ -1191,12 +1191,41 @@ class TestFunStuff(Base):
         with mock.patch.object(fv, "capture_screenshot", return_value=img_path), \
              mock.patch.object(fv, "shell") as sh:
             fv.act_ascii_art()
-        out = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
-        with open(out) as f:
+        out_txt = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
+        with open(out_txt) as f:
             lines = f.read().splitlines()
         self.assertTrue(lines and all(len(l) == 120 for l in lines))
-        sh.assert_called_once_with(["open", out])
+
+        out_html = os.path.join(tempfile.gettempdir(), "ascii-art.html")
+        self.assertTrue(os.path.exists(out_html))
+        with open(out_html) as f:
+            html_content = f.read()
+        self.assertIn("<pre>", html_content)
+        self.assertIn("</pre>", html_content)
+        self.assertIn("ui-monospace", html_content)
+        # Opened path must be the .html file, NOT the .txt file
+        sh.assert_called_once_with(["open", out_html])
+        self.assertNotEqual(sh.call_args[0][0], ["open", out_txt])
         self.assertIn("ASCII art", self.said[-1])
+
+    def test_ascii_art_html_escapes_entities(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow not installed in current environment")
+        img_path = os.path.join(tempfile.gettempdir(), "t-ascii-entities.png")
+        Image.new("RGB", (64, 32), "black").save(img_path)
+        # Verify html.escape is applied if art contains characters like <, >, &
+        with mock.patch.object(fv, "capture_screenshot", return_value=img_path), \
+             mock.patch.object(fv, "_ASCII_RAMP", "<>&*+=-:. "), \
+             mock.patch.object(fv, "shell") as sh:
+            fv.act_ascii_art()
+        out_html = os.path.join(tempfile.gettempdir(), "ascii-art.html")
+        with open(out_html) as f:
+            html_content = f.read()
+        self.assertIn("&lt;", html_content)
+        self.assertNotIn("<pre><", html_content)
+        sh.assert_called_once_with(["open", out_html])
 
     def test_ascii_art_needs_pillow(self):
         real_import = __import__

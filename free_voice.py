@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import html
 import json
 import os
 import queue
@@ -2077,10 +2078,49 @@ def act_ascii_art() -> None:
     n = len(_ASCII_RAMP) - 1
     lines = ["".join(_ASCII_RAMP[px[x, y] * n // 255] for x in range(w))
              for y in range(h)]
-    out = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
-    with open(out, "w") as f:
-        f.write("\n".join(lines) + "\n")
-    shell(["open", out])
+    art = "\n".join(lines) + "\n"
+    out_txt = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
+    with open(out_txt, "w") as f:
+        f.write(art)
+
+    out_html = os.path.join(tempfile.gettempdir(), "ascii-art.html")
+    escaped = html.escape(art)
+    html_content = (
+        "<!DOCTYPE html>\n"
+        "<html>\n"
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        "<title>ASCII Art</title>\n"
+        "<style>\n"
+        "  body {\n"
+        "    margin: 0;\n"
+        "    padding: 24px;\n"
+        "    background-color: #0d1117;\n"
+        "    color: #c9d1d9;\n"
+        "    display: flex;\n"
+        "    justify-content: center;\n"
+        "    align-items: center;\n"
+        "    min-height: 100vh;\n"
+        "    box-sizing: border-box;\n"
+        "  }\n"
+        "  pre {\n"
+        "    font-family: ui-monospace, Menlo, Consolas, monospace;\n"
+        "    font-size: 8px;\n"
+        "    line-height: 1;\n"
+        "    white-space: pre;\n"
+        "    margin: 0;\n"
+        "    padding: 16px;\n"
+        "  }\n"
+        "</style>\n"
+        "</head>\n"
+        "<body>\n"
+        f"<pre>{escaped}</pre>\n"
+        "</body>\n"
+        "</html>\n"
+    )
+    with open(out_html, "w") as f:
+        f.write(html_content)
+    shell(["open", out_html])
     say("Here's your screen as ASCII art")
 
 
