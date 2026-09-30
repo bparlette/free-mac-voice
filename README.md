@@ -88,7 +88,14 @@ feel instant, and vision queries send an 800px sips-downscaled copy (~60%
 faster inference) while click refinement still crops the full-res shot.
 Vision clicks now ask the model for the target's size too, and skip the
 second refinement inference (~5-8s) when the target is large enough that
-the first-pass center can't miss.
+the first-pass center can't miss. Continuous dictation ("start dictating",
+"take notes" — types until you say "stop dictating"), custom voice macros
+("macro standup runs open slack and open zoom", saved to
+~/.config/free-voice/macros.json), and fun stuff: "turn my screen into
+ASCII art", "draw a cat" (LLM-generated SVG opened in the browser),
+"roll a die", "flip a coin", "ask the magic 8 ball", "tell me a joke",
+"remind me in 10 minutes to …", "read my screen to me", and
+"play some jazz" (first matching Music playlist).
 
 ## How it stays free (30-second version)
 
@@ -119,7 +126,7 @@ Measured end-to-end execution times on an Apple M4 Mac mini (including process s
 No mic, model, or Mac required — the suite stubs all hardware:
 
 ```bash
-python3 -m unittest discover -s tests   # 91 unit tests, stdlib only
+python3 -m unittest discover -s tests   # 113 unit tests, stdlib only
 ```
 
 Component benchmarks (Tier 0 routing, Tier 1 cold vs warm, screenshot,

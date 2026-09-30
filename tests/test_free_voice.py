@@ -983,5 +983,213 @@ class TestAdaptiveRefinement(Base):
         rc.assert_not_called()
 
 
+# --------------------------------- dictation, macros, fun stuff
+class TestDictation(Base):
+    def _dictate(self, chunks):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        with mock.patch.object(fv, "record_fixed", return_value=b"x"), \
+             mock.patch.object(fv, "transcribe", side_effect=chunks), \
+             mock.patch.object(fv, "act_type_text") as tt:
+            fv.act_dictate_start()
+        return tt
+
+    def test_chunks_typed_until_stop_phrase(self):
+        tt = self._dictate(["hello world", "stop dictating"])
+        tt.assert_called_once_with("hello world ")
+        self.assertIn("Dictating. Say stop dictating when you're done.", self.said)
+        self.assertIn("Done dictating", self.said)
+
+    def test_stop_mid_sentence_keeps_dictating(self):
+        tt = self._dictate(["i told him to stop calling", "stop"])
+        self.assertEqual([c.args[0] for c in tt.call_args_list],
+                         ["i told him to stop calling "])
+        self.assertIn("Done dictating", self.said)
+
+    def test_trailing_stop_phrase_types_head(self):
+        tt = self._dictate(["see you tomorrow stop dictating"])
+        tt.assert_called_once_with("see you tomorrow ")
+        self.assertIn("Done dictating", self.said)
+
+    def test_dry_run_says_mode_only(self):
+        with mock.patch.object(fv, "record_fixed") as rf:
+            fv.act_dictate_start()
+        rf.assert_not_called()
+        self.assertEqual(self.said, ["Dictation mode"])
+
+    def test_routing(self):
+        for text in ("start dictating", "dictate", "take notes",
+                     "take notes until i say stop"):
+            name, _ = self.route_name(text)
+            self.assertEqual(name, "dictate_start", text)
+        # one-shot "dictate X" still types
+        name, m = self.route_name("dictate hello world")
+        self.assertEqual(name, "type_text")
+        self.assertEqual(m.group(1), "hello world")
+
+
+class TestMacros(Base):
+    def setUp(self):
+        super().setUp()
+        self._tmp = tempfile.mkdtemp()
+        self._old_file = fv._MACRO_FILE
+        fv._MACRO_FILE = os.path.join(self._tmp, "macros.json")
+        self._old_cache = fv._macros_cache
+        fv._macros_cache = None
+        self.addCleanup(setattr, fv, "_MACRO_FILE", self._old_file)
+        self.addCleanup(setattr, fv, "_macros_cache", self._old_cache)
+
+    def test_add_list_delete(self):
+        fv.act_macro_add("standup", "open slack and open zoom")
+        with open(fv._MACRO_FILE) as f:
+            saved = json.load(f)
+        self.assertEqual(saved, {"standup": ["open slack", "open zoom"]})
+        self.assertIn("saved with 2 commands", self.said[-1])
+        fv.act_macro_list()
+        self.assertIn("standup", self.said[-1])
+        fv.act_macro_delete("standup")
+        self.assertEqual(fv._load_macros(), {})
+        self.assertIn("Deleted macro standup", self.said[-1])
+        fv.act_macro_delete("standup")
+        self.assertIn("No macro called standup", self.said[-1])
+
+    def test_add_splits_on_then_and_commas(self):
+        fv.act_macro_add("morning", "open notes then open calendar, open mail")
+        self.assertEqual(fv._load_macros()["morning"],
+                         ["open notes", "open calendar", "open mail"])
+
+    def test_run_macro_executes_parts(self):
+        fv.act_macro_add("standup", "open notes")
+        with mock.patch.object(fv, "act_open_app") as oa:
+            handled = fv.handle_command("standup")
+        self.assertTrue(handled)
+        oa.assert_called_once_with("notes")
+        self.assertIn("Macro done", self.said)
+
+    def test_builtin_beats_macro_trigger(self):
+        # a macro named exactly like a built-in never hijacks it
+        fv.act_macro_add("open notes", "tell me a joke")
+        with mock.patch.object(fv, "act_open_app") as oa:
+            fv.handle_command("open notes")
+        oa.assert_called_once()
+        self.assertNotIn("Macro done", self.said)
+
+    def test_unknown_trigger_misses(self):
+        self.assertFalse(fv.run_macro("nope"))
+
+    def test_routing(self):
+        name, m = self.route_name("macro standup runs open slack and open zoom")
+        self.assertEqual(name, "macro_add")
+        self.assertEqual((m.group(1), m.group(2)),
+                         ("standup", "open slack and open zoom"))
+        self.assertEqual(self.route_name("list macros")[0], "macro_list")
+        self.assertEqual(self.route_name("delete macro standup")[0], "macro_delete")
+
+
+class TestFunStuff(Base):
+    def test_dice_and_coin_in_range(self):
+        for _ in range(10):
+            fv.act_roll_dice()
+            n = int(self.said[-1].rsplit(" ", 1)[1])
+            self.assertIn(n, range(1, 7))
+        for _ in range(10):
+            fv.act_coin_flip()
+            self.assertIn(self.said[-1], ("It's heads", "It's tails"))
+
+    def test_8ball_and_joke_come_from_lists(self):
+        fv.act_8ball()
+        self.assertIn(self.said[-1], fv._8BALL)
+        fv.act_joke()
+        self.assertIn(self.said[-1], fv._JOKES)
+
+    def test_ascii_art_renders_and_opens(self):
+        from PIL import Image
+        img_path = os.path.join(tempfile.gettempdir(), "t-ascii.png")
+        Image.new("RGB", (64, 32), "white").save(img_path)
+        with mock.patch.object(fv, "capture_screenshot", return_value=img_path), \
+             mock.patch.object(fv, "shell") as sh:
+            fv.act_ascii_art()
+        out = os.path.join(tempfile.gettempdir(), "ascii-art.txt")
+        with open(out) as f:
+            lines = f.read().splitlines()
+        self.assertTrue(lines and all(len(l) == 120 for l in lines))
+        sh.assert_called_once_with(["open", out])
+        self.assertIn("ASCII art", self.said[-1])
+
+    def test_ascii_art_needs_pillow(self):
+        real_import = __import__
+
+        def no_pil(name, *a, **k):
+            if name == "PIL" or name.startswith("PIL."):
+                raise ImportError("no PIL")
+            return real_import(name, *a, **k)
+
+        with mock.patch("builtins.__import__", side_effect=no_pil), \
+             mock.patch.object(fv, "capture_screenshot", return_value="/tmp/x.png"):
+            fv.act_ascii_art()
+        self.assertIn("Pillow", self.said[-1])
+
+    def test_draw_svg_opens_generated_svg(self):
+        with mock.patch.object(fv, "_llm_text",
+                               return_value="sure: <svg viewBox='0 0 400 400'></svg>"), \
+             mock.patch.object(fv, "shell") as sh:
+            fv.act_draw_svg("a cat")
+        out = os.path.join(tempfile.gettempdir(), "drawing.svg")
+        with open(out) as f:
+            self.assertTrue(f.read().startswith("<svg"))
+        sh.assert_called_once_with(["open", out])
+        self.assertIn("Here's your a cat", self.said[-1])
+
+    def test_draw_svg_failure_is_spoken(self):
+        with mock.patch.object(fv, "_llm_text", return_value=None):
+            fv.act_draw_svg("a cat")
+        self.assertIn("couldn't draw", self.said[-1])
+
+    def test_reminder_schedules_thread(self):
+        with mock.patch("threading.Thread") as th:
+            fv.act_reminder(10, "minutes", "check the oven")
+        th.assert_called_once()
+        self.assertTrue(th.return_value.start.called)
+        self.assertIn("remind you to check the oven in 10 minutes", self.said[-1])
+
+    def test_read_screen_speaks_description(self):
+        with mock.patch.object(fv, "capture_screenshot", return_value="/tmp/x.png"), \
+             mock.patch.object(fv, "vision_ask", return_value="The screen shows Notes."):
+            fv.act_read_screen()
+        self.assertIn("The screen shows Notes.", self.said)
+
+    def test_play_genre(self):
+        with mock.patch.object(fv, "shell", return_value="") as sh:
+            fv.act_play_genre("jazz")
+        self.assertIn("osascript", sh.call_args.args[0])
+        self.assertIn("Playing jazz", self.said[-1])
+
+    def test_play_genre_missing_playlist(self):
+        with mock.patch.object(fv, "shell", side_effect=RuntimeError("nope")):
+            fv.act_play_genre("jazz")
+        self.assertIn("couldn't find a jazz playlist", self.said[-1])
+
+    def test_routing(self):
+        routes = {
+            "turn my screen into ascii art": "ascii_art",
+            "ascii art": "ascii_art",
+            "draw a cat": "draw_svg",
+            "draw me a house": "draw_svg",
+            "roll a die": "roll_dice",
+            "roll dice": "roll_dice",
+            "flip a coin": "coin_flip",
+            "ask the magic 8 ball will it rain": "eight_ball",
+            "magic 8 ball": "eight_ball_bare",
+            "tell me a joke": "joke",
+            "remind me in 10 minutes to check the oven": "reminder",
+            "read my screen to me": "read_screen",
+            "read my screen": "read_screen",
+            "play some jazz": "play_genre",
+        }
+        for text, want in routes.items():
+            name, _ = self.route_name(text)
+            self.assertEqual(name, want, text)
+
+
 if __name__ == "__main__":
     unittest.main()
