@@ -29,3 +29,7 @@ benchmarks/results.jsonl
 *.swp
 *~
 
+# Personal test suites (kept private, never published to public git)
+tests/personal/
+tests_personal/
+
