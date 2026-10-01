@@ -124,6 +124,12 @@ if [[ ! -f "$KOKORO_DIR/kokoro-v1.0.onnx" ]]; then
     "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx" || true
 fi
 
+# --- 6.5 Phonon-2 Next-Gen ASR (Default on Apple Silicon) ---------------------
+if [[ "$(uname -m)" == "arm64" ]]; then
+  step "Configuring Phonon-2 ASR (~164 MB Parakeet-TDT, skipped if present)..."
+  "$VENV/bin/phonon" describe >/dev/null 2>&1 || true
+fi
+
 # --- 7. Config dir + .env template --------------------------------------------------
 # Fixes the upgrade trap: an old .env that still points at a retired default
 # model is bumped to the new default; user-customized values are never touched.
@@ -136,6 +142,10 @@ migrate_env() {
   if ! grep -q 'OLLAMA_DECISION_MODEL=' "$env" 2>/dev/null; then
     printf '\n# Tier 0.5 decision model for ~50ms intent classification (leave blank to disable)\nOLLAMA_DECISION_MODEL=tev1:0.8b\n' >> "$env"
     note "added OLLAMA_DECISION_MODEL default (tev1:0.8b) to .env"
+  fi
+  if ! grep -q 'VOICE_STT_ENGINE=' "$env" 2>/dev/null; then
+    printf '\n# Speech-to-text engine: "phonon" (164MB MLX, default) or "whisper"\nVOICE_STT_ENGINE=phonon\n' >> "$env"
+    note "added VOICE_STT_ENGINE default (phonon) to .env"
   fi
   if ! grep -q 'VOICE_USER_EMAIL=' "$env" 2>/dev/null; then
     printf '\n# "type my email" types this address. Uncomment and set it.\n# VOICE_USER_EMAIL=\n' >> "$env"
