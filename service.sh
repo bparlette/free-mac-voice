@@ -238,6 +238,11 @@ EOF
     "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" roast
     ;;
 
+  roast-demo)
+    echo "==> Running full animation showcase demo..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" demo
+    ;;
+
   roast-theme)
     THEME_ARG="${2:-couch_duo}"
     echo "==> Setting critic theme to: $THEME_ARG"

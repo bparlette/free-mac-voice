@@ -368,6 +368,8 @@ class CompanionView(AppKit.NSView):
         self.head_offset_y = 0.0
         self.cat_offset_x = 0.0
         self.cat_offset_y = 0.0
+        self.head_angle = 0.0
+        self.cat_angle = 0.0
 
         self.speaker_tag = "🎮 LEO"
         self.accent_rgb = (0.20, 0.75, 1.00)
@@ -398,11 +400,13 @@ class CompanionView(AppKit.NSView):
         self.accent_rgb = char["accent_rgb"]
         self.setNeedsDisplay_(True)
 
-    def set_articulation(self, head_x, head_y, cat_x, cat_y):
+    def set_articulation(self, head_x, head_y, cat_x, cat_y, head_angle=0.0, cat_angle=0.0):
         self.head_offset_x = head_x
         self.head_offset_y = head_y
         self.cat_offset_x = cat_x
         self.cat_offset_y = cat_y
+        self.head_angle = head_angle
+        self.cat_angle = cat_angle
         self.setNeedsDisplay_(True)
 
     def update_riff(self, char_dict, text=None):
@@ -470,26 +474,48 @@ class CompanionView(AppKit.NSView):
             dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
         )
 
-        # Draw Articulated Head (Nods and tilts ONLY on head — couch never moves)
+        # Draw Articulated Head (Nods, tilts, and shifts ONLY on head — couch never moves)
         scale_x = img_w / img.size().width
         scale_y = img_h / img.size().height
 
         if self.head_image:
+            ctx.saveGraphicsState()
+            transform = AppKit.NSAffineTransform.transform()
+            # Pivot at neck center
+            p_x = img_x + (0.499 * img_w) + (self.head_offset_x * scale_x)
+            p_y = img_y + (0.636 * img_h) + (self.head_offset_y * scale_y)
+            transform.translateXBy_yBy_(p_x, p_y)
+            transform.rotateByDegrees_(self.head_angle)
+            transform.translateXBy_yBy_(-p_x, -p_y)
+            transform.concat()
+
             hx = img_x + (self.head_offset_x * scale_x)
             hy = img_y + (self.head_offset_y * scale_y)
             head_dest = AppKit.NSMakeRect(hx, hy, img_w, img_h)
             self.head_image.drawInRect_fromRect_operation_fraction_(
                 head_dest, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
             )
+            ctx.restoreGraphicsState()
 
-        # Draw Articulated Cat (Breathes and turns independently)
+        # Draw Articulated Cat (Perks, tilts, and breathes independently)
         if self.cat_image:
+            ctx.saveGraphicsState()
+            transform = AppKit.NSAffineTransform.transform()
+            # Pivot at cat paws/armrest base
+            cp_x = img_x + (0.855 * img_w) + (self.cat_offset_x * scale_x)
+            cp_y = img_y + (0.147 * img_h) + (self.cat_offset_y * scale_y)
+            transform.translateXBy_yBy_(cp_x, cp_y)
+            transform.rotateByDegrees_(self.cat_angle)
+            transform.translateXBy_yBy_(-cp_x, -cp_y)
+            transform.concat()
+
             cx = img_x + (self.cat_offset_x * scale_x)
             cy = img_y + (self.cat_offset_y * scale_y)
             cat_dest = AppKit.NSMakeRect(cx, cy, img_w, img_h)
             self.cat_image.drawInRect_fromRect_operation_fraction_(
                 cat_dest, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
             )
+            ctx.restoreGraphicsState()
 
 
 class CriticOverlayController(NSObject):
@@ -501,6 +527,7 @@ class CriticOverlayController(NSObject):
         self.active_theme = "couch_duo"
         self.active_position = "bottom_left"
         self.speaking_character = None
+        self.active_animation_mode = None
         return self
 
     def load_config(self):
@@ -613,46 +640,63 @@ class CriticOverlayController(NSObject):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def run_animation_demo(self):
+        """Runs the companions through all animations sequentially with spoken lines & lighting."""
+        def demo_worker():
+            theme = THEMES.get(self.active_theme, THEMES["couch_duo"])
+            leo = next((c for c in theme["characters"] if c["name"] == "Leo"), theme["characters"][0])
+            cleo = next((c for c in theme["characters"] if c["name"] == "Cleo"), theme["characters"][-1])
+
+            # Record demo video clip
+            record_clip_async("Showcase", self.active_theme, duration=24)
+
+            # 1. Idle Demo
+            self.active_animation_mode = None
+            time.sleep(2.5)
+
+            # 2. Leo Speaking (Nodding + Expressive Tilt)
+            run_on_main(lambda: self.view.update_riff(leo))
+            self.speaking_character = "Leo"
+            speak_voice(leo["voice"], "Yo! Check out this articulation! My head nods and tilts to my voice while the couch stays completely still.")
+            self.speaking_character = None
+            time.sleep(1.2)
+
+            # 3. Cleo Speaking (Cat Speech Bob + Leo Listening Turn)
+            run_on_main(lambda: self.view.update_riff(cleo))
+            self.speaking_character = "Cleo"
+            speak_voice(cleo["voice"], "Meow! And look at me perk up on the armrest! Leo even turns his head over to listen.")
+            self.speaking_character = None
+            time.sleep(1.2)
+
+            # 4. Shock / Facepalm (Disbelief)
+            run_on_main(lambda: self.view.update_riff(leo))
+            self.active_animation_mode = "shock"
+            speak_voice(leo["voice"], "Whoa! Did you really just do that?! Tell me you didn't just miss that jump!")
+            self.active_animation_mode = None
+            time.sleep(1.2)
+
+            # 5. Laughter / Chuckling
+            run_on_main(lambda: self.view.update_riff(cleo))
+            self.active_animation_mode = "laugh"
+            speak_voice(cleo["voice"], "Haha! That was pure comedy! Nine out of ten cats would laugh at that move.")
+            self.active_animation_mode = None
+            time.sleep(1.2)
+
+            # 6. Cheer / Celebration
+            run_on_main(lambda: self.view.update_riff(leo))
+            self.active_animation_mode = "cheer"
+            speak_voice(leo["voice"], "Let's gooo! Victory lap! Now that is high-tier gameplay!")
+            self.active_animation_mode = None
+            time.sleep(1.2)
+
+            # Return to Idle
+            run_on_main(lambda: self.view.update_riff(leo))
+            self.active_animation_mode = None
+
+        threading.Thread(target=demo_worker, daemon=True).start()
+
     def start_animation_and_riff_loop(self):
-        def anim_loop():
-            """High-fidelity 60 FPS skeletal articulation loop."""
-            start_t = time.time()
-            glance_start = 0.0
-
-            while self.running:
-                now = time.time()
-                t = now - start_t
-
-                if self.speaking_character == "Leo":
-                    # Leo speech: natural head nodding & conversational tilt (couch does NOT move)
-                    hx = math.sin(t * 4.5) * 1.2
-                    hy = math.sin(t * 10.0) * 2.5
-                    cx = 0.0
-                    cy = math.sin(t * 2.0) * 0.4
-                elif self.speaking_character in ["Cleo", "Cat"]:
-                    # Cleo speech: cat bobs/perks up, Leo turns head towards Cleo to listen
-                    hx = 2.5
-                    hy = 0.5
-                    cx = 0.0
-                    cy = math.sin(t * 9.0) * 2.2
-                else:
-                    # Idle breathing & subtle ambient glances (couch is 100% stationary)
-                    hy = math.sin(t * 1.8) * 0.7
-                    cy = math.sin(t * 1.6 + 1.0) * 0.5
-                    hx = 0.0
-                    cx = 0.0
-
-                    # Periodic ambient glance towards each other every 18 seconds
-                    cycle = t % 18.0
-                    if cycle < 2.5:
-                        # Smooth glide in and out
-                        glance_factor = math.sin((cycle / 2.5) * math.pi)
-                        hx = glance_factor * 2.0
-
-                run_on_main(lambda x=hx, y=hy, cx=cx, cy=cy: self.view.set_articulation(x, y, cx, cy))
-                time.sleep(0.016)  # 60 FPS
-
-        threading.Thread(target=anim_loop, daemon=True).start()
+        self.start_animation_loop()
 
         def main_riff_loop():
             # Initial Welcome Greeting
@@ -678,6 +722,9 @@ class CriticOverlayController(NSObject):
 
                         if cmd == "roast_now":
                             self.trigger_riff()
+                            last_riff_time = time.time()
+                        elif cmd in ["demo", "roast_demo"]:
+                            self.run_animation_demo()
                             last_riff_time = time.time()
                         elif cmd.startswith("set_theme:"):
                             new_theme = cmd.split("set_theme:", 1)[1].strip()
@@ -708,6 +755,73 @@ class CriticOverlayController(NSObject):
 
         threading.Thread(target=main_riff_loop, daemon=True).start()
 
+    def start_animation_loop(self):
+        def anim_loop():
+            """High-fidelity 60 FPS skeletal articulation loop."""
+            start_t = time.time()
+
+            while self.running:
+                now = time.time()
+                t = now - start_t
+
+                head_angle = 0.0
+                cat_angle = 0.0
+
+                if self.active_animation_mode == "shock":
+                    hx = 0.0
+                    hy = 5.0 + math.sin(t * 8.0) * 1.0
+                    head_angle = -6.0
+                    cx = 0.0
+                    cy = 3.5 + math.sin(t * 8.0) * 0.8
+                    cat_angle = 4.5
+                elif self.active_animation_mode == "laugh":
+                    hx = math.sin(t * 12.0) * 0.8
+                    hy = abs(math.sin(t * 14.0)) * 2.8
+                    head_angle = math.sin(t * 14.0) * 2.2
+                    cx = 0.0
+                    cy = math.sin(t * 15.0) * 1.5
+                    cat_angle = math.sin(t * 7.5) * 1.5
+                elif self.active_animation_mode == "cheer":
+                    hx = math.sin(t * 6.0) * 1.8
+                    hy = math.sin(t * 12.0) * 4.0
+                    head_angle = math.sin(t * 6.0) * 4.2
+                    cx = 0.0
+                    cy = math.sin(t * 10.0) * 3.0
+                    cat_angle = math.sin(t * 5.0) * 3.0
+                elif self.speaking_character == "Leo":
+                    hx = math.sin(t * 4.5) * 1.5
+                    hy = math.sin(t * 10.0) * 3.2
+                    head_angle = math.sin(t * 5.0) * 3.5
+                    cx = 0.0
+                    cy = math.sin(t * 2.0) * 0.4
+                    cat_angle = 0.0
+                elif self.speaking_character in ["Cleo", "Cat"]:
+                    hx = 3.2
+                    hy = math.sin(t * 2.5) * 0.6
+                    head_angle = 4.0
+                    cx = 0.0
+                    cy = math.sin(t * 9.0) * 2.8
+                    cat_angle = math.sin(t * 4.5) * 3.0
+                else:
+                    hy = math.sin(t * 1.8) * 0.8
+                    cy = math.sin(t * 1.6 + 1.0) * 0.6
+                    head_angle = math.sin(t * 0.9) * 1.0
+                    hx = 0.0
+                    cx = 0.0
+
+                    cycle = t % 16.0
+                    if cycle < 3.0:
+                        glance_factor = math.sin((cycle / 3.0) * math.pi)
+                        hx = glance_factor * 2.8
+                        head_angle = glance_factor * 3.8
+                        cat_angle = -glance_factor * 2.2
+
+                run_on_main(lambda x=hx, y=hy, cx=cx, cy=cy, ha=head_angle, ca=cat_angle:
+                            self.view.set_articulation(x, y, cx, cy, ha, ca))
+                time.sleep(0.016)  # 60 FPS
+
+        threading.Thread(target=anim_loop, daemon=True).start()
+
 
 def run_overlay():
     with open(PID_FILE, "w") as f:
@@ -728,6 +842,10 @@ if __name__ == "__main__":
         with open(COMMAND_FILE, "w") as f:
             f.write("roast_now")
         print("Triggered on-demand screen roast.")
+    elif len(sys.argv) > 1 and sys.argv[1] in ["demo", "roast_demo"]:
+        with open(COMMAND_FILE, "w") as f:
+            f.write("demo")
+        print("Triggered animation showcase demo.")
     elif len(sys.argv) > 1 and sys.argv[1] == "theme" and len(sys.argv) > 2:
         with open(COMMAND_FILE, "w") as f:
             f.write(f"set_theme:{sys.argv[2]}")
