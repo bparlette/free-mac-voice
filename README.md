@@ -5,6 +5,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-blue.svg)](https://apple.com)
 [![ASR Engine](https://img.shields.io/badge/ASR-Phonon--2%20(164MB%20MLX)-orange.svg)](https://huggingface.co/FermionResearch/Phonon-2)
+[![TTS Engine](https://img.shields.io/badge/TTS-Kokoro--82M%20(Neural)-purple.svg)](docs/index.html)
 [![Hardware](https://img.shields.io/badge/accelerated-Metal%20GPU%20%2F%20MLX-green.svg)](https://developer.apple.com/metal/)
 [![Tests](https://img.shields.io/badge/tests-223%20passing%20(100%25)-brightgreen.svg)](tests/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)](#privacy--local-by-default)
@@ -55,6 +56,7 @@ flowchart TD
     T05 -- Complex / Low Confidence --> T1{Tier 1: On-Device VLM<br/>qwen3-vl:8b<br/>Latency: ~1.2 s}
     T1 -- Structured Action / Vision --> E1[VLM Screen Description / Macro]
     T1 -- Open Q&A / Trivia --> T2[Tier 2: Gemini Search Grounding or Local Answer]
+    E0 & E05 & E1 & T2 --> TTS[Spoken Response<br/>Kokoro-82M Neural Speech: ~150 ms<br/>or native say fallback]
 ```
 
 0. **ASR Front-End — Phonon-2 on Apple MLX (~30–40 ms):** Powered by Fermion Research's quantized 164 MB Parakeet-TDT model running natively on Apple Silicon MLX GPU/Neural Engine. Achieves a 5.2% WER matching Whisper Large at 7.2x faster speed with zero silence hallucinations.
@@ -62,6 +64,7 @@ flowchart TD
 2. **Tier 0.5 — Semantic Router & Intent Classifier (~40–70 ms):** Dual-stage semantic bridge. Stage (a) computes in-process cosine similarity against canonical intent embeddings (~2 ms, threshold 0.75). Stage (b) calls local `qwen2.5:1.5b` in JSON mode to classify intents and extract slots. Whisper/Phonon acoustic mishearings (*"john askey picture of a heart"*, *"call an ascii..."*) automatically route to actions without new regexes.
 3. **Tier 1 — On-Device Vision-Language Model (~1.2 s):** Local `qwen3-vl:8b` handles visual screen understanding (*"what's on my screen"*, *"read my screen to me"*) and complex multi-entity phrasing. 100% private, offline, and resident in unified memory.
 4. **Tier 2 — The Answerer (Optional):** Google's free Gemini API answers general trivia or open-ended web questions with live Google Search grounding. If offline or quota-limited, it falls back to the local model.
+5. **Spoken Feedback — Kokoro-82M Neural TTS (~150 ms):** Natural, style-guided human speech with 8 curated personas (Fenrir, Heart, Adam, Sarah, etc.) running locally via ONNX Runtime with zero API calls. Seamlessly falls back to native macOS `say` if needed.
 
 ---
 
