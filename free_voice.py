@@ -124,6 +124,7 @@ VOICE_WAKE_FEEDBACK = os.environ.get("VOICE_WAKE_FEEDBACK", "both").strip().lowe
 VOICE_WAKE_CHIME = os.environ.get("VOICE_WAKE_CHIME", "Tink.aiff").strip()
 WAKE_WINDOW_SEC = float(os.environ.get("VOICE_WAKE_WINDOW", "15.0"))
 VOICE_WAKE_PHRASE = os.environ.get("VOICE_WAKE_PHRASE", "what you want").strip()
+VOICE_VAD_SENSITIVITY = float(os.environ.get("VOICE_VAD_SENSITIVITY", "1.8"))
 _wake_window_until = 0.0
 DRY_RUN = False
 
@@ -708,8 +709,8 @@ class VoiceActivityDetector:
     Hysteresis (separate start/stop thresholds) avoids chattering.
     """
 
-    def __init__(self, sensitivity: float = 3.0, frame_ms: int = 30,
-                 start_ms: int = 250, end_ms: int = 900):
+    def __init__(self, sensitivity: float = 1.8, frame_ms: int = 30,
+                 start_ms: int = 180, end_ms: int = 800):
         self.sensitivity = sensitivity
         self.start_needed = max(1, start_ms // frame_ms)
         self.end_needed = max(1, end_ms // frame_ms)
@@ -747,7 +748,7 @@ class VoiceActivityDetector:
         return "speech"
 
 
-def always_listen_loop(on_utterance, sensitivity: float = 3.0, wake_word: str = "") -> None:
+def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = "") -> None:
     """Listen continuously; transcribe each detected utterance. Ctrl-C quits.
 
     In wake word mode, commands must start with the wake word (e.g. 'Mac, ...')
@@ -778,6 +779,12 @@ def always_listen_loop(on_utterance, sensitivity: float = 3.0, wake_word: str = 
                 with sd.RawInputStream(samplerate=16000, channels=1, dtype="int16",
                                        blocksize=frame_len,
                                        device=idx) as stream:
+                    # Drain startup frames (chime echo / stream stabilization)
+                    for _ in range(12):
+                        try:
+                            stream.read(frame_len)
+                        except Exception:
+                            break
                     while True:
                         try:
                             data, _ = stream.read(frame_len)
