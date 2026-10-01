@@ -255,8 +255,26 @@ EOF
     "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" stop
     ;;
 
+  clips-web)
+    echo "==> Starting Screen Critic Highlights Gallery Web Server on port 8765..."
+    echo "    Open in your browser: http://localhost:8765"
+    "$PYTHON_BIN" "$REPO_DIR/gallery_server.py"
+    ;;
+
+  clips-dir)
+    CLIPS_PATH="$HOME/.config/free-voice/clips"
+    mkdir -p "$CLIPS_PATH"
+    echo "==> Opening Highlights folder in Finder: $CLIPS_PATH"
+    open "$CLIPS_PATH"
+    ;;
+
+  clips-clean)
+    echo "==> Cleaning up clips older than 2 days..."
+    "$PYTHON_BIN" -c "from gallery_server import cleanup_old_clips; cleanup_old_clips(2.0); print('Done.')"
+    ;;
+
   *)
-    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall|radar-install|radar-run|radar-report|radar-status|radar-uninstall|roast|roast-now|roast-theme <theme>|roast-pos <pos>|roast-stop}"
+    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall|radar-install|radar-run|radar-report|radar-status|radar-uninstall|roast|roast-now|roast-theme <theme>|roast-pos <pos>|roast-stop|clips-web|clips-dir|clips-clean}"
     exit 1
     ;;
 esac

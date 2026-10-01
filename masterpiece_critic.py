@@ -303,6 +303,57 @@ def run_on_main(fn):
     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(fn)
 
 
+CLIPS_DIR = os.path.expanduser("~/.config/free-voice/clips")
+
+def cleanup_old_clips(max_age_days: float = 2.0):
+    """Prunes clips older than 2 days."""
+    if not os.path.exists(CLIPS_DIR):
+        return
+    cutoff = time.time() - (max_age_days * 86400.0)
+    for fname in os.listdir(CLIPS_DIR):
+        fpath = os.path.join(CLIPS_DIR, fname)
+        if os.path.isfile(fpath) and fname.endswith((".mp4", ".mov", ".json")):
+            try:
+                if os.path.getmtime(fpath) < cutoff:
+                    os.remove(fpath)
+            except Exception:
+                pass
+
+def record_clip_async(char_name: str, theme_name: str, duration: int = 7):
+    """Records video clip of screen while companion talks, muxing audio if available."""
+    def worker():
+        try:
+            os.makedirs(CLIPS_DIR, exist_ok=True)
+            cleanup_old_clips(max_age_days=2.0)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            clip_path = os.path.join(CLIPS_DIR, f"clip_{timestamp}_{theme_name}_{char_name}.mp4")
+            temp_vid = f"/tmp/screencap_{timestamp}.mp4"
+            subprocess.run(["screencapture", "-V", str(duration), temp_vid], check=True, timeout=duration + 4)
+            if os.path.exists(temp_vid):
+                audio_wav = "/tmp/critic_riff.wav"
+                if os.path.exists(audio_wav) and os.path.exists("/opt/homebrew/bin/ffmpeg"):
+                    subprocess.run([
+                        "/opt/homebrew/bin/ffmpeg", "-y",
+                        "-i", temp_vid,
+                        "-i", audio_wav,
+                        "-c:v", "copy",
+                        "-c:a", "aac",
+                        "-shortest",
+                        clip_path
+                    ], check=True, timeout=8, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    try:
+                        os.remove(temp_vid)
+                    except Exception:
+                        pass
+                else:
+                    os.rename(temp_vid, clip_path)
+                print(f"[Critic] Highlight clip saved: {clip_path}")
+        except Exception as e:
+            print(f"[Critic] Clip recording note: {e}")
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
 import objc
 
 class CompanionView(AppKit.NSView):
@@ -531,6 +582,9 @@ class CriticOverlayController(NSObject):
             self.is_speaking = True
             app, title = get_active_window_info()
             char, riff = generate_critic_riff(self.active_theme, app, title)
+
+            # Start video clip recording during speech
+            record_clip_async(char["name"], self.active_theme, duration=7)
 
             # Switch to point/gesture pose
             run_on_main(lambda: self.view.set_pose("point"))
