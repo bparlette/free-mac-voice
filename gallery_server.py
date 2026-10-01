@@ -232,6 +232,28 @@ class GalleryHandler(SimpleHTTPRequestHandler):
             self.wfile.write(b'{"status": "ok"}')
             return
 
+        # API: JSON list of clips
+        if parsed.path == "/api/clips":
+            os.makedirs(CLIPS_DIR, exist_ok=True)
+            files = [f for f in os.listdir(CLIPS_DIR) if f.endswith((".mp4", ".mov"))]
+            files.sort(key=lambda f: os.path.getmtime(os.path.join(CLIPS_DIR, f)), reverse=True)
+            clips_meta = []
+            for fname in files:
+                fpath = os.path.join(CLIPS_DIR, fname)
+                mtime = os.path.getmtime(fpath)
+                clips_meta.append({
+                    "filename": fname,
+                    "url": f"/{urllib.parse.quote(fname)}",
+                    "timestamp": mtime,
+                    "date": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "size_bytes": os.path.getsize(fpath)
+                })
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"clips": clips_meta}).encode("utf-8"))
+            return
+
         # Main Gallery Page
         if parsed.path in ["/", "/index.html"]:
             os.makedirs(CLIPS_DIR, exist_ok=True)

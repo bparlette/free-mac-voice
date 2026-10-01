@@ -360,16 +360,18 @@ class CompanionView(AppKit.NSView):
     def initWithFrame_(self, frame):
         self = objc.super(CompanionView, self).initWithFrame_(frame)
         self.theme_key = "couch_duo"
-        self.idle_image = None
-        self.point_image = None
-        self.current_image = None
+        self.base_image = None
+        self.head_image = None
+        self.cat_image = None
+
+        self.head_offset_x = 0.0
+        self.head_offset_y = 0.0
+        self.cat_offset_x = 0.0
+        self.cat_offset_y = 0.0
 
         self.speaker_tag = "🎮 LEO"
-        self.subtitle_text = ""
         self.accent_rgb = (0.20, 0.75, 1.00)
         self.is_speaking = False
-        self.show_subtitle = False
-        self.bob_offset = 0.0
 
         self.load_theme(self.theme_key)
         return self
@@ -377,46 +379,39 @@ class CompanionView(AppKit.NSView):
     def load_theme(self, theme_key):
         self.theme_key = theme_key
         theme = THEMES.get(theme_key, THEMES["couch_duo"])
-        idle_p = theme.get("idle_sprite")
-        point_p = theme.get("point_sprite", idle_p)
 
-        if os.path.exists(idle_p):
-            self.idle_image = AppKit.NSImage.alloc().initWithContentsOfFile_(idle_p)
-        if os.path.exists(point_p):
-            self.point_image = AppKit.NSImage.alloc().initWithContentsOfFile_(point_p)
+        # Check for layered rig assets
+        rig_dir = os.path.join(ASSETS_DIR, "couch_duo")
+        if theme_key == "couch_duo" and os.path.exists(os.path.join(rig_dir, "base.png")):
+            self.base_image = AppKit.NSImage.alloc().initWithContentsOfFile_(os.path.join(rig_dir, "base.png"))
+            self.head_image = AppKit.NSImage.alloc().initWithContentsOfFile_(os.path.join(rig_dir, "head.png"))
+            self.cat_image = AppKit.NSImage.alloc().initWithContentsOfFile_(os.path.join(rig_dir, "cat.png"))
         else:
-            self.point_image = self.idle_image
+            idle_p = theme.get("idle_sprite")
+            if os.path.exists(idle_p):
+                self.base_image = AppKit.NSImage.alloc().initWithContentsOfFile_(idle_p)
+            self.head_image = None
+            self.cat_image = None
 
-        self.current_image = self.idle_image
         char = theme["characters"][0]
         self.speaker_tag = char["tag"]
         self.accent_rgb = char["accent_rgb"]
         self.setNeedsDisplay_(True)
 
-    def set_pose(self, pose: str):
-        if pose == "point" and self.point_image:
-            self.current_image = self.point_image
-        else:
-            self.current_image = self.idle_image
+    def set_articulation(self, head_x, head_y, cat_x, cat_y):
+        self.head_offset_x = head_x
+        self.head_offset_y = head_y
+        self.cat_offset_x = cat_x
+        self.cat_offset_y = cat_y
         self.setNeedsDisplay_(True)
 
-    def update_riff(self, char_dict, text):
+    def update_riff(self, char_dict, text=None):
         self.speaker_tag = char_dict["tag"]
         self.accent_rgb = char_dict["accent_rgb"]
-        self.subtitle_text = text
-        self.show_subtitle = True
         self.setNeedsDisplay_(True)
 
-    def set_speaking(self, speaking):
-        self.is_speaking = speaking
-        if not speaking:
-            # Keep subtitle showing for a moment or hide
-            pass
-        self.setNeedsDisplay_(True)
-
-    def set_bob(self, offset):
-        self.bob_offset = offset
-        self.setNeedsDisplay_(True)
+    def set_pose(self, pose_name="idle"):
+        pass  # Preserved for API compatibility; pose swapping replaced by smooth skeletal articulation
 
     def drawRect_(self, rect):
         AppKit.NSColor.clearColor().set()
@@ -425,53 +420,75 @@ class CompanionView(AppKit.NSView):
         w = rect.size.width
         h = rect.size.height
 
-        # Draw Character Sprite anchored 100% flush at bottom-left with 3D Depth & Shadows
-        img = self.current_image or self.idle_image
-        if img:
-            aspect = img.size().width / max(1.0, img.size().height)
-            # Give headroom for shadow to cast upward & rightward
-            img_h = min(h - 22.0, (w - 28.0) / aspect)
-            img_w = img_h * aspect
+        img = self.base_image
+        if not img:
+            return
 
-            # 100% flush to bottom-left corner: zero margin
-            img_x = 0.0
-            img_y = max(0.0, self.bob_offset)
+        aspect = img.size().width / max(1.0, img.size().height)
+        img_h = min(h - 22.0, (w - 28.0) / aspect)
+        img_w = img_h * aspect
 
-            dest_rect = AppKit.NSMakeRect(img_x, img_y, img_w, img_h)
-            src_rect = AppKit.NSMakeRect(0, 0, img.size().width, img.size().height)
+        # THE COUCH IS 100% FLUSH AND ROCK-SOLID (NEVER BOUNCES)
+        img_x = 0.0
+        img_y = 0.0
 
-            ctx = AppKit.NSGraphicsContext.currentContext()
+        dest_rect = AppKit.NSMakeRect(img_x, img_y, img_w, img_h)
+        src_rect = AppKit.NSMakeRect(0, 0, img.size().width, img.size().height)
 
-            # 1. Deep 3D Ambient Occlusion & Drop Shadow
-            depth_shadow = AppKit.NSShadow.alloc().init()
-            depth_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.0, 0.0, 0.0, 0.90))
-            depth_shadow.setShadowOffset_(AppKit.NSMakeSize(8.0, 10.0))
-            depth_shadow.setShadowBlurRadius_(22.0)
+        ctx = AppKit.NSGraphicsContext.currentContext()
 
-            ctx.saveGraphicsState()
-            depth_shadow.set()
-            img.drawInRect_fromRect_operation_fraction_(
-                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+        # 1. 3D Drop Shadow & Ambient Occlusion behind the entire scene
+        depth_shadow = AppKit.NSShadow.alloc().init()
+        depth_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.0, 0.0, 0.0, 0.90))
+        depth_shadow.setShadowOffset_(AppKit.NSMakeSize(8.0, 10.0))
+        depth_shadow.setShadowBlurRadius_(22.0)
+
+        # 2. Subtle Cinematic Rim Lighting / Accent Glow
+        r, g, b = self.accent_rgb
+        glow_shadow = AppKit.NSShadow.alloc().init()
+        glow_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 0.40))
+        glow_shadow.setShadowOffset_(AppKit.NSMakeSize(0.0, 4.0))
+        glow_shadow.setShadowBlurRadius_(14.0)
+
+        # Draw Base Layer (Couch + Body) with shadows — couch stays grounded
+        ctx.saveGraphicsState()
+        depth_shadow.set()
+        img.drawInRect_fromRect_operation_fraction_(
+            dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+        )
+        ctx.restoreGraphicsState()
+
+        ctx.saveGraphicsState()
+        glow_shadow.set()
+        img.drawInRect_fromRect_operation_fraction_(
+            dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 0.50
+        )
+        ctx.restoreGraphicsState()
+
+        # Crisp Base Foreground Pass (Couch + Torso)
+        img.drawInRect_fromRect_operation_fraction_(
+            dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+        )
+
+        # Draw Articulated Head (Nods and tilts ONLY on head — couch never moves)
+        scale_x = img_w / img.size().width
+        scale_y = img_h / img.size().height
+
+        if self.head_image:
+            hx = img_x + (self.head_offset_x * scale_x)
+            hy = img_y + (self.head_offset_y * scale_y)
+            head_dest = AppKit.NSMakeRect(hx, hy, img_w, img_h)
+            self.head_image.drawInRect_fromRect_operation_fraction_(
+                head_dest, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
             )
-            ctx.restoreGraphicsState()
 
-            # 2. Subtle Cinematic Rim Lighting / Accent Glow
-            r, g, b = self.accent_rgb
-            glow_shadow = AppKit.NSShadow.alloc().init()
-            glow_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 0.40))
-            glow_shadow.setShadowOffset_(AppKit.NSMakeSize(0.0, 4.0))
-            glow_shadow.setShadowBlurRadius_(14.0)
-
-            ctx.saveGraphicsState()
-            glow_shadow.set()
-            img.drawInRect_fromRect_operation_fraction_(
-                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 0.50
-            )
-            ctx.restoreGraphicsState()
-
-            # 3. Crisp Foreground Character Illustration Pass
-            img.drawInRect_fromRect_operation_fraction_(
-                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+        # Draw Articulated Cat (Breathes and turns independently)
+        if self.cat_image:
+            cx = img_x + (self.cat_offset_x * scale_x)
+            cy = img_y + (self.cat_offset_y * scale_y)
+            cat_dest = AppKit.NSMakeRect(cx, cy, img_w, img_h)
+            self.cat_image.drawInRect_fromRect_operation_fraction_(
+                cat_dest, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
             )
 
 
@@ -483,7 +500,7 @@ class CriticOverlayController(NSObject):
         self.running = True
         self.active_theme = "couch_duo"
         self.active_position = "bottom_left"
-        self.is_speaking = False
+        self.speaking_character = None
         return self
 
     def load_config(self):
@@ -575,71 +592,67 @@ class CriticOverlayController(NSObject):
             run_on_main(lambda: self.view.load_theme(theme_key))
 
     def trigger_riff(self):
-        if self.is_speaking:
+        if self.speaking_character is not None:
             return
 
         def worker():
-            self.is_speaking = True
             app, title = get_active_window_info()
             char, riff = generate_critic_riff(self.active_theme, app, title)
+            char_name = char["name"]
+            self.speaking_character = char_name
 
             # Start video clip recording during speech
-            record_clip_async(char["name"], self.active_theme, duration=7)
+            record_clip_async(char_name, self.active_theme, duration=7)
 
-            # Switch to point/gesture pose
-            run_on_main(lambda: self.view.set_pose("point"))
-            run_on_main(lambda: self.view.update_riff(char, riff))
-            run_on_main(lambda: self.view.set_speaking(True))
-
-            # Speech cadence bobbing
-            stop_bob = threading.Event()
-            def bob_loop():
-                start_t = time.time()
-                while not stop_bob.is_set():
-                    t = time.time() - start_t
-                    offset = math.sin(t * 12.0) * 3.5
-                    run_on_main(lambda o=offset: self.view.set_bob(o))
-                    time.sleep(0.04)
-                run_on_main(lambda: self.view.set_bob(0.0))
-
-            t = threading.Thread(target=bob_loop, daemon=True)
-            t.start()
+            # Update accent lighting
+            run_on_main(lambda: self.view.update_riff(char))
 
             speak_voice(char["voice"], riff)
 
-            stop_bob.set()
-            run_on_main(lambda: self.view.set_speaking(False))
-            time.sleep(1.2)  # Pause before returning to idle
-            run_on_main(lambda: self.view.set_pose("idle"))
-            self.is_speaking = False
+            self.speaking_character = None
 
         threading.Thread(target=worker, daemon=True).start()
 
     def start_animation_and_riff_loop(self):
-        def idle_anim_loop():
-            """Smooth continuous breathing micro-animation (30 FPS)."""
+        def anim_loop():
+            """High-fidelity 60 FPS skeletal articulation loop."""
             start_t = time.time()
-            last_curious_glance = time.time()
+            glance_start = 0.0
 
             while self.running:
-                if not self.is_speaking:
-                    now = time.time()
-                    t = now - start_t
-                    # Subtle breathing undulation
-                    breath = math.sin(t * 2.2) * 1.5
-                    run_on_main(lambda b=breath: self.view.set_bob(b))
+                now = time.time()
+                t = now - start_t
 
-                    # Occasional idle gesture (glance & point) every 25 seconds
-                    if now - last_curious_glance > 26.0:
-                        last_curious_glance = now
-                        if self.active_theme == "couch_duo":
-                            run_on_main(lambda: self.view.set_pose("point"))
-                            time.sleep(2.0)
-                            run_on_main(lambda: self.view.set_pose("idle"))
+                if self.speaking_character == "Leo":
+                    # Leo speech: natural head nodding & conversational tilt (couch does NOT move)
+                    hx = math.sin(t * 4.5) * 1.2
+                    hy = math.sin(t * 10.0) * 2.5
+                    cx = 0.0
+                    cy = math.sin(t * 2.0) * 0.4
+                elif self.speaking_character in ["Cleo", "Cat"]:
+                    # Cleo speech: cat bobs/perks up, Leo turns head towards Cleo to listen
+                    hx = 2.5
+                    hy = 0.5
+                    cx = 0.0
+                    cy = math.sin(t * 9.0) * 2.2
+                else:
+                    # Idle breathing & subtle ambient glances (couch is 100% stationary)
+                    hy = math.sin(t * 1.8) * 0.7
+                    cy = math.sin(t * 1.6 + 1.0) * 0.5
+                    hx = 0.0
+                    cx = 0.0
 
-                time.sleep(0.033)
+                    # Periodic ambient glance towards each other every 18 seconds
+                    cycle = t % 18.0
+                    if cycle < 2.5:
+                        # Smooth glide in and out
+                        glance_factor = math.sin((cycle / 2.5) * math.pi)
+                        hx = glance_factor * 2.0
 
-        threading.Thread(target=idle_anim_loop, daemon=True).start()
+                run_on_main(lambda x=hx, y=hy, cx=cx, cy=cy: self.view.set_articulation(x, y, cx, cy))
+                time.sleep(0.016)  # 60 FPS
+
+        threading.Thread(target=anim_loop, daemon=True).start()
 
         def main_riff_loop():
             # Initial Welcome Greeting
@@ -648,12 +661,10 @@ class CriticOverlayController(NSObject):
             char = next((c for c in theme["characters"] if c["name"] == speaker_name), theme["characters"][0])
 
             run_on_main(lambda: self.view.update_riff(char, intro))
-            run_on_main(lambda: self.view.set_pose("point"))
-            self.is_speaking = True
+            self.speaking_character = char["name"]
             speak_voice(char["voice"], intro)
-            self.is_speaking = False
+            self.speaking_character = None
             time.sleep(1.0)
-            run_on_main(lambda: self.view.set_pose("idle"))
 
             last_riff_time = time.time()
             interval = 24.0  # Roast every 24 seconds
@@ -690,8 +701,9 @@ class CriticOverlayController(NSObject):
             farewell_speaker, farewell = theme["farewell"]
             char = next((c for c in theme["characters"] if c["name"] == farewell_speaker), theme["characters"][0])
             run_on_main(lambda: self.view.update_riff(char, farewell))
-            run_on_main(lambda: self.view.set_pose("point"))
+            self.speaking_character = char["name"]
             speak_voice(char["voice"], farewell)
+            self.speaking_character = None
             run_on_main(lambda: AppKit.NSApp().terminate_(None))
 
         threading.Thread(target=main_riff_loop, daemon=True).start()

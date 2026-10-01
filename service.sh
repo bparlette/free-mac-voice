@@ -230,7 +230,7 @@ EOF
 
   roast)
     echo "==> Summoning Screen Critic Overlay (Default: Couch Duo)..."
-    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" &
+    nohup "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" > "$LOG_DIR/critic.log" 2>&1 &
     ;;
 
   roast-now)
