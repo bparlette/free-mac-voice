@@ -2144,7 +2144,7 @@ class TestWakeWord(Base):
         # Stage 1: say "Mac" alone
         handled = fv.handle_command("Mac", require_wake_word=True)
         self.assertTrue(handled)
-        self.assertIn("Yes?", self.said)
+        self.assertIn(fv.VOICE_WAKE_PHRASE, self.said)
         self.assertGreater(fv._wake_window_until, 0.0)
 
         # Stage 2: say command within wake window without repeating "Mac"
@@ -2152,9 +2152,22 @@ class TestWakeWord(Base):
             handled_followup = fv.handle_command("open notes", require_wake_word=True)
             self.assertTrue(handled_followup)
             mock_open.assert_called_once_with("notes")
-            self.assertEqual(fv._wake_window_until, 0.0)
+            # Window stays open for chained commands!
+            self.assertGreater(fv._wake_window_until, 0.0)
 
-        # Stage 3: command after window expired is ignored
+        # Stage 3: say second command in same active window
+        with mock.patch.object(fv, "act_snap_window") as mock_snap:
+            handled_chained = fv.handle_command("snap left", require_wake_word=True)
+            self.assertTrue(handled_chained)
+            mock_snap.assert_called_once_with("left")
+            self.assertGreater(fv._wake_window_until, 0.0)
+
+        # Stage 4: dismiss cleanly closes wake window
+        handled_dismiss = fv.handle_command("that's all", require_wake_word=True)
+        self.assertTrue(handled_dismiss)
+        self.assertEqual(fv._wake_window_until, 0.0)
+
+        # Stage 5: command after window expired is ignored
         fv._wake_window_until = 1.0  # long expired
         with mock.patch.object(fv, "act_open_app") as mock_open:
             handled_expired = fv.handle_command("open notes", require_wake_word=True)
@@ -2184,7 +2197,7 @@ class TestWakeWord(Base):
             fv.VOICE_WAKE_FEEDBACK = "both"
             fv.acknowledge_wake()
             mock_chime.assert_called_with("Tink.aiff")
-            self.assertIn("Yes?", self.said)
+            self.assertIn(fv.VOICE_WAKE_PHRASE, self.said)
 
             # "chime" only
             self.said.clear()
@@ -2200,7 +2213,7 @@ class TestWakeWord(Base):
             fv.VOICE_WAKE_FEEDBACK = "voice"
             fv.acknowledge_wake()
             mock_chime.assert_not_called()
-            self.assertIn("Yes?", self.said)
+            self.assertIn(fv.VOICE_WAKE_PHRASE, self.said)
 
             # "silent"
             self.said.clear()

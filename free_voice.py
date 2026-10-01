@@ -98,7 +98,7 @@ load_env()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny.en")
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
 # Tier 1 (local LLM fallback). Set OLLAMA_TIER1=0 to disable.
 # Default is qwen3-vl:8b — a vision-language model, so one local model covers
 # routing, Q&A, AND screen understanding. 8GB minis: use qwen3-vl:4b instead.
@@ -121,7 +121,8 @@ VOICE_WAKE_WORD = os.environ.get("VOICE_WAKE_WORD", "mac").strip().lower()
 # Wake word feedback style: "both" (chime + "Yes?"), "chime" (chime only), "voice" ("Yes?" only), "silent"
 VOICE_WAKE_FEEDBACK = os.environ.get("VOICE_WAKE_FEEDBACK", "both").strip().lower()
 VOICE_WAKE_CHIME = os.environ.get("VOICE_WAKE_CHIME", "Tink.aiff").strip()
-WAKE_WINDOW_SEC = float(os.environ.get("VOICE_WAKE_WINDOW", "8.0"))
+WAKE_WINDOW_SEC = float(os.environ.get("VOICE_WAKE_WINDOW", "15.0"))
+VOICE_WAKE_PHRASE = os.environ.get("VOICE_WAKE_PHRASE", "what you want").strip()
 _wake_window_until = 0.0
 DRY_RUN = False
 
@@ -132,7 +133,7 @@ def acknowledge_wake() -> None:
     if fb in ("chime", "both"):
         play_chime(VOICE_WAKE_CHIME or "Tink.aiff")
     if fb in ("voice", "both"):
-        say("Yes?")
+        say(VOICE_WAKE_PHRASE or "what you want")
 
 
 _STATE_FILE = os.path.join(tempfile.gettempdir(), "free-voice-state.json")
@@ -177,8 +178,8 @@ def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
     # Greetings can be followed by commas or spaces: "Hey, Mac", "Hello Mac", "Okay, Mac"
     greeting = r"(?:(?:hey|hi|hello|ok|okay|yo)[,\s]+)*"
     if w == "mac":
-        # Handle "mac", "mack", and repeated stutters ("Mac, Mac...")
-        target = r"(?:(?:mac|mack)\b[,\s:!\.-]*)+"
+        # Handle "mac", "mack", and common Whisper phoneme variants ("matt", "max", "mark", "match")
+        target = r"(?:(?:mac|mack|matt|max|mark|match)\b[,\s:!\.-]*)+"
     else:
         target = r"(?:" + re.escape(w) + r"\b[,\s:!\.-]*)+"
 
@@ -192,7 +193,8 @@ def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
 
 
 def log(msg: str) -> None:
-    print(f"[free-voice] {msg}", flush=True)
+    t_str = time.strftime("%H:%M:%S")
+    print(f"[free-voice] {t_str} {msg}", flush=True)
 
 
 # ---------------------------------------------------------------- health tracking
@@ -256,6 +258,13 @@ _kokoro_failed = False
 _tts_cache_dir = os.path.join(tempfile.gettempdir(), "free-voice-tts-cache")
 
 _say_proc = None  # in-flight speech process (say or afplay), so new speech cuts off the old
+
+
+def is_speaking() -> bool:
+    """Return True if TTS audio playback is currently in flight."""
+    global _say_proc
+    return _say_proc is not None and _say_proc.poll() is None
+
 
 # Curated voice catalog for Kokoro
 KOKORO_VOICES: dict[str, tuple[str, str]] = {
@@ -589,7 +598,12 @@ def transcribe(audio) -> str:
 
         log(f"loading whisper model '{WHISPER_MODEL}' (first run downloads it)...")
         _whisper = WhisperModel(WHISPER_MODEL, device="auto", compute_type="int8")
-    segments, _ = _whisper.transcribe(audio, beam_size=1, vad_filter=True)
+    segments, _ = _whisper.transcribe(
+        audio,
+        beam_size=1,
+        vad_filter=True,
+        initial_prompt="Mac, Hey Mac. Draw an ASCII art picture of a heart, cat, flower, rose. Open terminal, type text, click button, scroll, volume, peace.",
+    )
     text = " ".join(s.text for s in segments).strip()
     return text
 
@@ -762,6 +776,9 @@ def always_listen_loop(on_utterance, sensitivity: float = 3.0, wake_word: str = 
                             time.sleep(2)  # cooldown so a flapping device doesn't hot-spin
                             break
                         samples = np.frombuffer(data, dtype=np.int16)
+                        if is_speaking():
+                            capturing = []
+                            continue
                         state = vad.update(samples)
                         if state == "start":
                             capturing = [samples.copy()]
@@ -1207,6 +1224,14 @@ def act_key_code(code: int, using: str = "") -> None:
 
 
 def act_type_text(text: str) -> None:
+    kb = _keyboard()
+    if kb is not None:
+        try:
+            kb.type(text)
+            log(f"typed {len(text)} chars via pynput")
+            return
+        except Exception as e:
+            log(f"pynput typing failed ({e}), falling back to AppleScript")
     applescript(f'tell application "System Events" to keystroke "{esc(text)}"')
     log(f"typed {len(text)} chars")
 
@@ -1539,6 +1564,16 @@ def _mouse():
     return Controller(), Button
 
 
+def _keyboard():
+    """Lazily build a pynput keyboard controller; None when unavailable."""
+    try:
+        from pynput.keyboard import Controller
+        return Controller()
+    except Exception as e:  # noqa: BLE001
+        log(f"keyboard control unavailable: {e}")
+        return None
+
+
 def _click_xy(x: int, y: int, name: str) -> bool:
     """Click at (x, y) coordinates; returns True if successful/dry-run."""
     if DRY_RUN:
@@ -1838,27 +1873,112 @@ def _locate_first(app_name: str, roles: list[str],
     return None
 
 
-def act_mouse_to(name: str) -> None:
-    """Move the cursor onto a named UI element ("move the mouse to the toggle").
+def _screen_dimensions() -> tuple[int, int]:
+    try:
+        from AppKit import NSScreen
+        f = NSScreen.mainScreen().frame()
+        return int(f.size.width), int(f.size.height)
+    except Exception:
+        pass
+    return 1920, 1080
 
-    Accessibility tree first, Apple Vision OCR second, screenshot VLM as fallback.
+
+def _app_window_center(app_name: str, prefer_bottom: bool = False) -> tuple[int, int] | None:
+    """Find the center coordinates of an app window via System Events."""
+    cond = """
+            set w_bottom to (item 2 of pos) + (item 2 of sz)
+            if w_bottom > max_bottom then
+                set max_bottom to w_bottom
+                set best_cx to ((item 1 of pos) + ((item 1 of sz) / 2)) as integer
+                set best_cy to ((item 2 of pos) + ((item 2 of sz) / 2)) as integer
+            end if
+    """ if prefer_bottom else """
+            set best_cx to ((item 1 of pos) + ((item 1 of sz) / 2)) as integer
+            set best_cy to ((item 2 of pos) + ((item 2 of sz) / 2)) as integer
+            exit repeat
+    """
+    script = f'''
+    tell application "System Events" to tell process "{app_name}"
+        if (count of windows) > 0 then
+            set best_cx to 0
+            set best_cy to 0
+            set max_bottom to -99999
+            repeat with w in windows
+                set pos to position of w
+                set sz to size of w
+                {cond}
+            end repeat
+            return (best_cx as text) & "," & (best_cy as text)
+        end if
+    end tell
+    '''
+    try:
+        res = applescript(script)
+        if res and "," in res:
+            parts = [int(p.strip()) for p in res.split(",")]
+            return parts[0], parts[1]
+    except Exception:
+        pass
+    return None
+
+
+def act_mouse_to(name: str) -> None:
+    """Move the cursor onto a screen area, app window, or named UI element.
+
+    Screen edge/region first, application window second, Accessibility tree
+    third, Apple Vision OCR fourth, screenshot VLM as fallback.
     Moves only — it never clicks.
     """
     spoken = name.strip()
     if not spoken:
         say("Move the mouse to what?")
         return
-    safe = _extract_target_name(spoken)
-    loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], safe)
-    if loc is None and safe != spoken:
-        loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], spoken)
+
+    lower = spoken.lower().strip()
+    loc = None
+
+    # 1. Screen positions / edges
+    if lower in ("bottom", "bottom of the screen", "bottom edge", "bottom center", "the bottom"):
+        w, h = _screen_dimensions()
+        loc = (w // 2, h - 50)
+    elif lower in ("top", "top of the screen", "top edge", "top center", "the top"):
+        w, h = _screen_dimensions()
+        loc = (w // 2, 50)
+    elif lower in ("center", "middle", "center of the screen", "middle of the screen"):
+        w, h = _screen_dimensions()
+        loc = (w // 2, h // 2)
+    elif lower in ("left", "left side", "left edge"):
+        w, h = _screen_dimensions()
+        loc = (50, h // 2)
+    elif lower in ("right", "right side", "right edge"):
+        w, h = _screen_dimensions()
+        loc = (w - 50, h // 2)
+
+    # 2. Application window (e.g. "terminal", "bottom terminal", "safari")
     if loc is None:
-        ocr_res = ocr_locate(safe)
-        if ocr_res == "ambiguous":
-            return
-        loc = ocr_res
+        prefer_bot = "bottom" in lower or "lower" in lower
+        for token in lower.split():
+            clean_tok = token.strip(" ,.-")
+            matched_app = resolve_app(clean_tok)
+            if matched_app:
+                loc = _app_window_center(matched_app, prefer_bottom=prefer_bot)
+                if loc:
+                    break
+
+    # 3. Accessibility tree, OCR, Vision
     if loc is None:
-        loc = vision_locate(safe)
+        safe = _extract_target_name(spoken)
+        loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], safe)
+        if loc is None and safe != spoken:
+            loc = _locate_first(frontmost_app(), ["button", "link", "checkbox"], spoken)
+        if loc is None:
+            ocr_res = ocr_locate(safe)
+            if ocr_res == "ambiguous":
+                return
+            loc = ocr_res
+        if loc is None:
+            loc = vision_locate(safe)
+
     if loc is None:
         say(f"I couldn't find {spoken} on screen")
         return
@@ -2699,6 +2819,8 @@ def act_draw_ascii(subject: str) -> None:
     """'draw ascii flower' — ASCII art rendered and opened in the browser."""
     subject = subject.strip()
     clean_subj = re.sub(r"^(a|an|the)\s+", "", subject, flags=re.I).strip()
+    clean_subj = re.sub(r"^(?:picture|image|drawing)\s+of\s+", "", clean_subj, flags=re.I).strip()
+    clean_subj = re.sub(r"^(a|an|the)\s+", "", clean_subj, flags=re.I).strip()
     clean_subj = re.sub(r"^ascii\s+", "", clean_subj, flags=re.I).strip() or clean_subj
     say(f"Drawing ASCII {clean_subj}")
 
@@ -3186,6 +3308,7 @@ _p(r"^what(?:'s| is) (?:my|the) voice\??$", "get_voice", True)
 _p(r"^(calculate|what is|what's) (.+)$", "calculate")
 # --- meta
 _p(r"^(help|what can you say|list commands|commands)$", "help", True)
+_p(r"^(?:never\s*mind|nevermind|stop\s*listening|that'?s\s*all|cancel|dismiss|done|peace|peace\s*out)$", "dismiss", True)
 # --- user shortcuts & voice macros (saved locally in ~/.config/free-voice/macros.json, survives updates)
 _p(r"^when i say (.+?)(?:,\s*|\s+(?:then|do|run)\s+)(.+)$", "macro_add")
 _p(r"^(?:add|create) shortcut (.+?)(?: runs| to| that runs) (.+)$", "macro_add")
@@ -3197,7 +3320,8 @@ _p(r"^(?:delete|remove|forget) (?:shortcut|macro) (.+)$", "macro_delete")
 _p(r"^(turn|make|convert)( my| the)? screen into ascii( art)?$", "ascii_art", True)
 _p(r"^ascii art( of my screen)?$", "ascii_art", True)
 _p(r"^(?:draw(?: me)? ascii|ascii draw) (.+)$", "draw_ascii")
-_p(r"^draw( me)?( a| an| the)? (.+) in ascii$", "draw_ascii")
+_p(r"^(?:(?:draw|make|create|generate|show|render|john|call|drawn)\s+)?(?:me\s+)?(?:an?\s+)?(?:picture\s+of\s+an?\s+)?(?:ascii|askey)\s*(?:art|picture|drawing|image)?(?:\s+(?:of|for))?\s*(.+)$", "draw_ascii")
+_p(r"^(?:draw|make|create|generate|show|render)(?: me)?(?: a| an| the)? (.+?)(?: in| as) ascii(?: art)?$", "draw_ascii")
 _p(r"^draw( me)?( a| an| the)? (.+)$", "draw_svg")
 # --- easter eggs
 _p(r"^roll( a)? (die|dice)$", "roll_dice", True)
@@ -3711,6 +3835,11 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             cmds = sorted({n for _, n, _ in _PATTERNS})
             print("Commands: " + ", ".join(cmds))
             say("I printed the command list in the terminal")
+        elif name == "dismiss":
+            global _wake_window_until
+            _wake_window_until = 0.0
+            log("wake window closed by request")
+            say("peace")
         elif name == "dictate_start":
             act_dictate_start()
         elif name == "macro_add":
@@ -4194,6 +4323,27 @@ def prewarm_ollama() -> None:
     threading.Thread(target=_load, daemon=True, name="ollama-prewarm").start()
 
 
+def prewarm_speech() -> None:
+    """Load Whisper and Kokoro models into memory at startup in background."""
+    if DRY_RUN:
+        return
+
+    def _load() -> None:
+        try:
+            import numpy as np
+            transcribe(np.zeros(16000, dtype=np.float32))
+            log(f"prewarmed whisper ({WHISPER_MODEL})")
+        except Exception:
+            pass
+        try:
+            _get_kokoro()
+        except Exception:
+            pass
+
+    threading.Thread(target=_load, daemon=True, name="speech-prewarm").start()
+
+
+
 def gemini_answer(prompt: str) -> bool:
     """Answer a free-form question with Gemini's free API tier, spoken aloud.
 
@@ -4278,13 +4428,14 @@ def handle_command(text: str, confirm_audio_fn=None,
                     update_state("wake_heard", msg="listening for command")
                     acknowledge_wake()
                     return True
-                # Wake word + command in one sentence
-                _wake_window_until = 0.0
+                # Wake word + command in one sentence: execute immediately & keep window open for follow-ups
+                _wake_window_until = now + WAKE_WINDOW_SEC
                 t = cmd
             elif now < _wake_window_until:
-                # Arrived within active wake window (two-stage trigger)
-                _wake_window_until = 0.0
-                log(f"within wake window: {t!r}")
+                # Arrived within active wake window: execute immediately & refresh window for follow-ups
+                _wake_window_until = now + WAKE_WINDOW_SEC
+                rem = max(0.0, _wake_window_until - now)
+                log(f"within wake window ({rem:.1f}s remaining): {t!r}")
             else:
                 log(f"ignored (no wake word {VOICE_WAKE_WORD!r}): {t!r}")
                 return False
@@ -4477,6 +4628,7 @@ def main() -> None:
         return
     log(f"microphone: {describe_input_device()}")
     prewarm_ollama()  # load the local model now, not on the first command
+    prewarm_speech()  # load Whisper and Kokoro so first interaction is instant
     if args.once:
         usable, _ = _usable_input()
         if not usable:
