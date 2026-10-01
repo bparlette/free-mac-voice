@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Mac Voice Control — Voice Showcase</title>
+<meta name="description" content="Audition on-device neural voices for Free Mac Voice Control. Powered by Kokoro-82M running 100% locally on Apple Silicon.">
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --card-bg: rgba(255, 255, 255, 0.05);
+    --card-border: rgba(255, 255, 255, 0.1);
+    --text: #f5f5f7;
+    --text-dim: #86868b;
+    --accent: #0071e3;
+    --accent-hover: #0077ed;
+    --accent-glow: rgba(0, 113, 227, 0.3);
+    --pill-bg: rgba(255, 255, 255, 0.08);
+    --pill-border: rgba(255, 255, 255, 0.15);
+    --playing-border: #0071e3;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fbfbfd;
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.1);
+      --text: #1d1d1f;
+      --text-dim: #6e6e73;
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --accent-glow: rgba(0, 113, 227, 0.2);
+      --pill-bg: #f5f5f7;
+      --pill-border: rgba(0, 0, 0, 0.08);
+      --playing-border: #0071e3;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 40px 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 980px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 48px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 999px;
+    background: var(--pill-bg); border: 1px solid var(--pill-border);
+    font-size: 0.85rem; font-weight: 500; color: var(--accent); margin-bottom: 16px;
+  }
+  h1 { font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
+  .subtitle { font-size: 1.15rem; color: var(--text-dim); max-width: 640px; margin: 0 auto 24px; }
+  .nav-links { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: 12px;
+    font-size: 0.95rem; font-weight: 600; text-decoration: none;
+    transition: all 0.2s ease; cursor: pointer; border: none;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 4px 16px var(--accent-glow); }
+  .btn-secondary { background: var(--pill-bg); color: var(--text); border: 1px solid var(--pill-border); }
+  .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+  
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 48px;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .card:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.25); }
+  .card.playing { border-color: var(--playing-border); box-shadow: 0 8px 24px var(--accent-glow); }
+  
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .voice-title { font-size: 1.4rem; font-weight: 700; }
+  .voice-tag {
+    font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(0, 113, 227, 0.15); color: #2997ff; border: 1px solid rgba(0, 113, 227, 0.3);
+  }
+  .voice-tag.rec { background: rgba(52, 199, 89, 0.15); color: #34c759; border-color: rgba(52, 199, 89, 0.3); }
+  
+  .voice-desc { color: var(--text-dim); font-size: 0.92rem; margin-bottom: 16px; }
+  .quote-box {
+    background: var(--pill-bg); border-radius: 12px; padding: 12px 14px;
+    font-size: 0.9rem; font-style: italic; color: var(--text);
+    margin-bottom: 20px; border-left: 3px solid var(--accent);
+  }
+  
+  .player-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .play-btn {
+    width: 46px; height: 46px; border-radius: 50%;
+    background: var(--accent); color: white; border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: transform 0.15s ease, background 0.15s ease;
+    flex-shrink: 0;
+  }
+  .play-btn:hover { transform: scale(1.06); background: var(--accent-hover); }
+  .play-btn svg { width: 20px; height: 20px; fill: currentColor; }
+  
+  .waveform-container { flex-grow: 1; display: flex; align-items: center; gap: 3px; height: 32px; }
+  .bar {
+    width: 3px; border-radius: 2px; background: var(--card-border);
+    height: 30%; transition: height 0.2s ease, background-color 0.2s ease;
+  }
+  .card.playing .bar {
+    background: var(--accent);
+    animation: wave 1s ease-in-out infinite alternate;
+  }
+  @keyframes wave {
+    0% { height: 20%; }
+    50% { height: 90%; }
+    100% { height: 40%; }
+  }
+  .time-display { font-size: 0.8rem; font-family: ui-monospace, monospace; color: var(--text-dim); width: 36px; text-align: right; }
+  
+  .voice-cmd {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--pill-bg); border: 1px solid var(--pill-border);
+    border-radius: 10px; padding: 8px 12px; font-size: 0.85rem;
+  }
+  .voice-cmd code { font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+  .copy-btn {
+    background: none; border: none; color: var(--accent); cursor: pointer;
+    font-size: 0.8rem; font-weight: 600; padding: 2px 6px; border-radius: 6px;
+  }
+  .copy-btn:hover { background: rgba(0, 113, 227, 0.1); }
+
+  .callout {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 20px; padding: 32px; text-align: center; margin-top: 20px;
+  }
+  .callout h2 { font-size: 1.5rem; margin-bottom: 12px; }
+  .callout p { color: var(--text-dim); max-width: 600px; margin: 0 auto 20px; font-size: 0.95rem; }
+  .terminal-box {
+    display: inline-block; background: #000; border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px; padding: 12px 20px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.9rem; color: #34c759; text-align: left; max-width: 100%; overflow-x: auto;
+  }
+  footer { text-align: center; margin-top: 60px; color: var(--text-dim); font-size: 0.85rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="badge">🎙️ Free Mac Voice Control</div>
+    <h1>Local Neural Voice Auditions</h1>
+    <p class="subtitle">Experience ElevenLabs-tier natural human speech running 100% locally on your Mac. Powered by Kokoro-82M with zero cloud fees, zero subscriptions, and zero latency.</p>
+    <div class="nav-links">
+      <a href="https://github.com/bparlette/free-mac-voice" class="btn btn-secondary">
+        <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        GitHub Repository
+      </a>
+      <a href="#quickstart" class="btn btn-primary">Get Started Free</a>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- Fenrir -->
+    <div class="card" id="card-fenrir">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">Fenrir</div>
+          <span class="voice-tag">Default</span>
+        </div>
+        <div class="voice-desc">Rich Cinematic American Male • Confident & articulate tone</div>
+        <div class="quote-box">"Fenrir. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('fenrir')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-fenrir">
+            <div class="bar" style="height:35%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:45%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:55%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:35%"></div><div class="bar" style="height:65%"></div><div class="bar" style="height:80%"></div><div class="bar" style="height:40%"></div>
+          </div>
+          <span class="time-display" id="time-fenrir">0:02</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice Fenrir”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice Fenrir', this)">Copy</button>
+        </div>
+        <audio id="audio-fenrir" preload="none">
+          <source src="audio_samples/fenrir_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/fenrir_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+
+    <!-- Heart -->
+    <div class="card" id="card-heart">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">Heart</div>
+          <span class="voice-tag rec">Recommended</span>
+        </div>
+        <div class="voice-desc">Warm American Female • Natural, empathetic & engaging</div>
+        <div class="quote-box">"Heart. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('heart')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-heart">
+            <div class="bar" style="height:45%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:90%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:80%"></div><div class="bar" style="height:50%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:65%"></div><div class="bar" style="height:40%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:55%"></div>
+          </div>
+          <span class="time-display" id="time-heart">0:02</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice Heart”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice Heart', this)">Copy</button>
+        </div>
+        <audio id="audio-heart" preload="none">
+          <source src="audio_samples/heart_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/heart_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+
+    <!-- Adam -->
+    <div class="card" id="card-adam">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">Adam</div>
+          <span class="voice-tag">Curated</span>
+        </div>
+        <div class="voice-desc">Deep American Male • Resonant, grounded & direct</div>
+        <div class="quote-box">"Adam. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('adam')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-adam">
+            <div class="bar" style="height:50%"></div><div class="bar" style="height:80%"></div><div class="bar" style="height:65%"></div><div class="bar" style="height:90%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:45%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:40%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:60%"></div>
+          </div>
+          <span class="time-display" id="time-adam">0:02</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice Adam”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice Adam', this)">Copy</button>
+        </div>
+        <audio id="audio-adam" preload="none">
+          <source src="audio_samples/adam_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/adam_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+
+    <!-- Sarah -->
+    <div class="card" id="card-sarah">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">Sarah</div>
+          <span class="voice-tag">Curated</span>
+        </div>
+        <div class="voice-desc">Clear American Female • Professional, sharp & crisp</div>
+        <div class="quote-box">"Sarah. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('sarah')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-sarah">
+            <div class="bar" style="height:40%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:55%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:45%"></div><div class="bar" style="height:90%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:50%"></div><div class="bar" style="height:80%"></div>
+          </div>
+          <span class="time-display" id="time-sarah">0:02</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice Sarah”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice Sarah', this)">Copy</button>
+        </div>
+        <audio id="audio-sarah" preload="none">
+          <source src="audio_samples/sarah_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/sarah_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+
+    <!-- Nicole -->
+    <div class="card" id="card-nicole">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">Nicole</div>
+          <span class="voice-tag">Curated</span>
+        </div>
+        <div class="voice-desc">Friendly American Female • Upbeat, approachable & vibrant</div>
+        <div class="quote-box">"Nicole. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('nicole')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-nicole">
+            <div class="bar" style="height:45%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:65%"></div><div class="bar" style="height:90%"></div><div class="bar" style="height:50%"></div><div class="bar" style="height:80%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:40%"></div><div class="bar" style="height:85%"></div>
+          </div>
+          <span class="time-display" id="time-nicole">0:04</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice Nicole”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice Nicole', this)">Copy</button>
+        </div>
+        <audio id="audio-nicole" preload="none">
+          <source src="audio_samples/nicole_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/nicole_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+
+    <!-- George -->
+    <div class="card" id="card-george">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">George</div>
+          <span class="voice-tag">British</span>
+        </div>
+        <div class="voice-desc">Refined British Male • Sophisticated, warm & courteous</div>
+        <div class="quote-box">"George. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('george')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-george">
+            <div class="bar" style="height:50%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:90%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:80%"></div><div class="bar" style="height:45%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:55%"></div><div class="bar" style="height:65%"></div><div class="bar" style="height:40%"></div>
+          </div>
+          <span class="time-display" id="time-george">0:03</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice George”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice George', this)">Copy</button>
+        </div>
+        <audio id="audio-george" preload="none">
+          <source src="audio_samples/george_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/george_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+
+    <!-- Emma -->
+    <div class="card" id="card-emma">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">Emma</div>
+          <span class="voice-tag">British</span>
+        </div>
+        <div class="voice-desc">Crisp British Female • Precise, elegant & intellectual</div>
+        <div class="quote-box">"Emma. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('emma')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-emma">
+            <div class="bar" style="height:40%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:90%"></div><div class="bar" style="height:55%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:45%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:65%"></div><div class="bar" style="height:50%"></div><div class="bar" style="height:75%"></div>
+          </div>
+          <span class="time-display" id="time-emma">0:02</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice Emma”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice Emma', this)">Copy</button>
+        </div>
+        <audio id="audio-emma" preload="none">
+          <source src="audio_samples/emma_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/emma_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+
+    <!-- Michael -->
+    <div class="card" id="card-michael">
+      <div>
+        <div class="card-top">
+          <div class="voice-title">Michael</div>
+          <span class="voice-tag">Curated</span>
+        </div>
+        <div class="voice-desc">Expressive American Male • Dynamic, modern & conversational</div>
+        <div class="quote-box">"Michael. This is what I sound like on your Mac."</div>
+      </div>
+      <div>
+        <div class="player-row">
+          <button class="play-btn" onclick="togglePlay('michael')">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="waveform-container" id="wave-michael">
+            <div class="bar" style="height:55%"></div><div class="bar" style="height:85%"></div><div class="bar" style="height:70%"></div><div class="bar" style="height:95%"></div><div class="bar" style="height:65%"></div><div class="bar" style="height:50%"></div><div class="bar" style="height:80%"></div><div class="bar" style="height:60%"></div><div class="bar" style="height:90%"></div><div class="bar" style="height:75%"></div><div class="bar" style="height:45%"></div><div class="bar" style="height:65%"></div>
+          </div>
+          <span class="time-display" id="time-michael">0:03</span>
+        </div>
+        <div class="voice-cmd">
+          <code>“Mac, use voice Michael”</code>
+          <button class="copy-btn" onclick="copyCmd('use voice Michael', this)">Copy</button>
+        </div>
+        <audio id="audio-michael" preload="none">
+          <source src="audio_samples/michael_sample.mp3" type="audio/mpeg">
+          <source src="audio_samples/michael_sample.wav" type="audio/wav">
+        </audio>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout" id="quickstart">
+    <h2>🚀 Instant One-Line Install on Apple Silicon</h2>
+    <p>Install and start using free voice control with Phonon-2 ASR and Kokoro neural speech in seconds:</p>
+    <div class="terminal-box">git clone https://github.com/bparlette/free-mac-voice.git &amp;&amp; bash free-mac-voice/install.sh</div>
+  </div>
+
+  <footer>
+    <p>Free Mac Voice Control • 100% On-Device • Licensed under MIT • <a href="https://github.com/bparlette/free-mac-voice">View on GitHub</a></p>
+  </footer>
+</div>
+
+<script>
+  let currentAudio = null;
+  let currentCardId = null;
+
+  function togglePlay(id) {
+    const audio = document.getElementById('audio-' + id);
+    const card = document.getElementById('card-' + id);
+    const btn = card.querySelector('.play-btn');
+    const playIcon = btn.querySelector('.icon-play');
+    const pauseIcon = btn.querySelector('.icon-pause');
+
+    if (currentAudio && currentAudio !== audio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      if (currentCardId) {
+        const prevCard = document.getElementById(currentCardId);
+        prevCard.classList.remove('playing');
+        prevCard.querySelector('.icon-play').style.display = 'block';
+        prevCard.querySelector('.icon-pause').style.display = 'none';
+      }
+    }
+
+    if (audio.paused) {
+      audio.play().then(() => {
+        card.classList.add('playing');
+        playIcon.style.display = 'none';
+        pauseIcon.style.display = 'block';
+        currentAudio = audio;
+        currentCardId = 'card-' + id;
+      }).catch(err => {
+        console.error('Audio play error:', err);
+      });
+    } else {
+      audio.pause();
+      card.classList.remove('playing');
+      playIcon.style.display = 'block';
+      pauseIcon.style.display = 'none';
+    }
+
+    audio.onended = () => {
+      card.classList.remove('playing');
+      playIcon.style.display = 'block';
+      pauseIcon.style.display = 'none';
+      currentAudio = null;
+      currentCardId = null;
+    };
+  }
+
+  function copyCmd(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    });
+  }
+</script>
+</body>
+</html>

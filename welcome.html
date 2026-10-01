@@ -91,8 +91,22 @@
   <button id="micBtn">Test my microphone</button>
   <div id="meterWrap" style="display:none">
     <div id="meter"><div id="meterFill"></div></div>
-    <p id="micStatus" class="dim"></p>
   </div>
+</div>
+
+<div class="step">
+  <h2>🗣️ Choose your voice <span class="dim">(Kokoro-82M neural TTS)</span></h2>
+  <p>Your Mac speaks responses in natural human speech. Click to audition the voices:</p>
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin: 12px 0;">
+    <button onclick="playVoice('fenrir')">▶️ Fenrir (Cinematic Male — Default)</button>
+    <button onclick="playVoice('heart')">▶️ Heart (Warm Female — Recommended)</button>
+    <button onclick="playVoice('adam')">▶️ Adam (Deep Male)</button>
+    <button onclick="playVoice('sarah')">▶️ Sarah (Clear Female)</button>
+    <button onclick="playVoice('george')">▶️ George (British Male)</button>
+    <button onclick="playVoice('emma')">▶️ Emma (British Female)</button>
+  </div>
+  <audio id="welcomeAudio" preload="none"></audio>
+  <p class="dim" style="font-size:0.9rem;">To switch anytime by voice: say <b>“Mac, use voice Heart”</b> or <b>“Mac, pick a voice”</b>.</p>
 </div>
 
 <div class="step">
@@ -151,6 +165,16 @@ Full command list: <span class="mono">python3 free_voice.py --list</span></p>
       status.textContent = '⚠️ Mic blocked — allow microphone access in the address bar and try again.';
     });
   });
+
+  window.playVoice = function(name) {
+    var audio = document.getElementById('welcomeAudio');
+    if (!audio) return;
+    audio.src = 'docs/audio_samples/' + name + '_sample.mp3';
+    audio.play().catch(function() {
+      audio.src = 'docs/audio_samples/' + name + '_sample.wav';
+      audio.play();
+    });
+  };
 })();
 </script>
 

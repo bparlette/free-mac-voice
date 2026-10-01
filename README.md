@@ -262,14 +262,25 @@ Whenever the voice engine starts or reloads, it automatically discovers and bind
 - **Update-Proof Persistence:** Your selected voice is saved directly to `~/.config/free-voice/config.json`, surviving software updates and reinstalls.
 - **Instant Fallback:** If offline, running in a minimal container, or if model files are uninitialized, it falls back seamlessly to macOS native `say` without interruption.
 
-#### 🎧 Audio Previews (Listen to Local Synthesis):
-- [🔊 Fenrir Sample (Rich Cinematic American Male — Default)](docs/audio_samples/fenrir_sample.wav)
-- [🔊 Heart Sample (Warm American Female — Recommended)](docs/audio_samples/heart_sample.wav)
-- [🔊 Adam Sample (Deep American Male)](docs/audio_samples/adam_sample.wav)
-- [🔊 Sarah Sample (Clear American Female)](docs/audio_samples/sarah_sample.wav)
-- [🔊 Nicole Sample (Friendly American Female)](docs/audio_samples/nicole_sample.wav)
-- [🔊 George Sample (Refined British Male)](docs/audio_samples/george_sample.wav)
-- [🔊 Emma Sample (Crisp British Female)](docs/audio_samples/emma_sample.wav)
+#### 🎧 Voice Audition Showcase
+
+> [!NOTE]
+> **Why does GitHub say "Preview unavailable"?**  
+> GitHub's repository code viewer does not embed an audio player for raw `.wav` or `.mp3` files (showing a *"Preview unavailable"* placeholder).  
+> - **🌐 Web Audio Player:** Visit the **[Interactive Web Audio Showcase](https://bparlette.github.io/free-mac-voice/)** to play, pause, and compare all voices with waveforms in your browser.  
+> - **▶️ Direct Stream:** Click any of the **[▶️ Stream MP3]** or **[▶️ Stream WAV]** links in the table below (bypasses GitHub's code viewer directly to the audio stream).  
+> - **🎙️ Audition on Your Mac:** Say *"Mac, pick a voice"* hands-free, or test locally in terminal: `afplay docs/audio_samples/fenrir_sample.wav`
+
+| Voice | Style & Accent | Sample Quote | Direct Audio Stream |
+|:---|:---|:---|:---:|
+| **Fenrir** *(Default)* | Cinematic American Male | *"Fenrir. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/fenrir_sample.mp3?raw=true) · [WAV](docs/audio_samples/fenrir_sample.wav?raw=true) |
+| **Heart** *(Recommended)* | Warm & Expressive American Female | *"Heart. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/heart_sample.mp3?raw=true) · [WAV](docs/audio_samples/heart_sample.wav?raw=true) |
+| **Adam** | Deep & Resonant American Male | *"Adam. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/adam_sample.mp3?raw=true) · [WAV](docs/audio_samples/adam_sample.wav?raw=true) |
+| **Sarah** | Clear & Sharp American Female | *"Sarah. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/sarah_sample.mp3?raw=true) · [WAV](docs/audio_samples/sarah_sample.wav?raw=true) |
+| **Nicole** | Upbeat & Friendly American Female | *"Nicole. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/nicole_sample.mp3?raw=true) · [WAV](docs/audio_samples/nicole_sample.wav?raw=true) |
+| **George** | Refined British Male | *"George. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/george_sample.mp3?raw=true) · [WAV](docs/audio_samples/george_sample.wav?raw=true) |
+| **Emma** | Crisp & Articulate British Female | *"Emma. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/emma_sample.mp3?raw=true) · [WAV](docs/audio_samples/emma_sample.wav?raw=true) |
+| **Michael** | Dynamic American Male | *"Michael. This is what I sound like on your Mac."* | [▶️ Stream MP3](docs/audio_samples/michael_sample.mp3?raw=true) · [WAV](docs/audio_samples/michael_sample.wav?raw=true) |
 
 ---
 
