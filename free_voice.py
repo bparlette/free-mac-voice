@@ -1247,9 +1247,39 @@ def act_close_window(target_app_name: str | None = None) -> bool:
     return closed
 
 
-def act_close_all_windows() -> None:
-    """Close all open windows of the active application (Option-Command-W)."""
-    act_keystroke("w", "option down, command down")
+def act_close_all_windows(target_app_name: str | None = None) -> None:
+    """Close all open windows of the active application (Option-Command-W or AXCloseButton)."""
+    closed_any = False
+    try:
+        from AppKit import NSWorkspace
+        ws = NSWorkspace.sharedWorkspace()
+        target_pid = None
+        if target_app_name:
+            for app in ws.runningApplications():
+                if target_app_name.lower() in (app.localizedName() or "").lower():
+                    target_pid = app.processIdentifier()
+                    break
+        if target_pid is None:
+            front = ws.frontmostApplication()
+            if front:
+                target_pid = front.processIdentifier()
+
+        if target_pid is not None:
+            import ApplicationServices as AX
+            ax_app = AX.AXUIElementCreateApplication(target_pid)
+            err, windows = AX.AXUIElementCopyAttributeValue(ax_app, "AXWindows", None)
+            if not err and windows:
+                for win in windows:
+                    err_btn, btn = AX.AXUIElementCopyAttributeValue(win, "AXCloseButton", None)
+                    if not err_btn and btn:
+                        res = AX.AXUIElementPerformAction(btn, "AXPress")
+                        if res == 0:
+                            closed_any = True
+    except Exception as e:
+        log(f"AX close all windows error: {e}")
+
+    if not closed_any:
+        act_keystroke("w", "option down, command down")
     say("Closed all windows")
 
 
@@ -3596,9 +3626,9 @@ _p(r"^(next app|app forward)$", "next_app", True)
 _p(r"^(previous app|prev app|app back)$", "prev_app", True)
 _p(r"^(switch to|focus|bring up) (.+)$", "switch_app", True)
 # --- windows / tabs / quit / hide
-_p(r"^close all windows$", "close_all_windows", True)
-_p(r"^(close( the| this| current| active)? window|close this window|close this)$", "close_window", True)
-_p(r"^close (the )?(.+?) window$", "close_window_named", True)
+_p(r"^(close all( the)? windows?|close every window|close all)$", "close_all_windows", True)
+_p(r"^(close( the| this| current| active)? windows?|close this window|close this)$", "close_window", True)
+_p(r"^close (the )?(.+?) windows?$", "close_window_named", True)
 _p(r"^close$", "close_window", True)
 _p(r"^next window$", "next_window", True)
 _p(r"^show all windows$", "show_all_windows", True)
@@ -3971,12 +4001,13 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_open_app(m.group(2))
         elif name == "switch_app":
             act_switch_app(m.group(2))
-        # quit_app and close_all_windows are destructive: handled by the
-        # confirmation gate below, not here.
+        # quit_app is destructive: handled by the confirmation gate below, not here.
         elif name == "close_window":
             act_close_window()
         elif name == "close_window_named":
             act_close_window(m.group(2).strip())
+        elif name == "close_all_windows":
+            act_close_all_windows()
         elif name == "next_window":
             act_keystroke("`", "command down"); say("Next window")
         elif name == "show_all_windows":
@@ -4203,7 +4234,7 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         elif name == "sleep":
             act_sleep()
         elif name in ("shutdown", "restart", "logout", "empty_trash",
-                      "quit_app", "kill_app", "close_all_windows"):
+                      "quit_app", "kill_app"):
             # Destructive actions ask first (spoken "yes"), unless --yes.
             # In chained commands each destructive part is confirmed on its own.
             if name == "quit_app":
@@ -4213,8 +4244,7 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             else:
                 desc = {"shutdown": "shutting down", "restart": "restarting",
                         "logout": "logging out",
-                        "empty_trash": "emptying the trash",
-                        "close_all_windows": "closing all windows"}[name]
+                        "empty_trash": "emptying the trash"}[name]
             ok = allow_destructive or (
                 confirm_audio_fn is not None
                 and confirm_spoken(desc, confirm_audio_fn)
@@ -4226,8 +4256,6 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
                 act_quit_app(m.group(m.lastindex))
             elif name == "kill_app":
                 act_force_quit_app(m.group(1))
-            elif name == "close_all_windows":
-                act_close_all_windows()
             else:
                 {"shutdown": lambda: shell(["osascript", "-e",
                     'tell application "System Events" to shut down']),
@@ -4357,7 +4385,7 @@ _TIER1_ACTIONS = {
 
 _DESTRUCTIVE_ACTIONS = {
     "shutdown", "restart", "logout", "empty_trash",
-    "quit_app", "kill_app", "close_all_windows",
+    "quit_app", "kill_app",
 }
 
 _INTENT_EXAMPLES: dict[str, list[str]] = {
@@ -4409,11 +4437,17 @@ _INTENT_EXAMPLES: dict[str, list[str]] = {
     ],
     "close_window": [
         "close window",
+        "close windows",
         "close this window",
+        "close the window",
         "close active window",
     ],
     "close_all_windows": [
         "close all windows",
+        "close all window",
+        "close every window",
+        "close all the windows",
+        "close all",
     ],
     "snap_left": [
         "snap window left",
@@ -4952,8 +4986,7 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     elif action == "close_window":
         act_close_window(str(p("app", "")))
     elif action == "close_all_windows":
-        if _tier1_confirm("closing all windows", allow_destructive):
-            act_close_all_windows()
+        act_close_all_windows()
     elif action == "new_tab":
         act_keystroke("t", "command down"); say("New tab")
     elif action == "close_tab":

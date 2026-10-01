@@ -665,14 +665,19 @@ class TestDestructiveConfirmation(Base):
         cs.assert_called_once()
         self.assertTrue(any("without confirmation" in s for s in self.said))
 
-    def test_close_all_windows_confirmed_runs(self):
-        _, _, caw = self._exec("close all windows", confirm=True)
+    def test_close_all_windows_runs_without_confirmation(self):
+        cs, _, caw = self._exec("close all windows", confirm=False)
         caw.assert_called_once()
+        cs.assert_not_called()
 
-    def test_close_all_windows_declined_skips(self):
-        _, _, caw = self._exec("close all windows", confirm=False)
-        caw.assert_not_called()
-        self.assertTrue(any("without confirmation" in s for s in self.said))
+    def test_close_windows_runs_without_confirmation(self):
+        name, m = self.route_name("close windows")
+        self.assertEqual(name, "close_window")
+        with mock.patch.object(fv, "confirm_spoken") as cs, \
+             mock.patch.object(fv, "act_close_window") as cw:
+            fv.execute_match(name, m, confirm_audio_fn=lambda s: b"")
+            cw.assert_called_once()
+            cs.assert_not_called()
 
     def test_allow_destructive_skips_prompt(self):
         cs, qa, _ = self._exec("quit spotify", allow_destructive=True)
@@ -2693,12 +2698,16 @@ class TestTier05Router(Base):
             "restart computer",
             "log out user",
             "empty the trash",
-            "close all windows",
         ]
         for phrase in destructive_phrases:
             res = fv.tier05_route(phrase)
             self.assertIsNotNone(res)
             self.assertEqual(res[0], "blocked", f"Tier 0.5 failed to block destructive intent: {phrase}")
+
+    def test_close_all_windows_not_blocked_in_tier05(self):
+        res = fv.tier05_route("close all windows")
+        self.assertIsNotNone(res)
+        self.assertEqual(res[0], "close_all_windows")
     def test_close_the_browser_window_routes_to_window_close_not_quit(self):
         # Must route to close_window_named and execute act_keystroke('w', 'command down'), NOT quit_app
         match = fv.route("close the browser window", partial=False)
