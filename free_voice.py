@@ -1738,8 +1738,8 @@ def act_tech_radar() -> None:
         say("Unable to access tech radar report.")
 
 
-def act_masterpiece_roast(action: str = "start") -> None:
-    """Launch or trigger Masterpiece Theater Screen Critic to roast user."""
+def act_masterpiece_roast(action: str = "start", theme: str = None) -> None:
+    """Launch or trigger Screen Critic overlay to roast user."""
     pid_file = "/tmp/masterpiece_critic.pid"
     cmd_file = "/tmp/masterpiece_critic_cmd.txt"
     critic_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "masterpiece_critic.py")
@@ -1762,9 +1762,13 @@ def act_masterpiece_roast(action: str = "start") -> None:
                     f.write("stop")
             except Exception:
                 pass
-            say("Dismissing the theater critic.")
+            say("Dismissing the screen critic.")
         else:
-            say("The theater critic isn't watching right now.")
+            say("The screen critic isn't watching right now.")
+        return
+
+    if theme:
+        act_set_critic_theme(theme, start_if_needed=True)
         return
 
     # Start or roast on demand
@@ -1777,10 +1781,115 @@ def act_masterpiece_roast(action: str = "start") -> None:
     else:
         try:
             subprocess.Popen([python_bin, critic_script], start_new_session=True)
-            log("launched Masterpiece Theater Critic overlay")
+            log("launched screen critic overlay")
         except Exception as e:
             log(f"failed to launch critic: {e}")
-            say("Unable to summon the theater critic right now.")
+            say("Unable to summon the screen critic right now.")
+
+
+def act_set_critic_theme(theme_query: str, start_if_needed: bool = False) -> None:
+    """Switch active critic theme (couch_duo, wine_girls, theater_critic, byte_orbit, kids_club)."""
+    q = theme_query.lower().strip()
+    theme_key = "couch_duo"
+    msg = "Switching to the Couch Duo, Leo and Cleo."
+
+    if any(k in q for k in ["wine", "girl"]):
+        theme_key = "wine_girls"
+        msg = "Switching to Wine Night with Chloe and Maya."
+    elif any(k in q for k in ["theater", "theatre", "masterpiece", "reginald", "critic"]):
+        theme_key = "theater_critic"
+        msg = "Summoning Sir Reginald, the Masterpiece Critic."
+    elif any(k in q for k in ["robot", "byte", "orbit", "cyber"]):
+        theme_key = "byte_orbit"
+        msg = "Activating Byte and Orbit."
+    elif any(k in q for k in ["kid", "puppy", "barnaby", "toby", "children"]):
+        theme_key = "kids_club"
+        msg = "Switching to Kids Club with Toby and Barnaby."
+    elif any(k in q for k in ["gamer", "cat", "couch", "default"]):
+        theme_key = "couch_duo"
+        msg = "Switching to the Couch Duo with Leo and Cleo."
+
+    # Update config file
+    config_file = os.path.expanduser("~/.config/free-voice/critic_config.json")
+    try:
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        cfg = {}
+        if os.path.exists(config_file):
+            with open(config_file) as f:
+                cfg = json.load(f)
+        cfg["theme"] = theme_key
+        with open(config_file, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+    # Signal running overlay if active
+    pid_file = "/tmp/masterpiece_critic.pid"
+    cmd_file = "/tmp/masterpiece_critic_cmd.txt"
+    is_running = False
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file, "r") as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 0)
+            is_running = True
+        except Exception:
+            is_running = False
+
+    if is_running:
+        try:
+            with open(cmd_file, "w") as f:
+                f.write(f"set_theme:{theme_key}")
+        except Exception:
+            pass
+        say(msg)
+    elif start_if_needed:
+        say(msg)
+        critic_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "masterpiece_critic.py")
+        subprocess.Popen([sys.executable, critic_script], start_new_session=True)
+    else:
+        say(f"{msg} It will be ready next time you roast.")
+
+
+def act_set_critic_pos(pos_query: str) -> None:
+    """Move screen critic overlay position (bottom_left, bottom_center, bottom_right)."""
+    q = pos_query.lower().strip()
+    pos_key = "bottom_left"
+    label = "bottom left"
+
+    if "center" in q or "middle" in q:
+        pos_key = "bottom_center"
+        label = "bottom center"
+    elif "right" in q:
+        pos_key = "bottom_right"
+        label = "bottom right"
+    else:
+        pos_key = "bottom_left"
+        label = "bottom left"
+
+    # Update config file
+    config_file = os.path.expanduser("~/.config/free-voice/critic_config.json")
+    try:
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        cfg = {}
+        if os.path.exists(config_file):
+            with open(config_file) as f:
+                cfg = json.load(f)
+        cfg["position"] = pos_key
+        with open(config_file, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+    # Signal running overlay
+    cmd_file = "/tmp/masterpiece_critic_cmd.txt"
+    try:
+        with open(cmd_file, "w") as f:
+            f.write(f"set_pos:{pos_key}")
+    except Exception:
+        pass
+    say(f"Moved screen critic to the {label}.")
+
 
 
 def act_read_clipboard() -> None:
@@ -3707,6 +3816,9 @@ _p(r"^(start dictating|dictate|take notes)( until i say stop)?$", "dictate_start
 # --- Masterpiece Screen Theater / Critic Roaster (BEFORE generic open/start/watch)
 _p(r"^(?:please )?roast (?:me|us|my screen|this)(?: please)?$", "roast_me", True)
 _p(r"^(?:please )?watch (?:the (?:show|game|movie)|tv|me play(?: games?)?)(?: with (?:me|us))?$", "roast_me", True)
+_p(r"^(?:please )?roast (?:me|us) with (wine girls?|wine night|theater critic|masterpiece(?: critic)?|robots?|byte and orbit|kids?(?: club)?|gamer(?: and cat)?|couch duo)(?: please)?$", "roast_with_theme", True)
+_p(r"^(?:please )?(?:switch|change)(?: the)? critic(?: theme)? to (wine girls?|wine night|theater critic|masterpiece(?: critic)?|robots?|byte and orbit|kids?(?: club)?|gamer(?: and cat)?|couch duo|default)(?: please)?$", "roast_theme", True)
+_p(r"^(?:please )?move(?: the)? critic to (?:the )?(left|center|right|bottom left|bottom center|bottom right)(?: please)?$", "roast_pos", True)
 _p(r"^(?:start |launch )?(?:the )?(?:mystery science theater|mst3k|masterpiece )?(?:critic|roaster|theater critic|roasting)$", "roast_me", True)
 _p(r"^(?:mystery science theater|mst3k)$", "roast_me", True)
 _p(r"^(?:stop|dismiss|close|exit|end) (?:roasting|roast|(?:the )?critic|(?:the )?show|roaster|mst3k)$", "roast_stop", True)
@@ -4414,6 +4526,12 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_masterpiece_roast("start")
         elif name == "roast_stop":
             act_masterpiece_roast("stop")
+        elif name == "roast_theme":
+            act_set_critic_theme(m.group(1))
+        elif name == "roast_with_theme":
+            act_set_critic_theme(m.group(1), start_if_needed=True)
+        elif name == "roast_pos":
+            act_set_critic_pos(m.group(1))
         elif name == "help":
             cmds = sorted({n for _, n, _ in _PATTERNS})
             print("Commands: " + ", ".join(cmds))
