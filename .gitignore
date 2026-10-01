@@ -38,3 +38,8 @@ benchmarks/results.jsonl
 tests/personal/
 tests_personal/
 
+# Working layer split directories
+assets/themes/couch_duo_layers/
+assets/themes/couch_duo_parts/
+assets/critic_silhouette.png
+
