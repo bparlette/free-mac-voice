@@ -23,6 +23,8 @@ benchmarks/results.jsonl
 *.m4a
 !docs/audio_samples/*.wav
 !docs/audio_samples/*.mp3
+!docs/assets/*.png
+!docs/assets/*.jpg
 
 # Editor & OS artifacts
 .vscode/

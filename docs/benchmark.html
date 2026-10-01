@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phonon-2 vs. OpenAI Whisper — Free Mac Voice Benchmark</title>
+
+<!-- Primary Meta Tags -->
+<meta name="title" content="Phonon-2 vs. OpenAI Whisper — 7.2x Faster On-Device Speech Recognition">
+<meta name="description" content="164MB Parakeet-TDT runs in 42.3ms on Apple Silicon MLX with zero silence hallucinations. 5.2% WER matches Whisper Large at 10x smaller footprint.">
+
+<!-- Open Graph / Facebook / iMessage / Discord / Slack -->
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://bparlette.github.io/free-mac-voice/benchmark.html">
+<meta property="og:title" content="Phonon-2 vs. OpenAI Whisper — 7.2x Faster on Apple Silicon">
+<meta property="og:description" content="164MB Parakeet-TDT runs in 42.3ms on Apple Silicon MLX with zero silence hallucinations. 5.2% WER matches Whisper Large at 10x smaller footprint.">
+<meta property="og:image" content="https://raw.githubusercontent.com/bparlette/free-mac-voice/main/docs/assets/benchmark_card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<!-- Twitter / X -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://bparlette.github.io/free-mac-voice/benchmark.html">
+<meta name="twitter:title" content="Phonon-2 vs. OpenAI Whisper — 7.2x Faster on Apple Silicon">
+<meta name="twitter:description" content="164MB Parakeet-TDT runs in 42.3ms on Apple Silicon MLX with zero silence hallucinations. 5.2% WER matches Whisper Large at 10x smaller footprint.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/bparlette/free-mac-voice/main/docs/assets/benchmark_card.png">
+
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --card-bg: rgba(255, 255, 255, 0.05);
+    --card-border: rgba(255, 255, 255, 0.1);
+    --text: #f5f5f7;
+    --text-dim: #86868b;
+    --accent: #0071e3;
+    --accent-hover: #0077ed;
+    --accent-glow: rgba(0, 113, 227, 0.3);
+    --green: #34c759;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fbfbfd;
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.1);
+      --text: #1d1d1f;
+      --text-dim: #6e6e73;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", -apple-system, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 40px 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 32px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 999px;
+    background: rgba(0, 113, 227, 0.12); border: 1px solid rgba(0, 113, 227, 0.3);
+    font-size: 0.85rem; font-weight: 600; color: #2997ff; margin-bottom: 16px;
+  }
+  h1 { font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
+  .subtitle { font-size: 1.15rem; color: var(--text-dim); max-width: 700px; margin: 0 auto 24px; }
+  
+  .img-wrap {
+    border-radius: 20px; overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--card-border);
+    margin-bottom: 40px;
+  }
+  .img-wrap img { width: 100%; height: auto; display: block; }
+
+  .actions { display: flex; justify-content: center; gap: 14px; margin-bottom: 40px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 22px; border-radius: 12px; font-size: 0.95rem; font-weight: 600;
+    text-decoration: none; cursor: pointer; border: none; transition: all 0.2s ease;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 4px 16px var(--accent-glow); }
+  .btn-secondary { background: var(--card-bg); color: var(--text); border: 1px solid var(--card-border); }
+  .btn-secondary:hover { background: rgba(255, 255, 255, 0.1); }
+
+  .quote-card {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 18px; padding: 24px 28px; margin-bottom: 36px;
+    border-left: 4px solid var(--green); font-size: 1.05rem; font-style: italic;
+  }
+  
+  .table-wrap {
+    overflow-x: auto; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 18px; padding: 20px; margin-bottom: 36px;
+  }
+  table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem; }
+  th, td { padding: 12px 16px; border-bottom: 1px solid var(--card-border); }
+  th { color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; }
+  tr:last-child td { border-bottom: none; }
+  .fast { color: var(--green); font-weight: 700; }
+  
+  footer { text-align: center; margin-top: 60px; color: var(--text-dim); font-size: 0.85rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="badge">⚡ BENCHMARK SHOWCASE</div>
+    <h1>Phonon-2 vs. OpenAI Whisper</h1>
+    <p class="subtitle">Real-world head-to-head performance benchmarks on Apple Silicon unified memory.</p>
+  </header>
+
+  <div class="img-wrap">
+    <img src="assets/benchmark_card.png" alt="Phonon-2 vs OpenAI Whisper Benchmark (7.2x Speedup on Apple Silicon)">
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" onclick="copyShareLink(this)">🔗 Copy Share Link</button>
+    <a href="https://twitter.com/intent/tweet?text=Introducing%20Phonon-2%20on%20Apple%20Silicon%20in%20Free%20Mac%20Voice%3A%207.2x%20faster%20than%20OpenAI%20Whisper%20at%20just%20164MB!&url=https%3A%2F%2Fbparlette.github.io%2Ffree-mac-voice%2Fbenchmark.html" target="_blank" rel="noopener" class="btn btn-secondary">
+      🐦 Share on X / Twitter
+    </a>
+    <a href="https://github.com/bparlette/free-mac-voice" class="btn btn-secondary">
+      📂 GitHub Repo
+    </a>
+  </div>
+
+  <div class="quote-card">
+    "Introducing Phonon-2: a new standard in speech recognition per byte. At just a tiny 164MB download, it is more accurate on average than OpenAI's Whisper large (a model 10X its size). Transcribe an hour of audio in just 20 seconds on a MacBook Air! Open weights, CC-BY-4.0, today."
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Voice Command</th>
+          <th>Audio Length</th>
+          <th>Whisper base.en</th>
+          <th>Phonon-2 (MLX)</th>
+          <th>Speedup</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>“switch to TV”</strong></td>
+          <td>0.8s</td>
+          <td>288.4 ms</td>
+          <td class="fast">25.8 ms</td>
+          <td class="fast">11.2x faster</td>
+        </tr>
+        <tr>
+          <td><strong>“open notes”</strong></td>
+          <td>0.9s</td>
+          <td>312.7 ms</td>
+          <td class="fast">32.6 ms</td>
+          <td class="fast">9.6x faster</td>
+        </tr>
+        <tr>
+          <td><strong>“draw an ascii picture of a heart”</strong></td>
+          <td>2.1s</td>
+          <td>308.2 ms</td>
+          <td class="fast">68.5 ms</td>
+          <td class="fast">4.5x faster</td>
+        </tr>
+        <tr>
+          <td><strong>Average Command Latency</strong></td>
+          <td>1.3s</td>
+          <td>303.1 ms</td>
+          <td class="fast">42.3 ms</td>
+          <td class="fast">7.2x faster</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    <p>Free Mac Voice Control • 100% On-Device • Licensed under MIT • <a href="https://github.com/bparlette/free-mac-voice">View on GitHub</a></p>
+  </footer>
+</div>
+
+<script>
+function copyShareLink(btn) {
+  navigator.clipboard.writeText(window.location.href).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copied Link!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
+}
+</script>
+</body>
+</html>
