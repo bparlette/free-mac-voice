@@ -361,15 +361,21 @@ class CompanionView(AppKit.NSView):
         self = objc.super(CompanionView, self).initWithFrame_(frame)
         self.theme_key = "couch_duo"
         self.base_image = None
-        self.head_image = None
-        self.cat_image = None
+        self.pose_images = {}
+        self.idle_bare_image = None
+        self.leo_fg_image = None
+        self.cat_walk_frames = []
+        self.cat_walk_frames_left = []
 
-        self.head_offset_x = 0.0
-        self.head_offset_y = 0.0
-        self.cat_offset_x = 0.0
-        self.cat_offset_y = 0.0
-        self.head_angle = 0.0
-        self.cat_angle = 0.0
+        self.current_pose = "idle"
+        self.target_pose = "idle"
+        self.blend_alpha = 0.0
+        self.idle_breath_y = 0.0
+
+        self.is_cat_walking = False
+        self.cat_walk_t = 0.0  # 0.0 to 1.0
+        self.cat_walk_frame_idx = 0
+        self.cat_walk_dir = -1  # -1 = left, 1 = right
 
         self.speaker_tag = "🎮 LEO"
         self.accent_rgb = (0.20, 0.75, 1.00)
@@ -382,40 +388,62 @@ class CompanionView(AppKit.NSView):
         self.theme_key = theme_key
         theme = THEMES.get(theme_key, THEMES["couch_duo"])
 
-        # Check for layered rig assets
-        rig_dir = os.path.join(ASSETS_DIR, "couch_duo")
-        if theme_key == "couch_duo" and os.path.exists(os.path.join(rig_dir, "base.png")):
-            self.base_image = AppKit.NSImage.alloc().initWithContentsOfFile_(os.path.join(rig_dir, "base.png"))
-            self.head_image = AppKit.NSImage.alloc().initWithContentsOfFile_(os.path.join(rig_dir, "head.png"))
-            self.cat_image = AppKit.NSImage.alloc().initWithContentsOfFile_(os.path.join(rig_dir, "cat.png"))
+        actions_dir = os.path.join(ASSETS_DIR, "couch_duo", "actions")
+        if theme_key == "couch_duo" and os.path.exists(os.path.join(actions_dir, "pose_idle.png")):
+            for p in ["idle", "point", "stretch", "pet"]:
+                fpath = os.path.join(actions_dir, f"pose_{p}.png")
+                if os.path.exists(fpath):
+                    self.pose_images[p] = AppKit.NSImage.alloc().initWithContentsOfFile_(fpath)
+            
+            bare_p = os.path.join(actions_dir, "idle_bare_clean.png")
+            if os.path.exists(bare_p):
+                self.idle_bare_image = AppKit.NSImage.alloc().initWithContentsOfFile_(bare_p)
+            
+            chars_p = os.path.join(actions_dir, "idle_duo_characters.png")
+            if os.path.exists(chars_p):
+                self.idle_chars_image = AppKit.NSImage.alloc().initWithContentsOfFile_(chars_p)
+            
+            leo_p = os.path.join(actions_dir, "leo_foreground.png")
+            if os.path.exists(leo_p):
+                self.leo_fg_image = AppKit.NSImage.alloc().initWithContentsOfFile_(leo_p)
+
+            self.cat_walk_frames = []
+            for i in range(1, 9):
+                cat_p = os.path.join(actions_dir, f"cat_walk_f{i}.png")
+                if os.path.exists(cat_p):
+                    self.cat_walk_frames.append(AppKit.NSImage.alloc().initWithContentsOfFile_(cat_p))
+
+            self.base_image = self.pose_images.get("idle")
         else:
             idle_p = theme.get("idle_sprite")
             if os.path.exists(idle_p):
                 self.base_image = AppKit.NSImage.alloc().initWithContentsOfFile_(idle_p)
-            self.head_image = None
-            self.cat_image = None
+            self.pose_images = {}
 
         char = theme["characters"][0]
         self.speaker_tag = char["tag"]
         self.accent_rgb = char["accent_rgb"]
         self.setNeedsDisplay_(True)
 
-    def set_articulation(self, head_x, head_y, cat_x, cat_y, head_angle=0.0, cat_angle=0.0):
-        self.head_offset_x = head_x
-        self.head_offset_y = head_y
-        self.cat_offset_x = cat_x
-        self.cat_offset_y = cat_y
-        self.head_angle = head_angle
-        self.cat_angle = cat_angle
+    def set_blend(self, from_pose, to_pose, alpha, breath_y=0.0):
+        self.current_pose = from_pose
+        self.target_pose = to_pose
+        self.blend_alpha = max(0.0, min(1.0, alpha))
+        self.idle_breath_y = breath_y
+        self.is_cat_walking = False
+        self.setNeedsDisplay_(True)
+
+    def set_cat_walk(self, walk_t, frame_idx, walk_dir):
+        self.is_cat_walking = True
+        self.cat_walk_t = walk_t
+        self.cat_walk_frame_idx = frame_idx % max(1, len(self.cat_walk_frames))
+        self.cat_walk_dir = walk_dir
         self.setNeedsDisplay_(True)
 
     def update_riff(self, char_dict, text=None):
         self.speaker_tag = char_dict["tag"]
         self.accent_rgb = char_dict["accent_rgb"]
         self.setNeedsDisplay_(True)
-
-    def set_pose(self, pose_name="idle"):
-        pass  # Preserved for API compatibility; pose swapping replaced by smooth skeletal articulation
 
     def drawRect_(self, rect):
         AppKit.NSColor.clearColor().set()
@@ -424,98 +452,117 @@ class CompanionView(AppKit.NSView):
         w = rect.size.width
         h = rect.size.height
 
-        img = self.base_image
-        if not img:
-            return
-
-        aspect = img.size().width / max(1.0, img.size().height)
-        img_h = min(h - 22.0, (w - 28.0) / aspect)
-        img_w = img_h * aspect
-
-        # THE COUCH IS 100% FLUSH AND ROCK-SOLID (NEVER BOUNCES)
-        img_x = 0.0
-        img_y = 0.0
-
-        dest_rect = AppKit.NSMakeRect(img_x, img_y, img_w, img_h)
-        src_rect = AppKit.NSMakeRect(0, 0, img.size().width, img.size().height)
-
         ctx = AppKit.NSGraphicsContext.currentContext()
 
         # 1. 3D Drop Shadow & Ambient Occlusion behind the entire scene
         depth_shadow = AppKit.NSShadow.alloc().init()
         depth_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.0, 0.0, 0.0, 0.90))
-        depth_shadow.setShadowOffset_(AppKit.NSMakeSize(8.0, 10.0))
-        depth_shadow.setShadowBlurRadius_(22.0)
+        depth_shadow.setShadowOffset_(AppKit.NSMakeSize(8.0, 8.0))
+        depth_shadow.setShadowBlurRadius_(18.0)
 
         # 2. Subtle Cinematic Rim Lighting / Accent Glow
         r, g, b = self.accent_rgb
         glow_shadow = AppKit.NSShadow.alloc().init()
-        glow_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 0.40))
+        glow_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 0.35))
         glow_shadow.setShadowOffset_(AppKit.NSMakeSize(0.0, 4.0))
-        glow_shadow.setShadowBlurRadius_(14.0)
+        glow_shadow.setShadowBlurRadius_(12.0)
 
-        # Draw Base Layer (Couch + Body) with shadows — couch stays grounded
-        ctx.saveGraphicsState()
-        depth_shadow.set()
-        img.drawInRect_fromRect_operation_fraction_(
-            dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
-        )
-        ctx.restoreGraphicsState()
+        dest_rect = AppKit.NSMakeRect(0.0, 0.0, w, h)
 
-        ctx.saveGraphicsState()
-        glow_shadow.set()
-        img.drawInRect_fromRect_operation_fraction_(
-            dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 0.50
-        )
-        ctx.restoreGraphicsState()
-
-        # Crisp Base Foreground Pass (Couch + Torso)
-        img.drawInRect_fromRect_operation_fraction_(
-            dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
-        )
-
-        # Draw Articulated Head (Nods, tilts, and shifts ONLY on head — couch never moves)
-        scale_x = img_w / img.size().width
-        scale_y = img_h / img.size().height
-
-        if self.head_image:
+        if self.is_cat_walking and self.idle_bare_image and self.cat_walk_frames:
+            # === CAT WALKING ALONG COUCH BACKREST ===
+            src_rect = AppKit.NSMakeRect(0, 0, self.idle_bare_image.size().width, self.idle_bare_image.size().height)
+            
+            # 1. Draw bare couch background
             ctx.saveGraphicsState()
-            transform = AppKit.NSAffineTransform.transform()
-            # Pivot at neck center
-            p_x = img_x + (0.499 * img_w) + (self.head_offset_x * scale_x)
-            p_y = img_y + (0.636 * img_h) + (self.head_offset_y * scale_y)
-            transform.translateXBy_yBy_(p_x, p_y)
-            transform.rotateByDegrees_(self.head_angle)
-            transform.translateXBy_yBy_(-p_x, -p_y)
-            transform.concat()
-
-            hx = img_x + (self.head_offset_x * scale_x)
-            hy = img_y + (self.head_offset_y * scale_y)
-            head_dest = AppKit.NSMakeRect(hx, hy, img_w, img_h)
-            self.head_image.drawInRect_fromRect_operation_fraction_(
-                head_dest, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+            depth_shadow.set()
+            self.idle_bare_image.drawInRect_fromRect_operation_fraction_(
+                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
             )
             ctx.restoreGraphicsState()
 
-        # Draw Articulated Cat (Perks, tilts, and breathes independently)
-        if self.cat_image:
-            ctx.saveGraphicsState()
-            transform = AppKit.NSAffineTransform.transform()
-            # Pivot at cat paws/armrest base
-            cp_x = img_x + (0.855 * img_w) + (self.cat_offset_x * scale_x)
-            cp_y = img_y + (0.147 * img_h) + (self.cat_offset_y * scale_y)
-            transform.translateXBy_yBy_(cp_x, cp_y)
-            transform.rotateByDegrees_(self.cat_angle)
-            transform.translateXBy_yBy_(-cp_x, -cp_y)
-            transform.concat()
+            self.idle_bare_image.drawInRect_fromRect_operation_fraction_(
+                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+            )
 
-            cx = img_x + (self.cat_offset_x * scale_x)
-            cy = img_y + (self.cat_offset_y * scale_y)
-            cat_dest = AppKit.NSMakeRect(cx, cy, img_w, img_h)
-            self.cat_image.drawInRect_fromRect_operation_fraction_(
-                cat_dest, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+            # 2. Draw Cat stepping on top of back cushion
+            # In 1024x571 canvas: cushion top is at y = 316 (AppKit bottom-origin: y = 571 - 316 = 255)
+            scale = h / 571.0
+            cat_y = (571.0 - 316.0 + 8.0) * scale
+            cat_h = 105.0 * scale * 0.45
+            cat_w = 170.0 * scale * 0.45
+
+            # Walk x interpolates between right armrest (0.76 * w) and left armrest (0.16 * w)
+            cat_x = (0.76 * w) - (self.cat_walk_t * (0.60 * w))
+            cat_rect = AppKit.NSMakeRect(cat_x, cat_y, cat_w, cat_h)
+
+            cat_img = self.cat_walk_frames[self.cat_walk_frame_idx]
+            cat_src = AppKit.NSMakeRect(0, 0, cat_img.size().width, cat_img.size().height)
+
+            ctx.saveGraphicsState()
+            if self.cat_walk_dir == -1: # Walking left -> flip horizontally
+                t = AppKit.NSAffineTransform.transform()
+                t.translateXBy_yBy_(cat_x + cat_w, cat_y)
+                t.scaleXBy_yBy_(-1.0, 1.0)
+                t.translateXBy_yBy_(-cat_x, -cat_y)
+                t.concat()
+            cat_img.drawInRect_fromRect_operation_fraction_(
+                cat_rect, cat_src, AppKit.NSCompositingOperationSourceOver, 1.0
             )
             ctx.restoreGraphicsState()
+
+            # 3. Draw Leo in foreground (cat passes behind his neck and shoulders!)
+            if self.leo_fg_image:
+                self.leo_fg_image.drawInRect_fromRect_operation_fraction_(
+                    dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+                )
+
+        elif self.pose_images:
+            # === ACTION POSE MORPHING (COUCH REMAINS 100% ROCK SOLID) ===
+            from_img = self.pose_images.get(self.current_pose, self.pose_images.get("idle"))
+            to_img = self.pose_images.get(self.target_pose, from_img)
+
+            src_rect = AppKit.NSMakeRect(0, 0, from_img.size().width, from_img.size().height)
+
+            # Draw Shadow Pass
+            ctx.saveGraphicsState()
+            depth_shadow.set()
+            from_img.drawInRect_fromRect_operation_fraction_(
+                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+            )
+            ctx.restoreGraphicsState()
+
+            # Rock-solid couch + organic breathing character layer during idle
+            if self.current_pose == "idle" and self.blend_alpha <= 0.01 and self.idle_bare_image and hasattr(self, 'idle_chars_image') and self.idle_chars_image:
+                # 1. Couch is 100% stationary and anchored to bottom edge
+                self.idle_bare_image.drawInRect_fromRect_operation_fraction_(
+                    dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+                )
+                # 2. Leo and Cleo breathing subtly above couch
+                char_rect = AppKit.NSMakeRect(0.0, self.idle_breath_y, w, h)
+                self.idle_chars_image.drawInRect_fromRect_operation_fraction_(
+                    char_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+                )
+            elif self.blend_alpha <= 0.001 or from_img == to_img:
+                from_img.drawInRect_fromRect_operation_fraction_(
+                    dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+                )
+            else:
+                # Fluid multi-frame cross-dissolve: couch is identical, limbs morph smoothly
+                from_img.drawInRect_fromRect_operation_fraction_(
+                    dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0 - self.blend_alpha
+                )
+                to_img.drawInRect_fromRect_operation_fraction_(
+                    dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, self.blend_alpha
+                )
+        else:
+            # Fallback for other themes
+            img = self.base_image
+            if img:
+                src_rect = AppKit.NSMakeRect(0, 0, img.size().width, img.size().height)
+                img.drawInRect_fromRect_operation_fraction_(
+                    dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+                )
 
 
 class CriticOverlayController(NSObject):
@@ -527,8 +574,38 @@ class CriticOverlayController(NSObject):
         self.active_theme = "couch_duo"
         self.active_position = "bottom_left"
         self.speaking_character = None
-        self.active_animation_mode = None
+        self.active_action = "idle"
+        self.action_lock = threading.Lock()
+        self.rotating_animations = False
+        self.rotate_thread = None
         return self
+
+    def start_rotation(self):
+        if self.rotating_animations:
+            return
+        self.rotating_animations = True
+
+        def rotation_worker():
+            print("[Critic] Starting continuous animation rotation...")
+            sequence = [
+                ("point", 3.0),
+                ("pet", 3.0),
+                ("cat_walk", 3.8),
+                ("stretch", 3.5),
+            ]
+            idx = 0
+            while self.running and self.rotating_animations:
+                action, dur = sequence[idx % len(sequence)]
+                self.play_action(action, duration=dur)
+                time.sleep(dur + 1.2)
+                time.sleep(1.0)
+                idx += 1
+
+        self.rotate_thread = threading.Thread(target=rotation_worker, daemon=True)
+        self.rotate_thread.start()
+
+    def stop_rotation(self):
+        self.rotating_animations = False
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
@@ -553,8 +630,9 @@ class CriticOverlayController(NSObject):
         screen = AppKit.NSScreen.mainScreen()
         screen_frame = screen.frame()
 
-        win_w = 320.0
-        win_h = 160.0
+        # Aspect ratio 1024 x 571 = 1.7933
+        win_w = 360.0
+        win_h = 201.0
 
         if self.active_position == "bottom_center":
             win_x = (screen_frame.size.width - win_w) / 2.0
@@ -581,7 +659,7 @@ class CriticOverlayController(NSObject):
         self.window.setIgnoresMouseEvents_(True)  # 100% Click-through!
         self.window.setCollectionBehavior_(
             AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
-            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary |  # Required for macOS full-screen spaces
+            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary |
             AppKit.NSWindowCollectionBehaviorStationary |
             AppKit.NSWindowCollectionBehaviorIgnoresCycle
         )
@@ -594,8 +672,8 @@ class CriticOverlayController(NSObject):
     def set_position(self, pos_name: str):
         screen = AppKit.NSScreen.mainScreen()
         screen_frame = screen.frame()
-        win_w = 320.0
-        win_h = 160.0
+        win_w = 360.0
+        win_h = 201.0
 
         if pos_name == "bottom_center":
             win_x = (screen_frame.size.width - win_w) / 2.0
@@ -618,6 +696,54 @@ class CriticOverlayController(NSObject):
             self.save_config()
             run_on_main(lambda: self.view.load_theme(theme_key))
 
+    def play_action(self, action_name: str, duration: float = 3.0):
+        """Animates seamlessly to target action pose, holds, and returns to idle."""
+        def worker():
+            with self.action_lock:
+                if action_name == "cat_walk":
+                    # Animate cat walk across couch back
+                    steps = 35
+                    # Walk left
+                    for i in range(steps):
+                        t = i / float(steps)
+                        frame_idx = i % 8
+                        run_on_main(lambda t=t, f=frame_idx: self.view.set_cat_walk(t, f, -1))
+                        time.sleep(0.045)
+                    # Pause at left
+                    time.sleep(0.6)
+                    # Walk back right
+                    for i in range(steps):
+                        t = 1.0 - (i / float(steps))
+                        frame_idx = i % 8
+                        run_on_main(lambda t=t, f=frame_idx: self.view.set_cat_walk(t, f, 1))
+                        time.sleep(0.045)
+                    # Return to idle
+                    run_on_main(lambda: self.view.set_blend("idle", "idle", 0.0))
+                    return
+
+                # Smooth transition into action pose (0.35s)
+                blend_steps = 14
+                for i in range(1, blend_steps + 1):
+                    p = i / float(blend_steps)
+                    # Cubic ease-in-out
+                    alpha = p * p * (3.0 - 2.0 * p)
+                    run_on_main(lambda a=alpha: self.view.set_blend("idle", action_name, a))
+                    time.sleep(0.025)
+
+                # Hold pose for specified duration
+                time.sleep(max(0.5, duration))
+
+                # Smooth return to idle (0.35s)
+                for i in range(1, blend_steps + 1):
+                    p = 1.0 - (i / float(blend_steps))
+                    alpha = p * p * (3.0 - 2.0 * p)
+                    run_on_main(lambda a=alpha: self.view.set_blend("idle", action_name, a))
+                    time.sleep(0.025)
+
+                run_on_main(lambda: self.view.set_blend("idle", "idle", 0.0))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def trigger_riff(self):
         if self.speaking_character is not None:
             return
@@ -634,64 +760,64 @@ class CriticOverlayController(NSObject):
             # Update accent lighting
             run_on_main(lambda: self.view.update_riff(char))
 
-            speak_voice(char["voice"], riff)
+            # Leo points at screen when roasting!
+            if char_name == "Leo":
+                self.play_action("point", duration=3.5)
+            elif char_name == "Cleo":
+                self.play_action("pet", duration=3.0)
 
+            speak_voice(char["voice"], riff)
             self.speaking_character = None
 
         threading.Thread(target=worker, daemon=True).start()
 
     def run_animation_demo(self):
-        """Runs the companions through all animations sequentially with spoken lines & lighting."""
+        """Runs through all dynamic animations sequentially with live voice riffing & lighting."""
         def demo_worker():
             theme = THEMES.get(self.active_theme, THEMES["couch_duo"])
             leo = next((c for c in theme["characters"] if c["name"] == "Leo"), theme["characters"][0])
             cleo = next((c for c in theme["characters"] if c["name"] == "Cleo"), theme["characters"][-1])
 
             # Record demo video clip
-            record_clip_async("Showcase", self.active_theme, duration=24)
+            record_clip_async("FullShowcase", self.active_theme, duration=26)
 
-            # 1. Idle Demo
-            self.active_animation_mode = None
-            time.sleep(2.5)
+            # 1. Idle with natural chest breathing
+            time.sleep(2.0)
 
-            # 2. Leo Speaking (Nodding + Expressive Tilt)
+            # 2. Leo Points at the Screen
             run_on_main(lambda: self.view.update_riff(leo))
             self.speaking_character = "Leo"
-            speak_voice(leo["voice"], "Yo! Check out this articulation! My head nods and tilts to my voice while the couch stays completely still.")
+            self.play_action("point", duration=4.0)
+            speak_voice(leo["voice"], "Yo! Check out that misclick right there! Pointing directly at your active window.")
             self.speaking_character = None
-            time.sleep(1.2)
+            time.sleep(1.0)
 
-            # 3. Cleo Speaking (Cat Speech Bob + Leo Listening Turn)
+            # 3. Leo Pets Cleo
             run_on_main(lambda: self.view.update_riff(cleo))
             self.speaking_character = "Cleo"
-            speak_voice(cleo["voice"], "Meow! And look at me perk up on the armrest! Leo even turns his head over to listen.")
+            self.play_action("pet", duration=4.2)
+            speak_voice(cleo["voice"], "Purrrr! Now that is proper royal treatment. Nine out of ten cats approve.")
+            self.speaking_character = None
+            time.sleep(1.0)
+
+            # 4. Cleo walks across the back cushion of the couch!
+            run_on_main(lambda: self.view.update_riff(cleo))
+            self.speaking_character = "Cleo"
+            self.play_action("cat_walk", duration=4.0)
+            speak_voice(cleo["voice"], "Just taking my high-ground patrol across the couch back. Nothing escapes my watch.")
             self.speaking_character = None
             time.sleep(1.2)
 
-            # 4. Shock / Facepalm (Disbelief)
+            # 5. Leo stands up and does a full overhead stretch!
             run_on_main(lambda: self.view.update_riff(leo))
-            self.active_animation_mode = "shock"
-            speak_voice(leo["voice"], "Whoa! Did you really just do that?! Tell me you didn't just miss that jump!")
-            self.active_animation_mode = None
-            time.sleep(1.2)
+            self.speaking_character = "Leo"
+            self.play_action("stretch", duration=4.0)
+            speak_voice(leo["voice"], "Whew! Couch nap complete. Big stretch, now let's get back in the game!")
+            self.speaking_character = None
+            time.sleep(1.0)
 
-            # 5. Laughter / Chuckling
-            run_on_main(lambda: self.view.update_riff(cleo))
-            self.active_animation_mode = "laugh"
-            speak_voice(cleo["voice"], "Haha! That was pure comedy! Nine out of ten cats would laugh at that move.")
-            self.active_animation_mode = None
-            time.sleep(1.2)
-
-            # 6. Cheer / Celebration
+            # Return to peaceful idle
             run_on_main(lambda: self.view.update_riff(leo))
-            self.active_animation_mode = "cheer"
-            speak_voice(leo["voice"], "Let's gooo! Victory lap! Now that is high-tier gameplay!")
-            self.active_animation_mode = None
-            time.sleep(1.2)
-
-            # Return to Idle
-            run_on_main(lambda: self.view.update_riff(leo))
-            self.active_animation_mode = None
 
         threading.Thread(target=demo_worker, daemon=True).start()
 
@@ -711,7 +837,7 @@ class CriticOverlayController(NSObject):
             time.sleep(1.0)
 
             last_riff_time = time.time()
-            interval = 24.0  # Roast every 24 seconds
+            interval = 28.0  # Roast every 28 seconds
 
             while self.running:
                 if os.path.exists(COMMAND_FILE):
@@ -726,6 +852,18 @@ class CriticOverlayController(NSObject):
                         elif cmd in ["demo", "roast_demo"]:
                             self.run_animation_demo()
                             last_riff_time = time.time()
+                        elif cmd in ["rotate", "roast_rotate"]:
+                            self.start_rotation()
+                        elif cmd in ["stop_rotate", "stop_rotation"]:
+                            self.stop_rotation()
+                        elif cmd == "stretch":
+                            self.play_action("stretch", duration=3.5)
+                        elif cmd == "point":
+                            self.play_action("point", duration=3.5)
+                        elif cmd == "pet":
+                            self.play_action("pet", duration=3.5)
+                        elif cmd in ["catwalk", "cat_walk"]:
+                            self.play_action("cat_walk", duration=4.0)
                         elif cmd.startswith("set_theme:"):
                             new_theme = cmd.split("set_theme:", 1)[1].strip()
                             self.set_theme(new_theme)
@@ -733,6 +871,7 @@ class CriticOverlayController(NSObject):
                             new_pos = cmd.split("set_pos:", 1)[1].strip()
                             self.set_position(new_pos)
                         elif cmd == "stop":
+                            self.stop_rotation()
                             self.running = False
                             break
                     except Exception:
@@ -757,67 +896,19 @@ class CriticOverlayController(NSObject):
 
     def start_animation_loop(self):
         def anim_loop():
-            """High-fidelity 60 FPS skeletal articulation loop."""
+            """60 FPS continuous ambient breathing and animation loop."""
             start_t = time.time()
 
             while self.running:
                 now = time.time()
                 t = now - start_t
 
-                head_angle = 0.0
-                cat_angle = 0.0
+                # Subtle organic idle chest breathing
+                breath_y = math.sin(t * 1.8) * 0.8
 
-                if self.active_animation_mode == "shock":
-                    hx = 0.0
-                    hy = 5.0 + math.sin(t * 8.0) * 1.0
-                    head_angle = -6.0
-                    cx = 0.0
-                    cy = 3.5 + math.sin(t * 8.0) * 0.8
-                    cat_angle = 4.5
-                elif self.active_animation_mode == "laugh":
-                    hx = math.sin(t * 12.0) * 0.8
-                    hy = abs(math.sin(t * 14.0)) * 2.8
-                    head_angle = math.sin(t * 14.0) * 2.2
-                    cx = 0.0
-                    cy = math.sin(t * 15.0) * 1.5
-                    cat_angle = math.sin(t * 7.5) * 1.5
-                elif self.active_animation_mode == "cheer":
-                    hx = math.sin(t * 6.0) * 1.8
-                    hy = math.sin(t * 12.0) * 4.0
-                    head_angle = math.sin(t * 6.0) * 4.2
-                    cx = 0.0
-                    cy = math.sin(t * 10.0) * 3.0
-                    cat_angle = math.sin(t * 5.0) * 3.0
-                elif self.speaking_character == "Leo":
-                    hx = math.sin(t * 4.5) * 1.5
-                    hy = math.sin(t * 10.0) * 3.2
-                    head_angle = math.sin(t * 5.0) * 3.5
-                    cx = 0.0
-                    cy = math.sin(t * 2.0) * 0.4
-                    cat_angle = 0.0
-                elif self.speaking_character in ["Cleo", "Cat"]:
-                    hx = 3.2
-                    hy = math.sin(t * 2.5) * 0.6
-                    head_angle = 4.0
-                    cx = 0.0
-                    cy = math.sin(t * 9.0) * 2.8
-                    cat_angle = math.sin(t * 4.5) * 3.0
-                else:
-                    hy = math.sin(t * 1.8) * 0.8
-                    cy = math.sin(t * 1.6 + 1.0) * 0.6
-                    head_angle = math.sin(t * 0.9) * 1.0
-                    hx = 0.0
-                    cx = 0.0
+                if not self.view.is_cat_walking and self.view.blend_alpha <= 0.01:
+                    run_on_main(lambda b=breath_y: self.view.set_blend("idle", "idle", 0.0, breath_y=b))
 
-                    cycle = t % 16.0
-                    if cycle < 3.0:
-                        glance_factor = math.sin((cycle / 3.0) * math.pi)
-                        hx = glance_factor * 2.8
-                        head_angle = glance_factor * 3.8
-                        cat_angle = -glance_factor * 2.2
-
-                run_on_main(lambda x=hx, y=hy, cx=cx, cy=cy, ha=head_angle, ca=cat_angle:
-                            self.view.set_articulation(x, y, cx, cy, ha, ca))
                 time.sleep(0.016)  # 60 FPS
 
         threading.Thread(target=anim_loop, daemon=True).start()
@@ -846,6 +937,18 @@ if __name__ == "__main__":
         with open(COMMAND_FILE, "w") as f:
             f.write("demo")
         print("Triggered animation showcase demo.")
+    elif len(sys.argv) > 1 and sys.argv[1] in ["rotate", "roast_rotate"]:
+        with open(COMMAND_FILE, "w") as f:
+            f.write("rotate")
+        print("Triggered continuous animation rotation.")
+    elif len(sys.argv) > 1 and sys.argv[1] in ["stop_rotate", "stop_rotation"]:
+        with open(COMMAND_FILE, "w") as f:
+            f.write("stop_rotate")
+        print("Stopped animation rotation.")
+    elif len(sys.argv) > 1 and sys.argv[1] in ["stretch", "point", "pet", "catwalk", "cat_walk"]:
+        with open(COMMAND_FILE, "w") as f:
+            f.write(sys.argv[1])
+        print(f"Triggered action: {sys.argv[1]}.")
     elif len(sys.argv) > 1 and sys.argv[1] == "theme" and len(sys.argv) > 2:
         with open(COMMAND_FILE, "w") as f:
             f.write(f"set_theme:{sys.argv[2]}")
@@ -860,3 +963,4 @@ if __name__ == "__main__":
         print("Stopping screen companion...")
     else:
         run_overlay()
+

@@ -243,6 +243,31 @@ EOF
     "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" demo
     ;;
 
+  roast-rotate)
+    echo "==> Starting continuous animation rotation (Point -> Pet -> Cat Walk -> Stretch)..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" rotate
+    ;;
+
+  roast-stretch)
+    echo "==> Triggering Leo big stretch animation..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" stretch
+    ;;
+
+  roast-point)
+    echo "==> Triggering Leo pointing gesture..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" point
+    ;;
+
+  roast-pet)
+    echo "==> Triggering Leo petting Cleo..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" pet
+    ;;
+
+  roast-catwalk)
+    echo "==> Triggering Cleo walking on couch back..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" catwalk
+    ;;
+
   roast-theme)
     THEME_ARG="${2:-couch_duo}"
     echo "==> Setting critic theme to: $THEME_ARG"
@@ -279,7 +304,7 @@ EOF
     ;;
 
   *)
-    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall|radar-install|radar-run|radar-report|radar-status|radar-uninstall|roast|roast-now|roast-theme <theme>|roast-pos <pos>|roast-stop|clips-web|clips-dir|clips-clean}"
+    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall|radar-install|radar-run|radar-report|radar-status|radar-uninstall|roast|roast-now|roast-demo|roast-rotate|roast-stretch|roast-point|roast-pet|roast-catwalk|roast-theme <theme>|roast-pos <pos>|roast-stop|clips-web|clips-dir|clips-clean}"
     exit 1
     ;;
 esac
