@@ -374,64 +374,51 @@ class CompanionView(AppKit.NSView):
         w = rect.size.width
         h = rect.size.height
 
-        # 1. Draw Sleek Floating Subtitle Box (only when subtitle is present)
-        if self.show_subtitle and self.subtitle_text:
-            box_margin = 12.0
-            box_w = w - (box_margin * 2)
-            box_h = 76.0
-            box_y = h - box_h - 4.0
-
-            box_rect = AppKit.NSMakeRect(box_margin, box_y, box_w, box_h)
-            bg_path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(box_rect, 10.0, 10.0)
-
-            # Deep dark translucent backdrop
-            AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.05, 0.05, 0.07, 0.90).setFill()
-            bg_path.fill()
-
-            # Glowing Accent Border matching active character
-            r, g, b = self.accent_rgb
-            border_col = AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 0.95)
-            border_col.setStroke()
-            bg_path.setLineWidth_(2.0)
-            bg_path.stroke()
-
-            # Tag
-            speaker_font = AppKit.NSFont.boldSystemFontOfSize_(11.0)
-            speaker_attrs = {
-                AppKit.NSFontAttributeName: speaker_font,
-                AppKit.NSForegroundColorAttributeName: border_col
-            }
-            title_str = AppKit.NSString.stringWithString_(self.speaker_tag)
-            title_str.drawAtPoint_withAttributes_(AppKit.NSMakePoint(box_margin + 12.0, box_y + box_h - 18.0), speaker_attrs)
-
-            # Dialogue body
-            body_font = AppKit.NSFont.systemFontOfSize_weight_(12.5, AppKit.NSFontWeightSemibold)
-            para_style = AppKit.NSMutableParagraphStyle.alloc().init()
-            para_style.setLineSpacing_(2.0)
-
-            body_attrs = {
-                AppKit.NSFontAttributeName: body_font,
-                AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor(),
-                AppKit.NSParagraphStyleAttributeName: para_style
-            }
-            text_rect = AppKit.NSMakeRect(box_margin + 12.0, box_y + 8.0, box_w - 24.0, box_h - 28.0)
-            body_str = AppKit.NSString.stringWithString_(f'"{self.subtitle_text}"')
-            body_str.drawInRect_withAttributes_(text_rect, body_attrs)
-
-        # 2. Draw Character Sprite anchored compactly at bottom
+        # Draw Character Sprite anchored 100% flush at bottom-left with 3D Depth & Shadows
         img = self.current_image or self.idle_image
         if img:
-            max_img_h = 130.0
             aspect = img.size().width / max(1.0, img.size().height)
-            img_h = min(max_img_h, (w * 0.88) / aspect)
+            # Give headroom for shadow to cast upward & rightward
+            img_h = min(h - 22.0, (w - 28.0) / aspect)
             img_w = img_h * aspect
 
-            # Align to bottom left of the overlay window with slight margin
-            img_x = 10.0
+            # 100% flush to bottom-left corner: zero margin
+            img_x = 0.0
             img_y = max(0.0, self.bob_offset)
 
             dest_rect = AppKit.NSMakeRect(img_x, img_y, img_w, img_h)
             src_rect = AppKit.NSMakeRect(0, 0, img.size().width, img.size().height)
+
+            ctx = AppKit.NSGraphicsContext.currentContext()
+
+            # 1. Deep 3D Ambient Occlusion & Drop Shadow
+            depth_shadow = AppKit.NSShadow.alloc().init()
+            depth_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.0, 0.0, 0.0, 0.90))
+            depth_shadow.setShadowOffset_(AppKit.NSMakeSize(8.0, 10.0))
+            depth_shadow.setShadowBlurRadius_(22.0)
+
+            ctx.saveGraphicsState()
+            depth_shadow.set()
+            img.drawInRect_fromRect_operation_fraction_(
+                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
+            )
+            ctx.restoreGraphicsState()
+
+            # 2. Subtle Cinematic Rim Lighting / Accent Glow
+            r, g, b = self.accent_rgb
+            glow_shadow = AppKit.NSShadow.alloc().init()
+            glow_shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 0.40))
+            glow_shadow.setShadowOffset_(AppKit.NSMakeSize(0.0, 4.0))
+            glow_shadow.setShadowBlurRadius_(14.0)
+
+            ctx.saveGraphicsState()
+            glow_shadow.set()
+            img.drawInRect_fromRect_operation_fraction_(
+                dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 0.50
+            )
+            ctx.restoreGraphicsState()
+
+            # 3. Crisp Foreground Character Illustration Pass
             img.drawInRect_fromRect_operation_fraction_(
                 dest_rect, src_rect, AppKit.NSCompositingOperationSourceOver, 1.0
             )
@@ -471,18 +458,18 @@ class CriticOverlayController(NSObject):
         screen = AppKit.NSScreen.mainScreen()
         screen_frame = screen.frame()
 
-        win_w = 400.0
-        win_h = 220.0
+        win_w = 320.0
+        win_h = 160.0
 
         if self.active_position == "bottom_center":
             win_x = (screen_frame.size.width - win_w) / 2.0
-            win_y = 10.0
+            win_y = 0.0
         elif self.active_position == "bottom_right":
-            win_x = screen_frame.size.width - win_w - 24.0
-            win_y = 12.0
-        else:  # bottom_left (default)
-            win_x = 24.0
-            win_y = 12.0
+            win_x = screen_frame.size.width - win_w
+            win_y = 0.0
+        else:  # bottom_left (default) - ALL THE WAY FLUSH TO SCREEN CORNER
+            win_x = 0.0
+            win_y = 0.0
 
         rect = AppKit.NSMakeRect(win_x, win_y, win_w, win_h)
         self.window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -494,10 +481,12 @@ class CriticOverlayController(NSObject):
 
         self.window.setOpaque_(False)
         self.window.setBackgroundColor_(AppKit.NSColor.clearColor())
-        self.window.setLevel_(AppKit.NSStatusWindowLevel + 2)  # Stays above games/fullscreen
+        # Floats above exclusive full-screen apps (RetroArch, Apple TV, Games)
+        self.window.setLevel_(AppKit.NSScreenSaverWindowLevel)
         self.window.setIgnoresMouseEvents_(True)  # 100% Click-through!
         self.window.setCollectionBehavior_(
             AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
+            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary |  # Required for macOS full-screen spaces
             AppKit.NSWindowCollectionBehaviorStationary |
             AppKit.NSWindowCollectionBehaviorIgnoresCycle
         )
@@ -510,19 +499,19 @@ class CriticOverlayController(NSObject):
     def set_position(self, pos_name: str):
         screen = AppKit.NSScreen.mainScreen()
         screen_frame = screen.frame()
-        win_w = 400.0
-        win_h = 220.0
+        win_w = 320.0
+        win_h = 160.0
 
         if pos_name == "bottom_center":
             win_x = (screen_frame.size.width - win_w) / 2.0
-            win_y = 10.0
+            win_y = 0.0
         elif pos_name == "bottom_right":
-            win_x = screen_frame.size.width - win_w - 24.0
-            win_y = 12.0
+            win_x = screen_frame.size.width - win_w
+            win_y = 0.0
         else:
             pos_name = "bottom_left"
-            win_x = 24.0
-            win_y = 12.0
+            win_x = 0.0
+            win_y = 0.0
 
         self.active_position = pos_name
         self.save_config()
