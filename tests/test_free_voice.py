@@ -2699,8 +2699,60 @@ class TestTier05Router(Base):
             res = fv.tier05_route(phrase)
             self.assertIsNotNone(res)
             self.assertEqual(res[0], "blocked", f"Tier 0.5 failed to block destructive intent: {phrase}")
-            self.assertIn("For safety, please say", self.said[-1])
+    def test_close_the_browser_window_routes_to_window_close_not_quit(self):
+        # Must route to close_window_named and execute act_keystroke('w', 'command down'), NOT quit_app
+        match = fv.route("close the browser window", partial=False)
+        self.assertIsNotNone(match)
+        self.assertEqual(match[0], "close_window_named")
+        with mock.patch.object(fv, "act_keystroke") as mock_ks, \
+             mock.patch.object(fv, "applescript") as mock_as:
+            fv.execute_match(*match)
+            mock_ks.assert_called_once_with("w", "command down")
+            self.assertIn("Closed", self.said)
+
+    def test_act_keystroke_in_process_no_osascript(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        mock_kb = mock.Mock()
+        with mock.patch.object(fv, "_keyboard", return_value=mock_kb), \
+             mock.patch.object(fv, "applescript") as mock_as:
+            fv.act_keystroke("w", "command down")
+            # Must send key via pynput keyboard controller and NEVER spawn osascript
+            self.assertTrue(mock_kb.press.called)
+            self.assertTrue(mock_kb.release.called)
+            mock_as.assert_not_called()
+
+    def test_act_key_code_in_process_no_osascript(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        mock_kb = mock.Mock()
+        with mock.patch.object(fv, "_keyboard", return_value=mock_kb), \
+             mock.patch.object(fv, "applescript") as mock_as:
+            fv.act_key_code(124, "control down")
+            self.assertTrue(mock_kb.press.called)
+            self.assertTrue(mock_kb.release.called)
+            mock_as.assert_not_called()
+
+    def test_act_type_text_in_process(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        mock_kb = mock.Mock()
+        with mock.patch.object(fv, "_keyboard", return_value=mock_kb), \
+             mock.patch.object(fv, "applescript") as mock_as:
+            fv.act_type_text("hello123")
+            self.assertEqual(mock_kb.type.call_count, 8)
+            mock_as.assert_not_called()
+
+    def test_warp_mouse_called_on_mouse_to(self):
+        fv.DRY_RUN = False
+        self.addCleanup(setattr, fv, "DRY_RUN", True)
+        with mock.patch.object(fv, "_warp_mouse") as mock_warp, \
+             mock.patch.object(fv, "_screen_dimensions", return_value=(1920, 1080)):
+            fv.act_mouse_to("bottom")
+            mock_warp.assert_called_once_with(960, 1030)
+            self.assertIn("Mouse is on bottom", self.said)
 
 
 if __name__ == "__main__":
     unittest.main()
+

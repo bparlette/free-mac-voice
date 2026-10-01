@@ -1214,27 +1214,107 @@ def act_move_next_display() -> None:
         say("Couldn't move window across displays")
 
 
+def _send_key_in_process(key_or_code: str | int, using: str = "") -> bool:
+    """Send a keystroke or key code directly in-process via pynput/Quartz.
+
+    Avoids spawning /usr/bin/osascript which fails on macOS with error 1002
+    ('osascript is not allowed to send keystrokes') because Accessibility is
+    granted to the parent Python process, not subprocess osascript.
+    """
+    kb = _keyboard()
+    if kb is None:
+        return False
+    try:
+        from pynput.keyboard import Key, KeyCode
+        mods = []
+        u = using.lower()
+        if "command" in u or "cmd" in u:
+            mods.append(Key.cmd)
+        if "shift" in u:
+            mods.append(Key.shift)
+        if "option" in u or "alt" in u:
+            mods.append(Key.alt)
+        if "control" in u or "ctrl" in u:
+            mods.append(Key.ctrl)
+
+        if isinstance(key_or_code, int):
+            target_key = KeyCode.from_vk(key_or_code)
+        else:
+            if key_or_code in ("\r", "\n"):
+                target_key = Key.enter
+            elif key_or_code == "\t":
+                target_key = Key.tab
+            elif key_or_code == " ":
+                target_key = Key.space
+            elif key_or_code == "\b":
+                target_key = Key.backspace
+            else:
+                target_key = key_or_code
+
+        for m in mods:
+            kb.press(m)
+        time.sleep(0.01)
+        kb.press(target_key)
+        time.sleep(0.01)
+        kb.release(target_key)
+        time.sleep(0.01)
+        for m in reversed(mods):
+            kb.release(m)
+        return True
+    except Exception as e:
+        log(f"in-process keystroke failed ({e})")
+        return False
+
+
 def act_keystroke(keys: str, using: str = "") -> None:
+    if DRY_RUN:
+        log(f"DRY-RUN keystroke {keys!r} using {using!r}")
+        return
+    if _send_key_in_process(keys, using):
+        return
     mod = f" using {{{using}}}" if using else ""
     applescript(f'tell application "System Events" to keystroke "{esc(keys)}"{mod}')
 
 
 def act_key_code(code: int, using: str = "") -> None:
+    if DRY_RUN:
+        log(f"DRY-RUN key code {code} using {using!r}")
+        return
+    if _send_key_in_process(code, using):
+        return
     mod = f" using {{{using}}}" if using else ""
     applescript(f'tell application "System Events" to key code {code}{mod}')
 
 
 def act_type_text(text: str) -> None:
+    if DRY_RUN:
+        log(f"DRY-RUN type {len(text)} chars: {text!r}")
+        return
     kb = _keyboard()
     if kb is not None:
         try:
-            kb.type(text)
+            from pynput.keyboard import Key
+            for char in text:
+                if char in ("\r", "\n"):
+                    kb.press(Key.enter)
+                    time.sleep(0.01)
+                    kb.release(Key.enter)
+                elif char == "\t":
+                    kb.press(Key.tab)
+                    time.sleep(0.01)
+                    kb.release(Key.tab)
+                else:
+                    kb.type(char)
+                time.sleep(0.01)
             log(f"typed {len(text)} chars via pynput")
             return
         except Exception as e:
             log(f"pynput typing failed ({e}), falling back to AppleScript")
-    applescript(f'tell application "System Events" to keystroke "{esc(text)}"')
-    log(f"typed {len(text)} chars")
+    try:
+        applescript(f'tell application "System Events" to keystroke "{esc(text)}"')
+        log(f"typed {len(text)} chars via AppleScript")
+    except Exception as e:
+        log(f"AppleScript typing failed: {e}")
 
 
 def act_open_url(url: str) -> None:
@@ -1555,24 +1635,46 @@ def _load_xa11y():
 
 
 # ---------------------------------------------------------------- mouse control
+_mouse_cached = None
+_keyboard_cached = None
+
+
 def _mouse():
-    """Lazily build a pynput mouse controller; (None, None) when unavailable."""
-    try:
-        from pynput.mouse import Button, Controller
-    except Exception as e:  # noqa: BLE001
-        log(f"mouse control unavailable: {e}")
-        return None, None
-    return Controller(), Button
+    """Lazily build and cache a pynput mouse controller; (None, None) when unavailable."""
+    global _mouse_cached
+    if _mouse_cached is None:
+        try:
+            from pynput.mouse import Button, Controller
+            _mouse_cached = (Controller(), Button)
+        except Exception as e:  # noqa: BLE001
+            log(f"mouse control unavailable: {e}")
+            return None, None
+    return _mouse_cached
 
 
 def _keyboard():
-    """Lazily build a pynput keyboard controller; None when unavailable."""
+    """Lazily build and cache a pynput keyboard controller; None when unavailable."""
+    global _keyboard_cached
+    if _keyboard_cached is None:
+        try:
+            from pynput.keyboard import Controller
+            _keyboard_cached = Controller()
+        except Exception as e:  # noqa: BLE001
+            log(f"keyboard control unavailable: {e}")
+            return None
+    return _keyboard_cached
+
+
+def _warp_mouse(x: float, y: float) -> None:
+    """Physically warp the hardware cursor on macOS and post a mouse moved event."""
     try:
-        from pynput.keyboard import Controller
-        return Controller()
-    except Exception as e:  # noqa: BLE001
-        log(f"keyboard control unavailable: {e}")
-        return None
+        import Quartz
+        target = (float(x), float(y))
+        Quartz.CGWarpMouseCursorPosition(target)
+        ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, target, 0)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+    except Exception as e:
+        log(f"Quartz mouse warp failed: {e}")
 
 
 def _click_xy(x: int, y: int, name: str) -> bool:
@@ -1580,6 +1682,20 @@ def _click_xy(x: int, y: int, name: str) -> bool:
     if DRY_RUN:
         log(f"DRY-RUN click at ({x}, {y}) for {name!r}")
         return True
+    _warp_mouse(x, y)
+    time.sleep(0.04)
+    try:
+        import Quartz
+        target = (float(x), float(y))
+        down = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, target, Quartz.kCGMouseButtonLeft)
+        up = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, target, Quartz.kCGMouseButtonLeft)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+        time.sleep(0.04)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+        say(f"Clicked {name}")
+        return True
+    except Exception as e:
+        log(f"Quartz click failed ({e}), falling back to pynput")
     ctrl, btn = _mouse()
     if ctrl is None or btn is None:
         log("click failed: mouse controller unavailable")
@@ -1992,6 +2108,7 @@ def act_mouse_to(name: str) -> None:
     if mouse is None:
         say("Mouse control isn't available on this Mac")
         return
+    _warp_mouse(x, y)
     mouse.position = (x, y)
     say(f"Mouse is on {spoken}")
 
@@ -2019,6 +2136,7 @@ def act_close_notifications() -> None:
             if g.name:
                 b = g.bounds
                 if b and b.width > 200 and b.x > 1000:
+                    _warp_mouse(b.x + 10, b.y + 10)
                     if mouse:
                         mouse.position = (b.x + 10, b.y + 10)
                         time.sleep(0.1)
@@ -2053,6 +2171,15 @@ def act_mouse_move(direction: str, amount: str | None) -> None:
     if mouse is None:
         say("Mouse control isn't available on this Mac")
         return
+    pos = getattr(mouse, "position", None)
+    if isinstance(pos, (tuple, list)) and len(pos) >= 2:
+        try:
+            cur_x, cur_y = int(pos[0]), int(pos[1])
+            target_x = max(0, int(cur_x + dx * dist))
+            target_y = max(0, int(cur_y + dy * dist))
+            _warp_mouse(target_x, target_y)
+        except Exception:
+            pass
     mouse.move(dx * dist, dy * dist)
     say(f"Moved mouse {direction}")
 
@@ -2460,19 +2587,7 @@ def _vision_click_task(name: str) -> bool:
     if loc is None:
         return False
     x, y = loc
-    if DRY_RUN:
-        log(f"DRY-RUN vision click at ({x}, {y}) for {name!r}")
-        return True
-    try:
-        from pynput.mouse import Button, Controller
-        mouse = Controller()
-        mouse.position = (x, y)
-        mouse.click(Button.left, 1)
-    except Exception as e:  # noqa: BLE001
-        log(f"vision click failed: {e}")
-        return False
-    say(f"Clicked {name}")
-    return True
+    return _click_xy(x, y, name)
 
 
 # ---------------------------------------------------------------- confirmation
@@ -2726,36 +2841,141 @@ _CANONICAL_ASCII = {
         "      |"
     ),
     "rose": (
-        "      .-.\n"
-        "    .'   `.\n"
-        "   : (o)   :\n"
-        "    `-._.-'\n"
-        "       |\n"
-        "     \\ | /\n"
-        "      \\|/\n"
-        "       |"
+        "          .-.\n"
+        "         /   \\\n"
+        "        |  @  |\n"
+        "         \\   /\n"
+        "     .---.`-'.---.\n"
+        "    /   /  |  \\   \\\n"
+        "   |   |   |   |   |\n"
+        "    \\   \\  |  /   /\n"
+        "     `---`-.-'---'\n"
+        "           |\n"
+        "        \\--|--/\n"
+        "         \\ | /\n"
+        "          \\|/\n"
+        "           |\n"
+        "          /|\n"
+        "         / |"
     ),
     "cat": (
-        " /\\_/\\\n"
-        "( o.o )\n"
-        " > ^ <"
+        "       /\\_/\\\n"
+        "      ( o.o )\n"
+        "     ==_ \" _==\n"
+        "       /   \\\n"
+        "      /     \\\n"
+        "     |       |\n"
+        "    /|  ___  |\\\n"
+        "   ( | |   | | )\n"
+        "  (_(_)|   |_)_)"
+    ),
+    "dog": (
+        "         __\n"
+        "        /  \\\n"
+        "       / .. \\\n"
+        "      (_\\  /_)\n"
+        "       / '' \\\n"
+        "      ( /\"\"\\ )\n"
+        "       `\\  /'\n"
+        "         `'"
     ),
     "heart": (
-        "  .-.     .-.\n"
-        " (   `---'   )\n"
-        "  `-.     .-'\n"
-        "     `---'"
+        "             .---.     .---.\n"
+        "           .'     '. .'     '.\n"
+        "          /         V         \\\n"
+        "         |   .:::.     .:::.   |\n"
+        "         |  :::::::. :::::::   |\n"
+        "          \\  ':::::::::::::'  /\n"
+        "           '.  ':::::::::'  .'\n"
+        "             '.  ':::::'  .'\n"
+        "               '.  '::' .'\n"
+        "                 '.   .'\n"
+        "                   '.'"
     ),
     "tree": (
-        "    /\\\n"
-        "   /  \\\n"
-        "  / /\\ \\\n"
-        " / /  \\ \\\n"
-        "/ /____\\ \\\n"
-        "    ||\n"
-        "    ||"
+        "          /\\\n"
+        "         /  \\\n"
+        "        / /\\ \\\n"
+        "       / /  \\ \\\n"
+        "      / /____\\ \\\n"
+        "          ||\n"
+        "          ||"
+    ),
+    "skull": (
+        "         .---.\n"
+        "        /     \\\n"
+        "       | () () |\n"
+        "        \\  ^  /\n"
+        "         |||||\n"
+        "         |||||"
+    ),
+    "coffee": (
+        "          ( (\n"
+        "           ) )\n"
+        "        .____.\n"
+        "        |    |]\n"
+        "        \\____/\n"
+        "       `------'"
+    ),
+    "butterfly": (
+        "      \\       /\n"
+        "       \\  /\\ /\n"
+        "      .-'   '-.\n"
+        "    .'  .--.   '.\n"
+        "   /   (    )    \\\n"
+        "  |     `--'      |\n"
+        "   \\             /\n"
+        "    '.   .---. .'\n"
+        "      '(     )'\n"
+        "        `---'"
+    ),
+    "star": (
+        "           *\n"
+        "          / \\\n"
+        "     *---'   '---*\n"
+        "      \\         /\n"
+        "       >   *   <\n"
+        "      /         \\\n"
+        "     *---.   .---*\n"
+        "          \\ /\n"
+        "           *"
+    ),
+    "sword": (
+        "           /| ________________\n"
+        "     O|===|* >________________>\n"
+        "           \\|"
+    ),
+    "apple": (
+        "            .:'\n"
+        "         __ :'__\n"
+        "      .'`__`-'__``.\n"
+        "     :__________.-'\n"
+        "     :_________:\n"
+        "      :_________`-;\n"
+        "       `.__.-.__.'"
+    ),
+    "penguin": (
+        "       .-.\n"
+        "      |o_o |\n"
+        "      |:_/ |\n"
+        "     //   \\ \\\n"
+        "    (|     | )\n"
+        "   /'\\_   _/`\\\n"
+        "   \\___)=(___/"
     ),
 }
+
+_CANONICAL_ASCII["hearts"] = _CANONICAL_ASCII["heart"]
+_CANONICAL_ASCII["love"] = _CANONICAL_ASCII["heart"]
+_CANONICAL_ASCII["cats"] = _CANONICAL_ASCII["cat"]
+_CANONICAL_ASCII["kitten"] = _CANONICAL_ASCII["cat"]
+_CANONICAL_ASCII["kitty"] = _CANONICAL_ASCII["cat"]
+_CANONICAL_ASCII["dogs"] = _CANONICAL_ASCII["dog"]
+_CANONICAL_ASCII["puppy"] = _CANONICAL_ASCII["dog"]
+_CANONICAL_ASCII["flowers"] = _CANONICAL_ASCII["flower"]
+_CANONICAL_ASCII["roses"] = _CANONICAL_ASCII["rose"]
+_CANONICAL_ASCII["mac"] = _CANONICAL_ASCII["apple"]
+_CANONICAL_ASCII["cup of coffee"] = _CANONICAL_ASCII["coffee"]
 
 
 def _llm_text(prompt: str, max_tokens: int = 1024, system: str | None = None) -> str | None:
@@ -2825,15 +3045,22 @@ def act_draw_ascii(subject: str) -> None:
     clean_subj = re.sub(r"^ascii\s+", "", clean_subj, flags=re.I).strip() or clean_subj
     say(f"Drawing ASCII {clean_subj}")
 
-    art = _CANONICAL_ASCII.get(clean_subj.lower())
+    key = clean_subj.lower()
+    art = _CANONICAL_ASCII.get(key)
+    if not art:
+        for k, v in _CANONICAL_ASCII.items():
+            if k in key or key in k:
+                art = v
+                break
     if not art:
         art = _llm_text(
-            f"Generate recognizable ASCII art of {clean_subj}.\n"
-            f"Use standard monospace ASCII characters (@, #, *, +, =, -, :, ., |, /, \\).\n"
-            f"Keep it compact (under 30 cols wide, 8-16 lines tall).\n"
-            f"Output ONLY the ASCII art, without explanations.",
-            max_tokens=256,
-            system="You are an expert ASCII artist. Reply with ONLY raw ASCII art inside code fences, no extra text.",
+            f"Generate recognizable, high quality, symmetrical ASCII art of {clean_subj}.\n"
+            f"Use standard monospace characters (@, #, *, +, =, -, :, ., |, /, \\).\n"
+            f"Keep it compact (under 40 cols wide, 10-18 lines tall).\n"
+            f"Ensure lines are balanced and well-aligned in monospace.\n"
+            f"Output ONLY the ASCII art inside ``` code fences.",
+            max_tokens=512,
+            system="You are a master ASCII artist. Reply with ONLY raw ASCII art inside code fences, with zero conversational text.",
         )
     if not art:
         say("I couldn't draw that in ASCII right now")
@@ -2856,6 +3083,22 @@ def act_draw_ascii(subject: str) -> None:
 
     out_html = os.path.join(tempfile.gettempdir(), "ascii-art.html")
     escaped = html.escape(cleaned)
+
+    # Dynamic styling theme based on subject
+    s_lower = clean_subj.lower()
+    if any(w in s_lower for w in ("heart", "love", "rose", "valentine")):
+        accent = "#ff4d6d"
+        glow = "rgba(255, 77, 109, 0.45)"
+    elif any(w in s_lower for w in ("matrix", "skull", "cyber", "hacker")):
+        accent = "#39ff14"
+        glow = "rgba(57, 255, 20, 0.45)"
+    elif any(w in s_lower for w in ("star", "sun", "gold", "flower", "coffee")):
+        accent = "#ffd166"
+        glow = "rgba(255, 209, 102, 0.45)"
+    else:
+        accent = "#58a6ff"
+        glow = "rgba(88, 166, 255, 0.35)"
+
     html_content = (
         "<!DOCTYPE html>\n"
         "<html>\n"
@@ -2863,33 +3106,88 @@ def act_draw_ascii(subject: str) -> None:
         '<meta charset="utf-8">\n'
         f"<title>ASCII {html.escape(clean_subj)}</title>\n"
         "<style>\n"
+        f"  :root {{\n"
+        f"    --accent: {accent};\n"
+        f"    --glow: {glow};\n"
+        f"  }}\n"
         "  body {\n"
         "    margin: 0;\n"
-        "    padding: 24px;\n"
-        "    background-color: #0d1117;\n"
-        "    color: #c9d1d9;\n"
+        "    padding: 32px 16px;\n"
+        "    background: radial-gradient(circle at 50% 20%, #161b22 0%, #090d13 100%);\n"
+        "    color: #e6edf3;\n"
+        '    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;\n'
         "    display: flex;\n"
+        "    flex-direction: column;\n"
         "    justify-content: center;\n"
         "    align-items: center;\n"
         "    min-height: 100vh;\n"
         "    box-sizing: border-box;\n"
         "  }\n"
-        "  pre {\n"
-        "    font-family: ui-monospace, Menlo, Consolas, monospace;\n"
-        "    font-size: 16px;\n"
-        "    line-height: 1.2;\n"
-        "    white-space: pre;\n"
-        "    margin: 0;\n"
-        "    padding: 24px 32px;\n"
-        "    background-color: #161b22;\n"
+        "  .card {\n"
+        "    background: #0d1117;\n"
         "    border: 1px solid #30363d;\n"
-        "    border-radius: 12px;\n"
-        "    box-shadow: 0 12px 32px rgba(0,0,0,0.6);\n"
+        "    border-radius: 16px;\n"
+        "    padding: 36px 48px;\n"
+        "    box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 35px var(--glow);\n"
+        "    display: flex;\n"
+        "    flex-direction: column;\n"
+        "    align-items: center;\n"
+        "    max-width: 90vw;\n"
+        "  }\n"
+        "  .badge {\n"
+        "    font-size: 13px;\n"
+        "    font-weight: 600;\n"
+        "    text-transform: uppercase;\n"
+        "    letter-spacing: 1.5px;\n"
+        "    color: var(--accent);\n"
+        "    margin-bottom: 20px;\n"
+        "    padding: 5px 14px;\n"
+        "    background: rgba(255, 255, 255, 0.04);\n"
+        "    border: 1px solid var(--accent);\n"
+        "    border-radius: 20px;\n"
+        "  }\n"
+        "  pre {\n"
+        '    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;\n'
+        "    font-size: 18px;\n"
+        "    line-height: 1.18;\n"
+        "    letter-spacing: 0.5px;\n"
+        "    white-space: pre;\n"
+        "    color: #f0f6fc;\n"
+        "    text-shadow: 0 0 12px var(--glow);\n"
+        "    margin: 0 0 24px 0;\n"
+        "    padding: 16px;\n"
+        "    user-select: all;\n"
+        "  }\n"
+        "  .btn {\n"
+        "    background: #21262d;\n"
+        "    color: #c9d1d9;\n"
+        "    border: 1px solid #30363d;\n"
+        "    padding: 8px 18px;\n"
+        "    border-radius: 8px;\n"
+        "    font-size: 13px;\n"
+        "    font-weight: 500;\n"
+        "    cursor: pointer;\n"
+        "    transition: all 0.2s ease;\n"
+        "  }\n"
+        "  .btn:hover {\n"
+        "    background: #30363d;\n"
+        "    color: #fff;\n"
+        "    border-color: #8b949e;\n"
+        "  }\n"
+        "  .hint {\n"
+        "    font-size: 12px;\n"
+        "    color: #6e7681;\n"
+        "    margin-top: 14px;\n"
         "  }\n"
         "</style>\n"
         "</head>\n"
         "<body>\n"
-        f"<pre>{escaped}</pre>\n"
+        '  <div class="card">\n'
+        f'    <div class="badge">ASCII {html.escape(clean_subj)}</div>\n'
+        f'    <pre>{escaped}</pre>\n'
+        '    <button class="btn" onclick="navigator.clipboard.writeText(document.querySelector(\'pre\').innerText); this.innerText=\'Copied!\'; setTimeout(()=>this.innerText=\'Copy ASCII\', 1500)">Copy ASCII</button>\n'
+        '    <div class="hint">Free Mac Voice • Press ⌘W to close</div>\n'
+        "  </div>\n"
         "</body>\n"
         "</html>\n"
     )
@@ -3171,7 +3469,8 @@ _p(r"^(previous app|prev app|app back)$", "prev_app", True)
 _p(r"^(switch to|focus|bring up) (.+)$", "switch_app", True)
 # --- windows / tabs / quit / hide
 _p(r"^close all windows$", "close_all_windows", True)
-_p(r"^(close( the)? window|close this)$", "close_window", True)
+_p(r"^(close( the| this| current| active)? window|close this window|close this)$", "close_window", True)
+_p(r"^close (the )?(.+?) window$", "close_window_named", True)
 _p(r"^close$", "close_window", True)
 _p(r"^next window$", "next_window", True)
 _p(r"^show all windows$", "show_all_windows", True)
@@ -3548,6 +3847,14 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         # confirmation gate below, not here.
         elif name == "close_window":
             act_keystroke("w", "command down"); say("Closed")
+        elif name == "close_window_named":
+            target = m.group(2).strip()
+            app = resolve_app(target)
+            if app:
+                applescript(f'tell application "{esc(app)}" to activate')
+                time.sleep(0.1)
+            act_keystroke("w", "command down")
+            say("Closed")
         elif name == "next_window":
             act_keystroke("`", "command down"); say("Next window")
         elif name == "show_all_windows":
