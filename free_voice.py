@@ -128,6 +128,10 @@ _wake_window_until = 0.0
 DRY_RUN = False
 
 
+_ollama_ok: bool | None = None  # None=untried, False=unreachable (cached)
+_decision_ok: bool | None = None
+
+
 def acknowledge_wake() -> None:
     """Provide audio feedback when wake word is heard alone."""
     fb = VOICE_WAKE_FEEDBACK
@@ -659,7 +663,12 @@ def push_to_talk_loop(on_utterance) -> None:
                 return
             audio = result.pop("audio", None)
             if audio is not None and len(audio) > 1600:  # >0.1s of audio
-                on_utterance(audio)
+                def _safe_dispatch():
+                    try:
+                        on_utterance(audio)
+                    except Exception as e:
+                        log(f"push-to-talk error ({e}) — still listening")
+                threading.Thread(target=_safe_dispatch, daemon=True).start()
             else:
                 log("too short, ignoring")
 
@@ -1139,6 +1148,98 @@ def act_switch_app(name: str) -> None:
     say(f"Switched to {app}")
 
 
+def act_close_window(target_app_name: str | None = None) -> bool:
+    """Close the frontmost visible application window (or target_app_name window).
+
+    Uses macOS Accessibility AXCloseButton on the frontmost visible application
+    window, which reliably closes the window even when background daemons or
+    notifications hold key state. Falls back to in-process Cmd-W keystroke.
+    """
+    if DRY_RUN:
+        log("DRY-RUN close window")
+        say("Closed")
+        return True
+
+    target_pid = None
+    target_name = None
+
+    if target_app_name:
+        resolved = resolve_app(target_app_name, prefer_running=True)
+        if resolved:
+            try:
+                from AppKit import NSWorkspace
+                for a in NSWorkspace.sharedWorkspace().runningApplications():
+                    if a.localizedName() == resolved:
+                        target_pid = a.processIdentifier()
+                        target_name = resolved
+                        break
+            except Exception:
+                pass
+
+    if target_pid is None:
+        # Identify topmost real application window (layer 0, size >= 150)
+        Q = _load_quartz()
+        if Q:
+            try:
+                opts = Q.kCGWindowListOptionOnScreenOnly | Q.kCGWindowListExcludeDesktopElements
+                for w in (Q.CGWindowListCopyWindowInfo(opts, Q.kCGNullWindowID) or []):
+                    owner = w.get(Q.kCGWindowOwnerName, "")
+                    layer = w.get(Q.kCGWindowLayer, -1)
+                    bounds = w.get(Q.kCGWindowBounds, {})
+                    if layer == 0 and bounds.get("Width", 0) >= 150 and bounds.get("Height", 0) >= 150:
+                        if owner not in ("UserNotificationCenter", "Dock", "Window Server", "SystemUIServer", "loginwindow"):
+                            target_pid = w.get(Q.kCGWindowOwnerPID)
+                            target_name = owner
+                            break
+            except Exception as e:
+                log(f"Quartz window search failed: {e}")
+
+    if target_pid is None:
+        try:
+            from AppKit import NSWorkspace
+            front = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if front:
+                target_pid = front.processIdentifier()
+                target_name = front.localizedName()
+        except Exception:
+            pass
+
+    closed = False
+    if target_pid is not None:
+        try:
+            import ApplicationServices as AX
+            ax_app = AX.AXUIElementCreateApplication(target_pid)
+            err, windows = AX.AXUIElementCopyAttributeValue(ax_app, "AXWindows", None)
+            if not err and windows:
+                for win in windows:
+                    err_btn, btn = AX.AXUIElementCopyAttributeValue(win, "AXCloseButton", None)
+                    if not err_btn and btn:
+                        res = AX.AXUIElementPerformAction(btn, "AXPress")
+                        if res == 0:
+                            closed = True
+                            log(f"closed window of {target_name} (pid {target_pid}) via AXCloseButton")
+                            break
+        except Exception as e:
+            log(f"AXCloseButton failed: {e}")
+
+    if not closed:
+        if target_pid is not None:
+            try:
+                from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
+                for a in NSWorkspace.sharedWorkspace().runningApplications():
+                    if a.processIdentifier() == target_pid:
+                        a.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+                        time.sleep(0.08)
+                        break
+            except Exception:
+                pass
+        act_keystroke("w", "command down")
+        closed = True
+
+    say("Closed")
+    return closed
+
+
 def act_close_all_windows() -> None:
     """Close all open windows of the active application (Option-Command-W)."""
     act_keystroke("w", "option down, command down")
@@ -1508,9 +1609,18 @@ def act_timer(amount: int, unit: str) -> None:
 
 
 def act_calculate(expr: str) -> None:
-    if not re.fullmatch(r"[\d\s+\-*/().%^]+", expr):
+    expr = expr.strip()
+    if len(expr) > 64 or not re.fullmatch(r"[\d\s+\-*/().%^]+", expr):
         say("I can only calculate plain arithmetic")
         return
+    # Guard against exponent chains that hang the thread ("9^9^9")
+    if expr.count("^") > 1 or expr.count("**") > 1:
+        say("Calculation is too large")
+        return
+    for m in re.finditer(r"\^(\d+)", expr):
+        if int(m.group(1)) > 100:
+            say("Exponent is too large")
+            return
     try:
         val = eval(expr.replace("^", "**"), {"__builtins__": {}}, {})  # noqa: S307
         say(f"{val:g}")
@@ -2217,9 +2327,19 @@ def act_click_here() -> None:
 
 # ---------------------------------------------------------------- local vision (screenshots via qwen3-vl)
 
-_SCREENSHOT_PATH = "/tmp/free-voice-screen.png"
+_SCREENSHOT_DIR = os.path.join(HOME, ".free-voice", "tmp")
+_SCREENSHOT_PATH = os.path.join(_SCREENSHOT_DIR, "free-voice-screen.png")
 _shot_ts = 0.0
 SCREENSHOT_TTL = 8.0  # "what's on my screen" -> "click the X" reuses the shot
+
+
+def _ensure_screenshot_dir() -> str:
+    try:
+        os.makedirs(_SCREENSHOT_DIR, mode=0o700, exist_ok=True)
+        os.chmod(_SCREENSHOT_DIR, 0o700)
+    except Exception:
+        pass
+    return _SCREENSHOT_PATH
 
 
 def capture_screenshot(fresh: bool = False) -> str | None:
@@ -2238,6 +2358,7 @@ def capture_screenshot(fresh: bool = False) -> str | None:
         log("reusing cached screenshot")
         return _SCREENSHOT_PATH
     try:
+        _ensure_screenshot_dir()
         subprocess.run(["screencapture", "-x", "-t", "png", _SCREENSHOT_PATH],
                        check=True, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=15)
@@ -3846,15 +3967,9 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         # quit_app and close_all_windows are destructive: handled by the
         # confirmation gate below, not here.
         elif name == "close_window":
-            act_keystroke("w", "command down"); say("Closed")
+            act_close_window()
         elif name == "close_window_named":
-            target = m.group(2).strip()
-            app = resolve_app(target)
-            if app:
-                applescript(f'tell application "{esc(app)}" to activate')
-                time.sleep(0.1)
-            act_keystroke("w", "command down")
-            say("Closed")
+            act_close_window(m.group(2).strip())
         elif name == "next_window":
             act_keystroke("`", "command down"); say("Next window")
         elif name == "show_all_windows":
@@ -4232,9 +4347,6 @@ _TIER1_ACTIONS = {
     "lock", "sleep", "brightness_up", "brightness_down", "screenshot",
     "dark_mode", "wifi", "timer", "calculate", "click_button", "click_link",
 }
-
-_ollama_ok: bool | None = None  # None=untried, False=unreachable (cached)
-_decision_ok: bool | None = None
 
 _DESTRUCTIVE_ACTIONS = {
     "shutdown", "restart", "logout", "empty_trash",
@@ -4831,7 +4943,7 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     elif action == "switch_app":
         act_switch_app(app_name)
     elif action == "close_window":
-        act_keystroke("w", "command down"); say("Closed")
+        act_close_window(str(p("app", "")))
     elif action == "close_all_windows":
         if _tier1_confirm("closing all windows", allow_destructive):
             act_close_all_windows()

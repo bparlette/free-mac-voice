@@ -2704,11 +2704,9 @@ class TestTier05Router(Base):
         match = fv.route("close the browser window", partial=False)
         self.assertIsNotNone(match)
         self.assertEqual(match[0], "close_window_named")
-        with mock.patch.object(fv, "act_keystroke") as mock_ks, \
-             mock.patch.object(fv, "applescript") as mock_as:
+        with mock.patch.object(fv, "act_close_window") as mock_close:
             fv.execute_match(*match)
-            mock_ks.assert_called_once_with("w", "command down")
-            self.assertIn("Closed", self.said)
+            mock_close.assert_called_once_with("browser")
 
     def test_act_keystroke_in_process_no_osascript(self):
         fv.DRY_RUN = False
