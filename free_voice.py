@@ -1723,7 +1723,7 @@ def act_tech_radar() -> None:
             if "Actionable Upgrade Alerts" in content:
                 alerts_section = content.split("Actionable Upgrade Alerts")[-1].strip().split("\n\n")[0]
                 if "No action required" in alerts_section or "bleeding edge" in alerts_section:
-                    say("All core voice technologies are up to date and at the bleeding edge.")
+                    say("Voice, decision routing, and computer control systems are up to date and at the bleeding edge.")
                 else:
                     lines = [l.strip("- *⚠️").strip() for l in alerts_section.splitlines() if l.strip().startswith("-")]
                     if lines:
