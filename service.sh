@@ -228,8 +228,23 @@ EOF
     echo "==> Tech Radar LaunchAgent removed."
     ;;
 
+  roast)
+    echo "==> Summoning Mystery Science Theater 3000 Riffers (Crow & Tom Servo)..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" &
+    ;;
+
+  roast-now)
+    echo "==> Triggering on-demand roast..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" roast
+    ;;
+
+  roast-stop)
+    echo "==> Dismissing Masterpiece Theater Critic..."
+    "$PYTHON_BIN" "$REPO_DIR/masterpiece_critic.py" stop
+    ;;
+
   *)
-    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall|radar-install|radar-run|radar-report|radar-status|radar-uninstall}"
+    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall|radar-install|radar-run|radar-report|radar-status|radar-uninstall|roast|roast-now|roast-stop}"
     exit 1
     ;;
 esac

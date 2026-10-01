@@ -1738,6 +1738,51 @@ def act_tech_radar() -> None:
         say("Unable to access tech radar report.")
 
 
+def act_masterpiece_roast(action: str = "start") -> None:
+    """Launch or trigger Masterpiece Theater Screen Critic to roast user."""
+    pid_file = "/tmp/masterpiece_critic.pid"
+    cmd_file = "/tmp/masterpiece_critic_cmd.txt"
+    critic_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "masterpiece_critic.py")
+    python_bin = sys.executable
+
+    is_running = False
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file, "r") as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 0)
+            is_running = True
+        except Exception:
+            is_running = False
+
+    if action == "stop":
+        if is_running:
+            try:
+                with open(cmd_file, "w") as f:
+                    f.write("stop")
+            except Exception:
+                pass
+            say("Dismissing the theater critic.")
+        else:
+            say("The theater critic isn't watching right now.")
+        return
+
+    # Start or roast on demand
+    if is_running:
+        try:
+            with open(cmd_file, "w") as f:
+                f.write("roast_now")
+        except Exception:
+            pass
+    else:
+        try:
+            subprocess.Popen([python_bin, critic_script], start_new_session=True)
+            log("launched Masterpiece Theater Critic overlay")
+        except Exception as e:
+            log(f"failed to launch critic: {e}")
+            say("Unable to summon the theater critic right now.")
+
+
 def act_read_clipboard() -> None:
     """Read the current text on the clipboard aloud."""
     try:
@@ -3659,6 +3704,12 @@ def _p(rx: str, name: str, partial_ok: bool = False) -> None:
 
 # --- continuous dictation BEFORE generic "open/start ..." (else "start dictating" opens an app)
 _p(r"^(start dictating|dictate|take notes)( until i say stop)?$", "dictate_start")
+# --- Masterpiece Screen Theater / Critic Roaster (BEFORE generic open/start/watch)
+_p(r"^(?:please )?roast (?:me|us|my screen|this)(?: please)?$", "roast_me", True)
+_p(r"^(?:please )?watch (?:the (?:show|game|movie)|tv|me play(?: games?)?)(?: with (?:me|us))?$", "roast_me", True)
+_p(r"^(?:start |launch )?(?:the )?(?:mystery science theater|mst3k|masterpiece )?(?:critic|roaster|theater critic|roasting)$", "roast_me", True)
+_p(r"^(?:mystery science theater|mst3k)$", "roast_me", True)
+_p(r"^(?:stop|dismiss|close|exit|end) (?:roasting|roast|(?:the )?critic|(?:the )?show|roaster|mst3k)$", "roast_stop", True)
 # --- Samsung TV (BEFORE generic "switch to X" app pattern below)
 _p(r"^switch to (the )?(computer|mac|pc)$", "tv_computer", True)
 _p(r"^switch to (the )?tv$", "tv_tv", True)
@@ -4359,6 +4410,10 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_date()
         elif name == "tech_radar":
             act_tech_radar()
+        elif name == "roast_me":
+            act_masterpiece_roast("start")
+        elif name == "roast_stop":
+            act_masterpiece_roast("stop")
         elif name == "help":
             cmds = sorted({n for _, n, _ in _PATTERNS})
             print("Commands: " + ", ".join(cmds))
