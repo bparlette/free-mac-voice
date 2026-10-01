@@ -100,6 +100,8 @@ load_env()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
+# Speech-to-text engine: "phonon" (Phonon-2 164MB MLX, default on Apple Silicon) or "whisper"
+VOICE_STT_ENGINE = os.environ.get("VOICE_STT_ENGINE", "phonon").strip().lower()
 # Tier 1 (local LLM fallback). Set OLLAMA_TIER1=0 to disable.
 # Default is qwen3-vl:8b — a vision-language model, so one local model covers
 # routing, Q&A, AND screen understanding. 8GB minis: use qwen3-vl:4b instead.
@@ -595,10 +597,40 @@ def record_fixed(seconds: float):
 
 
 _whisper = None
+_phonon_model = None
+
+
+def _get_phonon_model():
+    global _phonon_model
+    if _phonon_model is None:
+        try:
+            from fermion.transcribe import _resolve
+            from fermion._speech import backends, fetch
+
+            repo, key, pin, local_dir = _resolve("phonon-2")
+            engine_kind = pin.get("engine", "phonon2")
+            model_dir = local_dir if local_dir is not None else fetch.ensure(repo, key, pin)
+            log("loading Phonon-2 ASR model (164MB Parakeet-TDT)...")
+            _phonon_model = backends.load(engine_kind, model_dir, profile=key, backend=pin["backend"], quiet=True)
+            log("Phonon-2 ASR model ready")
+        except Exception as e:
+            log(f"Phonon-2 initialization skipped ({e}); using Whisper")
+            _phonon_model = False
+    return _phonon_model if _phonon_model is not False else None
 
 
 def transcribe(audio) -> str:
     global _whisper
+    if VOICE_STT_ENGINE == "phonon":
+        phonon = _get_phonon_model()
+        if phonon is not None:
+            try:
+                res = phonon.transcribe_array_detailed(audio)
+                text, _, _ = res.triple()
+                return text.strip()
+            except Exception as e:
+                log(f"Phonon-2 decode failed ({e}) — falling back to Whisper")
+
     if _whisper is None:
         from faster_whisper import WhisperModel
 
