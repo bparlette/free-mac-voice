@@ -14,6 +14,7 @@ import os
 import json
 import urllib.request
 import urllib.error
+import subprocess
 from datetime import datetime
 
 UPSTREAM_REPOS = [
@@ -31,7 +32,9 @@ HF_TAGS = [
     {"tag": "text-generation", "category": "Compact Reasoning / SLM (<3B)", "max_params": 3000000000}
 ]
 
-STATE_FILE = os.path.expanduser("~/.config/free-voice/radar_state.json")
+CONFIG_DIR = os.path.expanduser("~/.config/free-voice")
+STATE_FILE = os.path.join(CONFIG_DIR, "radar_state.json")
+REPORT_FILE = os.path.join(CONFIG_DIR, "radar_report.md")
 
 def fetch_json(url: str, timeout: int = 8):
     req = urllib.request.Request(
@@ -90,17 +93,61 @@ def load_state():
     return {}
 
 def save_state(state):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    os.makedirs(CONFIG_DIR, exist_ok=True)
     try:
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=2)
     except Exception:
         pass
 
+def send_notification(title: str, message: str):
+    """Sends a native macOS desktop notification via AppleScript."""
+    try:
+        script = f'display notification "{message}" with title "{title}" sound name "Tink"'
+        subprocess.run(["osascript", "-e", script], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+def generate_markdown_report(scan_time: str, releases: list, trending: list, new_alerts: list):
+    lines = [
+        "# 📡 Free Mac Voice — Morning Technology Radar Report",
+        f"\n**Generated:** {scan_time}",
+        "\n---",
+        "\n### 📦 Upstream Framework & Model Status",
+        "| Component / Framework | Repository | Latest Release | Release Date | Status |",
+        "|:---|:---|:---:|:---:|:---:|"
+    ]
+    for r in releases:
+        status = r.get("status", "✅ Up to date")
+        lines.append(f"| **{r['desc']}** | [{r['repo']}](https://github.com/{r['repo']}) | `{r['tag']}` | {r['date']} | {status} |")
+
+    lines.append("\n### 🚀 Hugging Face Trending Models")
+    for cat in trending:
+        lines.append(f"\n#### {cat['category']}")
+        for m in cat["models"]:
+            lines.append(f"- **[{m['id']}](https://huggingface.co/{m['id']})** — ❤️ {m['likes']:,} likes · 📥 {m['downloads']:,} downloads")
+
+    lines.append("\n### ⚡ Current Production Baselines")
+    lines.append("- **ASR Engine:** Phonon-2 (164 MB, ~42.3 ms on Apple MLX GPU/NE)")
+    lines.append("- **TTS Synthesis:** Kokoro-82M (82M params, ~150 ms locally on ONNX)")
+    lines.append("- **Decision Router:** Qwen2.5:1.5b (~48.0 ms locally via Ollama JSON)")
+    lines.append("- **Screen Vision:** Qwen3-VL:8b (~1.26s locally via Ollama unified memory)")
+
+    lines.append("\n### 🎯 Actionable Upgrade Alerts")
+    if new_alerts:
+        for a in new_alerts:
+            lines.append(f"- ⚠️ **{a}**")
+    else:
+        lines.append("- ✨ **All core voice technologies are at the bleeding edge. No action required.**")
+
+    lines.append("\n---\n*Report generated daily at 7:00 AM via native macOS LaunchAgent (`com.free-mac-voice.radar`).*")
+    return "\n".join(lines)
+
 def run_radar():
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print("=" * 66)
     print(" 📡 Free Mac Voice — Autonomous Technology Radar")
-    print(f" Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f" Timestamp: {now_str}")
     print("=" * 66)
     
     state = load_state()
@@ -117,6 +164,7 @@ def run_radar():
         new_releases_state[repo] = tag
         is_new = prev_releases.get(repo) != tag and repo in prev_releases
         marker = "🔥 NEW UPDATE" if is_new else "✅ Up to date"
+        r["status"] = marker
         print(f" • {r['desc']} ({repo}): {tag} ({r['date']}) — {marker}")
         if is_new:
             new_alerts.append(f"New upstream release for {r['desc']}: {tag}")
@@ -142,10 +190,22 @@ def run_radar():
     state["last_scan"] = datetime.now().isoformat()
     save_state(state)
 
+    # Save markdown report
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    report_content = generate_markdown_report(now_str, releases, trending, new_alerts)
+    try:
+        with open(REPORT_FILE, "w") as f:
+            f.write(report_content)
+        print(f"\n💾 Saved findings report to: {REPORT_FILE}")
+    except Exception as e:
+        print(f"Failed to write report: {e}")
+
+    # Alerts & notifications
     if new_alerts:
         print(f"\n⚠️  {len(new_alerts)} new upgrade opportunities detected!")
         for a in new_alerts:
             print(f"   -> {a}")
+        send_notification("🎙️ Voice Tech Radar Alert", f"{len(new_alerts)} new framework/model updates found!")
     else:
         print("\n✨ All core technologies are at bleeding-edge state. No immediate action required.")
 

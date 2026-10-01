@@ -148,8 +148,89 @@ case "$cmd" in
     echo "==> Uninstalled LaunchAgent."
     ;;
 
+  radar-install)
+    echo "==> Installing 7:00 AM Daily Tech Radar LaunchAgent..."
+    RADAR_LABEL="com.free-mac-voice.radar"
+    RADAR_PLIST="$HOME/Library/LaunchAgents/${RADAR_LABEL}.plist"
+    cat > "$RADAR_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${RADAR_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${PYTHON_BIN}</string>
+        <string>${REPO_DIR}/scripts/tech_radar.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${REPO_DIR}</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>LC_ALL</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/free-mac-voice-radar.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/free-mac-voice-radar.err</string>
+</dict>
+</plist>
+EOF
+    launchctl unload "$RADAR_PLIST" 2>/dev/null || true
+    launchctl load -w "$RADAR_PLIST"
+    echo "==> Daily 7:00 AM Tech Radar installed successfully."
+    echo "    Will scan GitHub & Hugging Face every morning at 7:00 AM."
+    echo "    Findings saved to: ~/.config/free-voice/radar_report.md"
+    ;;
+
+  radar-run)
+    echo "==> Running Voice Tech Radar scan now..."
+    "$PYTHON_BIN" "$REPO_DIR/scripts/tech_radar.py"
+    ;;
+
+  radar-report)
+    REPORT_PATH="$HOME/.config/free-voice/radar_report.md"
+    if [[ -f "$REPORT_PATH" ]]; then
+      cat "$REPORT_PATH"
+    else
+      echo "No radar report found yet. Run './service.sh radar-run' to generate one."
+    fi
+    ;;
+
+  radar-status)
+    echo "==> Radar Schedule Status: com.free-mac-voice.radar"
+    if launchctl list | grep -q "com.free-mac-voice.radar"; then
+      echo "    State: ACTIVE (Scheduled daily at 7:00 AM)"
+      echo "    Report File: ~/.config/free-voice/radar_report.md"
+    else
+      echo "    State: NOT INSTALLED (Run './service.sh radar-install')"
+    fi
+    ;;
+
+  radar-uninstall)
+    echo "==> Removing Tech Radar LaunchAgent..."
+    RADAR_PLIST="$HOME/Library/LaunchAgents/com.free-mac-voice.radar.plist"
+    launchctl unload -w "$RADAR_PLIST" 2>/dev/null || true
+    rm -f "$RADAR_PLIST"
+    echo "==> Tech Radar LaunchAgent removed."
+    ;;
+
   *)
-    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall}"
+    echo "Usage: ./service.sh {install|start|stop|restart|status|logs|uninstall|radar-install|radar-run|radar-report|radar-status|radar-uninstall}"
     exit 1
     ;;
 esac
+

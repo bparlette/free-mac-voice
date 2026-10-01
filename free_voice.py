@@ -1705,6 +1705,39 @@ def act_date() -> None:
     say(datetime.now().strftime("It's %A, %B %-d"))
 
 
+def act_tech_radar() -> None:
+    """Read the morning technology radar summary aloud."""
+    report_file = os.path.expanduser("~/.config/free-voice/radar_report.md")
+    if not os.path.exists(report_file):
+        say("Running morning tech radar scan")
+        try:
+            radar_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "tech_radar.py")
+            subprocess.run([sys.executable, radar_script], timeout=25, capture_output=True)
+        except Exception:
+            pass
+
+    if os.path.exists(report_file):
+        try:
+            with open(report_file, "r") as f:
+                content = f.read()
+            if "Actionable Upgrade Alerts" in content:
+                alerts_section = content.split("Actionable Upgrade Alerts")[-1].strip().split("\n\n")[0]
+                if "No action required" in alerts_section or "bleeding edge" in alerts_section:
+                    say("All core voice technologies are up to date and at the bleeding edge.")
+                else:
+                    lines = [l.strip("- *⚠️").strip() for l in alerts_section.splitlines() if l.strip().startswith("-")]
+                    if lines:
+                        say(f"Radar alert: {lines[0]}")
+                    else:
+                        say("Radar scan complete. No new alerts.")
+            else:
+                say("Tech radar report is ready in your config folder.")
+        except Exception:
+            say("Tech radar scan is complete.")
+    else:
+        say("Unable to access tech radar report.")
+
+
 def act_read_clipboard() -> None:
     """Read the current text on the clipboard aloud."""
     try:
@@ -3791,6 +3824,9 @@ _p(r"^(empty|empty the) trash$", "empty_trash")
 _p(r"^(set|start)( a)? timer for (\d+) (seconds?|minutes?|hours?)$", "timer")
 _p(r"^what time is it\??$", "time", True)
 _p(r"^what('s| is) the date\??$", "date", True)
+# --- technology radar
+_p(r"^(?:what(?:'s| is) on (?:the )?)?(?:tech )?radar(?: report)?$", "tech_radar", True)
+_p(r"^(?:check|run) (?:the )?(?:tech )?radar$", "tech_radar", True)
 # --- voice & tts engine selection
 _p(r"^(?:pick|choose|sample|test|rotate|audition)(?: a)? voices?$", "pick_voice", True)
 _p(r"^(?:use|set|choose|switch|change)(?: to)? voice(?: to)?\s+([a-zA-Z0-9_-]+)$", "set_voice")
@@ -4321,6 +4357,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_time()
         elif name == "date":
             act_date()
+        elif name == "tech_radar":
+            act_tech_radar()
         elif name == "help":
             cmds = sorted({n for _, n, _ in _PATTERNS})
             print("Commands: " + ", ".join(cmds))
