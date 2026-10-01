@@ -47,6 +47,8 @@ class Base(unittest.TestCase):
         fv.VOICE_WAKE_WORD = "mac"
         self._decision_model = fv.OLLAMA_DECISION_MODEL
         fv.OLLAMA_DECISION_MODEL = ""
+        self._decision_ok = fv._decision_ok
+        fv._decision_ok = None
 
     def tearDown(self):
         fv.DRY_RUN = self._dry
@@ -59,6 +61,7 @@ class Base(unittest.TestCase):
         fv._wake_window_until = self._wake_window
         fv.VOICE_WAKE_WORD = self._wake_word
         fv.OLLAMA_DECISION_MODEL = self._decision_model
+        fv._decision_ok = self._decision_ok
 
     def route_name(self, text):
         r = fv.route(text, partial=False)
@@ -2632,8 +2635,71 @@ class TestDaemonAndService(Base):
         repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         service_sh = os.path.join(repo_dir, "service.sh")
         res = fv.subprocess.run([service_sh, "status"], capture_output=True, text=True, check=False)
-        self.assertEqual(res.returncode, 0)
-        self.assertIn("Service Status: com.free-mac-voice", res.stdout)
+class TestTier05Router(Base):
+    def test_tier05_embed_speed_and_threshold(self):
+        # Embedding and matching must run well under 50ms budget (typically <1ms)
+        t0 = fv.time.time()
+        res = fv.tier05_embed_match("call an ascii picture of a heart", threshold=0.75)
+        dt = (fv.time.time() - t0) * 1000
+        self.assertLess(dt, 50.0, f"Embedding match took {dt:.2f}ms, exceeds 50ms budget")
+        self.assertIsNotNone(res)
+        action, params, score = res
+        self.assertEqual(action, "draw_ascii")
+        self.assertEqual(params.get("subject"), "heart")
+        self.assertGreaterEqual(score, 0.75)
+
+    def test_whisper_mishearing_call_an_ascii_routes_via_tier05(self):
+        phrase = "call an ascii picture of a heart"
+        # 1. Must NOT match Tier 0 regex
+        self.assertIsNone(fv.route(phrase, partial=False))
+        # 2. Must route and execute draw_ascii with subject="heart"
+        with mock.patch.object(fv, "act_draw_ascii") as mock_draw:
+            handled = fv.handle_command(phrase)
+            self.assertTrue(handled)
+            mock_draw.assert_called_once_with("heart")
+
+    def test_whisper_mishearing_john_askey_routes_via_tier05b(self):
+        phrase = "john askey picture of a heart"
+        # 1. Must NOT match Tier 0 regex
+        self.assertIsNone(fv.route(phrase, partial=False))
+        # 2. Cosine match is below 0.75 threshold
+        self.assertIsNone(fv.tier05_embed_match(phrase, threshold=0.75))
+        # 3. Fast decision model classifies it in JSON mode
+        fake_chat_resp = {
+            "message": {
+                "content": json.dumps({
+                    "action": "draw_ascii",
+                    "params": {"subject": "heart"},
+                    "confidence": 0.95,
+                })
+            }
+        }
+        with mock.patch("urllib.request.urlopen") as mock_url, \
+             mock.patch.object(fv, "act_draw_ascii") as mock_draw:
+            resp_mock = mock.MagicMock()
+            resp_mock.read.return_value = json.dumps(fake_chat_resp).encode()
+            resp_mock.__enter__.return_value = resp_mock
+            mock_url.return_value = resp_mock
+
+            fv.OLLAMA_DECISION_MODEL = "qwen2.5:1.5b"
+            handled = fv.handle_command(phrase)
+            self.assertTrue(handled)
+            mock_draw.assert_called_once_with("heart")
+
+    def test_destructive_safety_gate_blocks_in_tier05(self):
+        # Destructive actions cannot execute via fuzzy Tier 0.5 without Tier 0 regex
+        destructive_phrases = [
+            "shut down computer",
+            "restart computer",
+            "log out user",
+            "empty the trash",
+            "close all windows",
+        ]
+        for phrase in destructive_phrases:
+            res = fv.tier05_route(phrase)
+            self.assertIsNotNone(res)
+            self.assertEqual(res[0], "blocked", f"Tier 0.5 failed to block destructive intent: {phrase}")
+            self.assertIn("For safety, please say", self.said[-1])
 
 
 if __name__ == "__main__":

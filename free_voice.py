@@ -70,6 +70,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
+import zlib
 
 # ---------------------------------------------------------------- env
 
@@ -104,8 +105,8 @@ WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
 # routing, Q&A, AND screen understanding. 8GB minis: use qwen3-vl:4b instead.
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
-# Local Jev/SystemOne decision model for sub-100ms intent classification (empty string disables)
-OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "tev1:0.8b")
+# Local fast decision model for sub-100ms intent classification (qwen2.5:1.5b by default)
+OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "qwen2.5:1.5b")
 # Fast text model for SVG vector generation (qwen2.5:1.5b by default: ~2s generation, zero thinking overhead)
 OLLAMA_DRAW_MODEL = os.environ.get("OLLAMA_DRAW_MODEL", "qwen2.5:1.5b")
 OLLAMA_TIER1 = os.environ.get("OLLAMA_TIER1", "1") == "1"
@@ -3320,8 +3321,8 @@ _p(r"^(?:delete|remove|forget) (?:shortcut|macro) (.+)$", "macro_delete")
 _p(r"^(turn|make|convert)( my| the)? screen into ascii( art)?$", "ascii_art", True)
 _p(r"^ascii art( of my screen)?$", "ascii_art", True)
 _p(r"^(?:draw(?: me)? ascii|ascii draw) (.+)$", "draw_ascii")
-_p(r"^(?:(?:draw|make|create|generate|show|render|john|call|drawn)\s+)?(?:me\s+)?(?:an?\s+)?(?:picture\s+of\s+an?\s+)?(?:ascii|askey)\s*(?:art|picture|drawing|image)?(?:\s+(?:of|for))?\s*(.+)$", "draw_ascii")
 _p(r"^(?:draw|make|create|generate|show|render)(?: me)?(?: a| an| the)? (.+?)(?: in| as) ascii(?: art)?$", "draw_ascii")
+_p(r"^draw(?: me)?(?: a| an| the)? ascii (?:art|picture|drawing|image)(?: of| for) (.+)$", "draw_ascii")
 _p(r"^draw( me)?( a| an| the)? (.+)$", "draw_svg")
 # --- easter eggs
 _p(r"^roll( a)? (die|dice)$", "roll_dice", True)
@@ -3928,6 +3929,379 @@ _TIER1_ACTIONS = {
 _ollama_ok: bool | None = None  # None=untried, False=unreachable (cached)
 _decision_ok: bool | None = None
 
+_DESTRUCTIVE_ACTIONS = {
+    "shutdown", "restart", "logout", "empty_trash",
+    "quit_app", "kill_app", "close_all_windows",
+}
+
+_INTENT_EXAMPLES: dict[str, list[str]] = {
+    "draw_ascii": [
+        "draw ascii picture of a heart",
+        "draw an ascii picture of a heart",
+        "draw ascii flower",
+        "make an ascii picture of a cat",
+        "draw something in ascii",
+        "ascii drawing of a dog",
+        "ascii art picture",
+        "sketch ascii art",
+    ],
+    "draw_svg": [
+        "draw a picture of a cat",
+        "draw me a flower",
+        "sketch a house",
+        "generate a drawing of a car",
+        "draw an illustration",
+    ],
+    "ascii_art": [
+        "turn screen into ascii",
+        "convert screen to ascii art",
+        "make my screen ascii",
+        "ascii art of my screen",
+    ],
+    "open_app": [
+        "open notes",
+        "launch safari",
+        "open google chrome",
+        "start terminal",
+        "open application",
+        "bring up spotify",
+    ],
+    "switch_app": [
+        "switch to safari",
+        "focus notes",
+        "bring up chrome",
+        "switch application",
+    ],
+    "quit_app": [
+        "quit notes",
+        "close safari app",
+        "exit application",
+    ],
+    "kill_app": [
+        "kill notes",
+        "force quit application",
+    ],
+    "close_window": [
+        "close window",
+        "close this window",
+        "close active window",
+    ],
+    "close_all_windows": [
+        "close all windows",
+    ],
+    "snap_left": [
+        "snap window left",
+        "tile left",
+        "window to left side",
+    ],
+    "snap_right": [
+        "snap window right",
+        "tile right",
+        "window to right side",
+    ],
+    "maximize_window": [
+        "maximize window",
+        "zoom window",
+        "make window full screen",
+    ],
+    "center_window": [
+        "center window",
+        "put window in center",
+    ],
+    "minimize": [
+        "minimize window",
+        "minimize this app",
+    ],
+    "hide": [
+        "hide window",
+        "hide application",
+    ],
+    "new_tab": [
+        "open new tab",
+        "new browser tab",
+    ],
+    "close_tab": [
+        "close current tab",
+        "close browser tab",
+    ],
+    "reopen_tab": [
+        "reopen closed tab",
+        "undo close tab",
+    ],
+    "refresh_page": [
+        "refresh page",
+        "reload this website",
+    ],
+    "nav_back": [
+        "go back",
+        "previous page in browser",
+    ],
+    "nav_forward": [
+        "go forward",
+        "next page in browser",
+    ],
+    "scroll_down": [
+        "scroll down",
+        "page down",
+    ],
+    "scroll_up": [
+        "scroll up",
+        "page up",
+    ],
+    "type_text": [
+        "type text",
+        "dictate text",
+        "type my message",
+    ],
+    "web_search": [
+        "search google for",
+        "look up on web",
+        "google search",
+    ],
+    "open_url": [
+        "go to website",
+        "visit url",
+    ],
+    "set_volume": [
+        "set volume to",
+        "turn volume up",
+        "turn volume down",
+        "make it louder",
+        "make it quieter",
+    ],
+    "mute_toggle": [
+        "mute sound",
+        "unmute audio",
+    ],
+    "media": [
+        "play music",
+        "pause playback",
+        "next track",
+        "skip song",
+        "previous track",
+    ],
+    "media_seek": [
+        "skip forward 10 seconds",
+        "rewind 20 seconds",
+        "skip back 30 seconds",
+    ],
+    "timer": [
+        "set a timer for 5 minutes",
+        "timer 10 minutes",
+        "start countdown",
+    ],
+    "dark_mode": [
+        "turn on dark mode",
+        "enable light mode",
+    ],
+    "wifi": [
+        "turn on wifi",
+        "disable wifi",
+    ],
+    "screenshot": [
+        "take a screenshot",
+        "screen capture",
+        "screenshot of window",
+    ],
+    "lock": [
+        "lock the screen",
+        "lock computer",
+    ],
+    "sleep": [
+        "put computer to sleep",
+        "sleep display",
+    ],
+    "shutdown": [
+        "shut down computer",
+        "power off mac",
+    ],
+    "restart": [
+        "restart computer",
+        "reboot mac",
+    ],
+    "logout": [
+        "log out user",
+    ],
+    "empty_trash": [
+        "empty the trash",
+        "clear trash",
+    ],
+    "status": [
+        "are you working",
+        "system status",
+        "health check",
+    ],
+    "dismiss": [
+        "stop listening",
+        "never mind",
+        "peace out",
+        "that's all",
+        "dismiss",
+    ],
+    "help": [
+        "help",
+        "what can you do",
+        "list commands",
+    ],
+    "calculate": [
+        "calculate math",
+        "what is 5 times 8",
+    ],
+}
+
+
+def embed_utterance(text: str, dim: int = 1024):
+    """Fast, in-process, deterministic feature hashing embedding (~18us)."""
+    import numpy as np
+    vec = np.zeros(dim, dtype=np.float32)
+    tokens = re.findall(r"\b\w+\b", text.lower())
+    t_padded = f" {text.lower()} "
+    ngrams3 = [t_padded[i:i+3] for i in range(len(t_padded)-2)]
+    ngrams4 = [t_padded[i:i+4] for i in range(len(t_padded)-3)]
+    for feat in tokens + ngrams3 + ngrams4:
+        b = feat.encode("utf-8")
+        h = zlib.crc32(b)
+        idx = h % dim
+        sign = 1.0 if (h & 1) else -1.0
+        vec[idx] += sign
+    norm = float(np.linalg.norm(vec))
+    if norm > 0.0:
+        vec /= norm
+    return vec
+
+
+_PRECOMPUTED_INTENTS: list[tuple[str, str]] = []
+_PRECOMPUTED_MATRIX = None
+
+
+def _init_intent_embeddings() -> None:
+    global _PRECOMPUTED_INTENTS, _PRECOMPUTED_MATRIX
+    if _PRECOMPUTED_MATRIX is not None:
+        return
+    import numpy as np
+    rows = []
+    intents = []
+    for action, examples in _INTENT_EXAMPLES.items():
+        for ex in examples:
+            rows.append(embed_utterance(ex))
+            intents.append((action, ex))
+    _PRECOMPUTED_INTENTS = intents
+    _PRECOMPUTED_MATRIX = np.array(rows, dtype=np.float32)
+
+
+def _extract_intent_params(intent: str, text: str) -> dict:
+    params = {}
+    if intent == "draw_ascii":
+        sub = re.sub(r"^(?:please\s+|can you\s+|could you\s+|go ahead and\s+|i want you to\s+)?", "", text, flags=re.I)
+        sub = re.sub(r"^(?:draw|sketch|make|create|generate|show|render|call|john)\s+(?:me\s+)?(?:an?\s+)?", "", sub, flags=re.I)
+        sub = re.sub(r"^(?:picture|image|drawing)\s+of\s+(?:an?\s+)?", "", sub, flags=re.I)
+        sub = re.sub(r"^(?:ascii|askey)\s*(?:art|picture|drawing|image)?(?:\s+(?:of|for))?\s*", "", sub, flags=re.I)
+        sub = re.sub(r"^(?:picture|image|drawing)\s+of\s+(?:an?\s+)?", "", sub, flags=re.I)
+        sub = re.sub(r"^(?:a|an|the)\s+", "", sub, flags=re.I)
+        sub = re.sub(r"\s+(?:in|as)\s+ascii(?:\s+art)?$", "", sub, flags=re.I)
+        params["subject"] = sub.strip() or "heart"
+    elif intent == "draw_svg":
+        sub = re.sub(r"^(?:draw|sketch|make|create|generate)\s+(?:me\s+)?(?:a|an|the)?\s*", "", text, flags=re.I)
+        params["subject"] = sub.strip() or "flower"
+    elif intent in ("open_app", "switch_app", "quit_app", "kill_app", "minimize", "hide"):
+        app = resolve_app(text, prefer_running=(intent == "switch_app"))
+        if not app:
+            sub = re.sub(r"^(?:open|launch|start|switch to|focus|quit|close|kill|minimize|hide)\s+(?:the\s+)?", "", text, flags=re.I)
+            app = resolve_app(sub, prefer_running=(intent == "switch_app"))
+        params["app"] = app or ""
+    elif intent == "set_volume":
+        m = re.search(r"\b(\d{1,3})\b", text)
+        if m:
+            params["level"] = int(m.group(1))
+        elif any(w in text.lower() for w in ("down", "lower", "softer", "quiet")):
+            params["direction"] = "down"
+        elif any(w in text.lower() for w in ("up", "raise", "louder")):
+            params["direction"] = "up"
+        elif "mute" in text.lower():
+            params["level"] = 0
+    elif intent == "media":
+        if any(w in text.lower() for w in ("next", "skip")):
+            params["op"] = "next"
+        elif any(w in text.lower() for w in ("prev", "back", "previous")):
+            params["op"] = "previous"
+        elif any(w in text.lower() for w in ("pause", "stop")):
+            params["op"] = "pause"
+        else:
+            params["op"] = "play"
+    elif intent == "media_seek":
+        m = re.search(r"\b(\d+)\b", text)
+        params["seconds"] = int(m.group(1)) if m else 15
+        params["direction"] = "back" if any(w in text.lower() for w in ("back", "rewind")) else "fwd"
+    elif intent == "timer":
+        m = re.search(r"\b(\d+)\s*(min|minute|sec|second|hour)", text, re.IGNORECASE)
+        if m:
+            params["amount"] = int(m.group(1))
+            params["unit"] = m.group(2).lower()
+        else:
+            word_map = {
+                "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+                "ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30,
+            }
+            val = 5
+            for w, num in word_map.items():
+                if w in text.lower():
+                    val = num
+                    break
+            params["amount"] = val
+            params["unit"] = "minutes"
+    elif intent == "web_search":
+        sub = re.sub(r"^(?:search for|google|search|look up)\s+", "", text, flags=re.I).strip()
+        params["query"] = sub
+    elif intent == "type_text":
+        sub = re.sub(r"^(?:type|dictate)\s+", "", text, flags=re.I).strip()
+        params["text"] = sub
+    elif intent == "calculate":
+        sub = re.sub(r"^(?:calculate|what is|what's)\s+", "", text, flags=re.I).strip()
+        params["expr"] = sub
+    elif intent == "dark_mode":
+        params["on"] = not any(w in text.lower() for w in ("off", "disable", "light"))
+    elif intent == "wifi":
+        params["on"] = not any(w in text.lower() for w in ("off", "disable"))
+    return params
+
+
+def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, float] | None:
+    """Step (a): In-process embedding cosine-match against example utterances (~1ms budget)."""
+    import numpy as np
+    _init_intent_embeddings()
+    if _PRECOMPUTED_MATRIX is None or len(_PRECOMPUTED_INTENTS) == 0:
+        return None
+    qv = embed_utterance(text)
+    sims = np.dot(_PRECOMPUTED_MATRIX, qv)
+    best_idx = int(np.argmax(sims))
+    best_sim = float(sims[best_idx])
+    if best_sim >= threshold:
+        action, _ = _PRECOMPUTED_INTENTS[best_idx]
+        params = _extract_intent_params(action, text)
+        return action, params, best_sim
+    return None
+
+
+_TIER05_DECISION_SYSTEM = (
+    "You are a voice intent classifier for a Mac assistant. "
+    "Classify the user's spoken command into exactly ONE action and extract parameters into JSON. "
+    "Handle acoustic mishearings from speech-to-text gracefully (e.g. 'john askey' -> draw_ascii, 'call ascii' -> draw_ascii). "
+    "Allowed actions: "
+    "draw_ascii {subject: string}, draw_svg {subject: string}, ascii_art {}, "
+    "open_app {app: string}, switch_app {app: string}, quit_app {app: string}, kill_app {app: string}, "
+    "close_window {}, close_all_windows {}, snap_left {}, snap_right {}, maximize_window {}, center_window {}, "
+    "minimize {app: optional string}, hide {app: optional string}, "
+    "new_tab {}, close_tab {}, reopen_tab {}, refresh_page {}, nav_back {}, nav_forward {}, "
+    "scroll_down {}, scroll_up {}, type_text {text: string}, web_search {query: string}, open_url {url: string}, "
+    "set_volume {level: 0-100 or direction: 'up'|'down'}, mute_toggle {}, media {op: 'play'|'pause'|'next'|'previous'}, "
+    "timer {amount: number, unit: 'seconds'|'minutes'|'hours'}, dark_mode {on: boolean}, wifi {on: boolean}, "
+    "screenshot {target: 'full'|'window'|'selection'}, lock {}, sleep {}, "
+    "status {}, dismiss {}, help {}, calculate {expr: string}. "
+    "If it is small talk, general knowledge question, or not a Mac command, reply: "
+    '{"action": "none", "params": {}, "confidence": 0.0}. '
+    "Reply with ONLY valid JSON: {\"action\": \"...\", \"params\": {...}, \"confidence\": 0.0-1.0}."
+)
+
 _DECISION_CRITERIA = {
     "open_app": "Open, launch, or focus an application or browser",
     "close_app": "Close, quit, or exit an application",
@@ -3941,113 +4315,113 @@ _DECISION_CRITERIA = {
 
 
 def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
-    """Tier 0.5: ask the local Jev/SystemOne decision model for fast intent classification (~50ms)."""
+    """Step (b): Fast decision model (qwen2.5:1.5b) in JSON mode for intent & slot classification."""
     global _decision_ok
     if not OLLAMA_DECISION_MODEL or _decision_ok is False:
         return None
-    url = f"{OLLAMA_HOST}/v1/systemone"
-    payload = {
-        "model": OLLAMA_DECISION_MODEL,
-        "state": text,
-        "questions": {
-            "action": {
-                "type": "choice",
-                "instructions": "What voice action should be taken?",
-                "criteria": _DECISION_CRITERIA,
-            }
-        },
-    }
+
+    # Backward compatibility: if OLLAMA_DECISION_MODEL is tev1:0.8b, try /v1/systemone first
+    if "tev1" in OLLAMA_DECISION_MODEL.lower():
+        url = f"{OLLAMA_HOST}/v1/systemone"
+        payload = {
+            "model": OLLAMA_DECISION_MODEL,
+            "state": text,
+            "questions": {
+                "action": {
+                    "type": "choice",
+                    "instructions": "What voice action should be taken?",
+                    "criteria": _DECISION_CRITERIA,
+                }
+            },
+        }
+        try:
+            req = urllib.request.Request(
+                url, data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=3) as r:
+                data = json.load(r)
+            _decision_ok = True
+            ans = data.get("answers", {}).get("action", {})
+            choice = ans.get("choice")
+            if choice and choice != "unknown":
+                prob = float(ans.get("probabilities", {}).get(choice, 0.0))
+                if prob >= TIER1_MIN_CONFIDENCE:
+                    return choice, _extract_intent_params(choice, text), prob
+        except Exception:
+            pass
+
+    # Standard Ollama JSON mode for qwen2.5:1.5b
     t0 = time.time()
+    body = {
+        "model": OLLAMA_DECISION_MODEL,
+        "format": "json",
+        "stream": False,
+        "keep_alive": "60m",
+        "options": {"temperature": 0, "num_predict": 64, "num_ctx": 1024},
+        "messages": [
+            {"role": "system", "content": _TIER05_DECISION_SYSTEM},
+            {"role": "user", "content": text},
+        ],
+    }
     try:
         req = urllib.request.Request(
-            url, data=json.dumps(payload).encode(),
+            f"{OLLAMA_HOST}/api/chat",
+            data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=3) as r:
+        with urllib.request.urlopen(req, timeout=5) as r:
             data = json.load(r)
         _decision_ok = True
-    except Exception:
-        # If /v1/systemone is unsupported or model missing, gracefully fall through
+    except Exception as e:
+        log(f"Tier 0.5 decision model unreachable ({OLLAMA_DECISION_MODEL}): {e}")
         return None
 
     dt = time.time() - t0
-    ans = data.get("answers", {}).get("action", {})
-    choice = ans.get("choice")
-    if not choice or choice == "unknown":
-        return None
-    prob = float(ans.get("probabilities", {}).get(choice, 0.0))
-    if prob < TIER1_MIN_CONFIDENCE:
+    raw = data.get("message", {}).get("content", "").strip()
+    try:
+        parsed = json.loads(raw)
+    except Exception:
         return None
 
-    params = {}
-    if choice in ("open_app", "switch_app", "close_app"):
-        app = resolve_app(text, prefer_running=(choice == "switch_app"))
-        if not app:
-            sub = re.sub(
-                r"^(?:could you|please|can you|would you|be a dear and|go ahead and)\s+",
-                "", text, flags=re.IGNORECASE,
-            )
-            sub = re.sub(
-                r"^(?:open|launch|switch to|focus|quit|close|get rid of)\s+",
-                "", sub, flags=re.IGNORECASE,
-            )
-            app = resolve_app(sub, prefer_running=(choice == "switch_app"))
-        if not app:
-            return None
-        params["app"] = app
-    elif choice == "set_volume":
-        m = re.search(r"\b(\d{1,3})\b", text)
-        if m:
-            params["level"] = int(m.group(1))
-        elif any(w in text.lower() for w in ("down", "lower", "softer", "quiet")):
-            params["direction"] = "down"
-        elif any(w in text.lower() for w in ("up", "raise", "louder")):
-            params["direction"] = "up"
-        elif "mute" in text.lower():
-            params["level"] = 0
-        else:
-            return None
-    elif choice == "media":
-        if any(w in text.lower() for w in ("next", "skip")):
-            params["op"] = "next"
-        elif any(w in text.lower() for w in ("prev", "back", "previous")):
-            params["op"] = "previous"
-        elif any(w in text.lower() for w in ("pause", "stop")):
-            params["op"] = "pause"
-        elif any(w in text.lower() for w in ("play", "resume")):
-            params["op"] = "play"
-        else:
-            params["op"] = "play"
-    elif choice == "timer":
-        m = re.search(r"\b(\d+)\s*(min|minute|sec|second|hour)", text, re.IGNORECASE)
-        if m:
-            params["duration"] = int(m.group(1))
-            params["unit"] = m.group(2)
-        else:
-            word_map = {
-                "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-                "ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30,
-            }
-            found = False
-            for w, val in word_map.items():
-                if w in text.lower():
-                    params["duration"] = val
-                    params["unit"] = "minutes"
-                    found = True
-                    break
-            if not found:
-                return None
-    elif choice == "web_search":
-        sub = re.sub(r"^(?:search for|google|search)\s+", "", text, flags=re.IGNORECASE).strip()
-        if sub:
-            params["query"] = sub
-        else:
-            return None
-    else:
-        return None
+    action = str(parsed.get("action", "none")).strip().lower()
+    try:
+        conf = float(parsed.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        conf = 0.0
+    params = parsed.get("params", {}) or {}
 
-    log(f"Tier 0.5 ({OLLAMA_DECISION_MODEL}) -> {choice} {params} conf={prob:.2f} in {dt:.2f}s")
-    return choice, params, prob
+    log(f"Tier 0.5b ({OLLAMA_DECISION_MODEL}) -> {action} {params} conf={conf:.2f} in {dt:.2f}s")
+    if action == "none" or conf < 0.5:
+        return None
+    return action, params, conf
+
+
+def tier05_route(text: str) -> tuple[str, dict, float] | None:
+    """Tier 0.5: in-process embedding match (a) + fast LLM intent classifier (b).
+    Mandatory safety gate: destructive intents are blocked here."""
+    # (a) In-process embedding cosine match (threshold 0.75)
+    match = tier05_embed_match(text, threshold=0.75)
+    if match is not None:
+        action, params, score = match
+        if action in _DESTRUCTIVE_ACTIONS:
+            log(f"Tier 0.5 blocked destructive action {action!r} (Tier 0 regex safety gate required)")
+            say(f"For safety, please say 'Mac, {action.replace('_', ' ')}' directly")
+            return "blocked", {}, 1.0
+        log(f"Tier 0.5a (embedding cosine={score:.2f}) -> {action} {params}")
+        return action, params, score
+
+    # (b) Fast decision model (qwen2.5:1.5b) in JSON mode
+    dec = ollama_decision_route(text)
+    if dec is not None:
+        action, params, conf = dec
+        if action in _DESTRUCTIVE_ACTIONS:
+            log(f"Tier 0.5 blocked destructive action {action!r} (Tier 0 regex safety gate required)")
+            say(f"For safety, please say 'Mac, {action.replace('_', ' ')}' directly")
+            return "blocked", {}, 1.0
+        return action, params, conf
+
+    return None
 
 
 def ollama_route(text: str):
@@ -4061,11 +4435,6 @@ def ollama_route(text: str):
         return None
     if _ollama_ok is False:
         return None
-
-    # Tier 0.5: ultra-fast local decision classification (~50ms)
-    dec = ollama_decision_route(text)
-    if dec is not None:
-        return dec
 
     is_thinking_model = any(k in OLLAMA_MODEL.lower() for k in ("qwen3", "r1", "deepseek"))
     messages = [
@@ -4143,6 +4512,8 @@ def _tier1_confirm(desc: str, allow_destructive: bool) -> bool:
 def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -> None:
     """Execute a Tier 1 JSON decision using the same act_* primitives.
     Every enum/param is validated — JSON mode guarantees shape, NOT sense."""
+    if action == "blocked":
+        return
     p = params.get
     app_name = str(p("app") or p("app_name") or p("name") or "")
     if action == "open_app":
@@ -4241,6 +4612,29 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
         act_click_button(str(p("name", "")))
     elif action == "click_link":
         act_click_link(str(p("name", "")))
+    elif action == "draw_ascii":
+        subj = str(p("subject") or p("subj") or p("text") or "heart")
+        act_draw_ascii(subj)
+    elif action == "draw_svg":
+        subj = str(p("subject") or p("subj") or p("text") or "flower")
+        act_draw_svg(subj)
+    elif action == "ascii_art":
+        act_ascii_art()
+    elif action == "status":
+        act_status()
+    elif action == "help":
+        cmds = sorted({n for _, n, _ in _PATTERNS})
+        print("Commands: " + ", ".join(cmds))
+        say("I printed the command list in the terminal")
+    elif action == "dismiss":
+        global _wake_window_until
+        _wake_window_until = 0.0
+        log("wake window closed by request")
+        say("peace")
+    elif action == "media_seek":
+        sec = int(p("seconds") or p("amount") or 15)
+        direction = str(p("direction") or "fwd")
+        act_media_seek(direction, sec)
     else:
         say("I couldn't map that to an action")
 
@@ -4478,7 +4872,18 @@ def handle_command(text: str, confirm_audio_fn=None,
                     time.sleep(0.3)
                 return True
 
-    # Tier 1: local vision-language model (only on Tier 0 miss)
+    # Tier 0.5: embedding cosine-match + fast decision model (qwen2.5:1.5b)
+    t05 = tier05_route(t)
+    if t05:
+        action, params, conf = t05
+        try:
+            dispatch_tier1(action, params, allow_destructive)
+        except Exception as e:  # noqa: BLE001
+            say("That didn't work")
+            log(f"tier 0.5 action failed: {e}")
+        return True
+
+    # Tier 1: local vision-language model (only on Tier 0 & 0.5 miss)
     t1 = ollama_route(t)
     if t1:
         action, params, conf = t1
