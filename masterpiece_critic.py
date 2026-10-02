@@ -1042,7 +1042,9 @@ class CriticOverlayController(NSObject):
             try:
                 with open(CONFIG_FILE) as f:
                     cfg = json.load(f)
-                    self.active_theme = cfg.get("theme", "couch_duo")
+                    theme = cfg.get("theme", "couch_duo")
+                    # Whitelist: the theme name flows into clip filenames
+                    self.active_theme = theme if theme in THEMES else "couch_duo"
                     self.active_position = cfg.get("position", "bottom_left")
             except Exception:
                 pass

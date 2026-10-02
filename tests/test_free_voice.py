@@ -3076,3 +3076,24 @@ class TestReviewB25ThemeLayerReset(unittest.TestCase):
         self.assertEqual(view.pose_images, {})
         self.assertIsNone(view.base_image)
         self.assertEqual(view.theme_key, "wine_girls")
+
+
+class TestReviewS9CriticThemeWhitelist(unittest.TestCase):
+    def _load(self, cfg):
+        mc = _import_critic_with_stubs(self)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "critic_config.json")
+            with open(path, "w") as f:
+                json.dump(cfg, f)
+            with mock.patch.object(mc, "CONFIG_FILE", path):
+                ctl = mc.CriticOverlayController.alloc().init()
+                ctl.load_config()
+        return ctl
+
+    def test_unknown_theme_falls_back(self):
+        ctl = self._load({"theme": "../../<script>x", "position": "bottom_left"})
+        self.assertEqual(ctl.active_theme, "couch_duo")
+
+    def test_known_theme_kept(self):
+        ctl = self._load({"theme": "byte_orbit"})
+        self.assertEqual(ctl.active_theme, "byte_orbit")
