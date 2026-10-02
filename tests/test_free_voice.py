@@ -3209,3 +3209,30 @@ class TestReviewB33CalculateExponent(Base):
         self.assertIn("1024", self.said)
         fv.act_calculate("3 * (4 + 5)")
         self.assertIn("27", self.said)
+
+
+class TestReviewB34NotificationScreenWidth(Base):
+    def _run(self, screen_w, banner_x):
+        close_btn = mock.Mock(role="button")
+        close_btn.name = "Close"
+        group = mock.Mock(bounds=mock.Mock(x=banner_x, y=40, width=344))
+        group.name = "Banner"
+        group.children.return_value = [close_btn]
+        app = mock.Mock()
+        app.locator.return_value.elements.side_effect = [[group], []]
+        xa = mock.Mock()
+        xa.App.by_name.return_value = app
+        with mock.patch.object(fv, "_load_xa11y", return_value=xa), \
+             mock.patch.object(fv, "_mouse", return_value=(None, None)), \
+             mock.patch.object(fv, "_warp_mouse"), \
+             mock.patch.object(fv, "_screen_dimensions", return_value=(screen_w, 800)), \
+             mock.patch.object(fv.time, "sleep", return_value=None):
+            fv.act_close_notifications()
+        return close_btn.press.called
+
+    def test_small_display_banner_is_closed(self):
+        # 1280-wide display: banner at x=920 was ignored by the old x > 1000 check
+        self.assertTrue(self._run(1280, 920))
+
+    def test_left_side_group_ignored(self):
+        self.assertFalse(self._run(2560, 300))

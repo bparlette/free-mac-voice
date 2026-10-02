@@ -2610,6 +2610,9 @@ def act_close_notifications() -> None:
         say("No notifications open")
         return
     mouse, _ = _mouse()
+    # Banners sit at the right edge; compare against the real screen width
+    # instead of a hardcoded x > 1000 (breaks on small/scaled displays).
+    min_x = _screen_dimensions()[0] / 2
     closed = 0
     for _ in range(3):
         try:
@@ -2620,7 +2623,7 @@ def act_close_notifications() -> None:
         for g in groups:
             if g.name:
                 b = g.bounds
-                if b and b.width > 200 and b.x > 1000:
+                if b and b.width > 200 and b.x > min_x:
                     _warp_mouse(b.x + 10, b.y + 10)
                     if mouse:
                         mouse.position = (b.x + 10, b.y + 10)
