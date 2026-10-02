@@ -2979,6 +2979,9 @@ class TestReviewB9RelativeVolume(Base):
         with mock.patch.object(fv, "act_tv_input") as inpt:
             fv.dispatch_tier1("tv_input", {"source": "HDMI 2"})
             inpt.assert_called_once_with("HDMI 2", "HDMI 2")
+        with mock.patch.object(fv, "act_tv_mute") as mt:
+            fv.dispatch_tier1("tv_mute", {"mute": True})
+            mt.assert_called_once_with(True)
 
 
 class TestReviewB10TimerUnits(Base):

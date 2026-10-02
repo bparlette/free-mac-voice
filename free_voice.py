@@ -4890,6 +4890,7 @@ _TIER1_SYSTEM = (
     "media {op: playpause|next|previous}, lock {}, sleep {}, "
     "brightness_up {}, brightness_down {}, screenshot {}, "
     "dark_mode {on: true|false}, wifi {on: true|false}, "
+    "tv_power {on: true|false}, tv_volume {level: 0-100, direction: up|down}, tv_input {source: computer|tv|string}, tv_mute {mute: true|false}, "
     "timer {amount: number, unit: seconds|minutes|hours}, "
     "calculate {expr: string}, click_button {name: string}, click_link {name: string}. "
     "If the input is a question, small talk, or you are unsure, reply "
@@ -4907,6 +4908,7 @@ _TIER1_ACTIONS = {
     "set_volume", "volume_up", "volume_down", "mute_toggle", "media",
     "lock", "sleep", "brightness_up", "brightness_down", "screenshot",
     "dark_mode", "wifi", "timer", "calculate", "click_button", "click_link",
+    "tv_power", "tv_volume", "tv_input", "tv_mute",
 }
 
 _DESTRUCTIVE_ACTIONS = {
@@ -5146,6 +5148,36 @@ _INTENT_EXAMPLES: dict[str, list[str]] = {
     "calculate": [
         "calculate math",
         "what is 5 times 8",
+    ],
+    "tv_power": [
+        "turn on the tv",
+        "turn off the tv",
+        "turn the tv off",
+        "turn the tv on",
+        "power off the tv",
+        "power on the tv",
+        "turn television on",
+        "turn television off",
+        "switch off the tv",
+    ],
+    "tv_input": [
+        "switch to computer",
+        "switch to tv",
+        "change tv input to computer",
+        "switch input to mac",
+        "switch tv input",
+    ],
+    "tv_volume": [
+        "turn tv volume up",
+        "turn tv volume down",
+        "make the tv louder",
+        "tv volume louder",
+        "set tv volume",
+    ],
+    "tv_mute": [
+        "mute the tv",
+        "unmute the tv",
+        "mute tv",
     ],
 }
 
@@ -5684,6 +5716,8 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     elif action == "tv_input":
         inp = str(p("input") or p("source") or "computer")
         act_tv_input(inp, inp)
+    elif action == "tv_mute":
+        act_tv_mute(bool(p("mute", True)))
     elif action == "mute_toggle":
         cur = applescript("output muted of (get volume settings)")
         act_mute(cur != "true")
