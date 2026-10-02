@@ -3166,3 +3166,22 @@ class TestReviewB31MacroRecursion(Base):
             self.assertTrue(fv.run_macro("outer"))
         delta.assert_called()
         self.assertNotIn("That shortcut calls itself, so I stopped it", self.said)
+
+
+class TestReviewB32DecisionCriteria(Base):
+    def test_close_app_mapped_to_gated_quit_app(self):
+        self.assertNotIn("close_app", fv._DECISION_CRITERIA)
+        self.assertIn("quit_app", fv._DECISION_CRITERIA)
+        self.assertIn("quit_app", fv._DESTRUCTIVE_ACTIONS)
+
+    def test_every_criterion_is_dispatchable(self):
+        for action in fv._DECISION_CRITERIA:
+            if action == "unknown":
+                continue
+            with mock.patch.object(fv, "act_open_app"), mock.patch.object(fv, "act_switch_app"), \
+                 mock.patch.object(fv, "act_quit_app"), mock.patch.object(fv, "act_set_volume"), \
+                 mock.patch.object(fv, "act_volume_delta"), mock.patch.object(fv, "act_media"), \
+                 mock.patch.object(fv, "act_timer"), mock.patch.object(fv, "act_web_search"):
+                self.said.clear()
+                fv.dispatch_tier1(action, {"app": "Notes", "query": "x", "level": 10})
+                self.assertNotIn("I couldn't map that to an action", self.said, action)

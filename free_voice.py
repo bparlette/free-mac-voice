@@ -5187,7 +5187,8 @@ _TIER05_DECISION_SYSTEM = (
 
 _DECISION_CRITERIA = {
     "open_app": "Open, launch, or focus an application or browser",
-    "close_app": "Close, quit, or exit an application",
+    # quit_app (not close_app): dispatchable, and gated via _DESTRUCTIVE_ACTIONS
+    "quit_app": "Close, quit, or exit an application",
     "switch_app": "Switch, focus, or bring up a running application",
     "set_volume": "Change, raise, lower, or mute audio volume",
     "media": "Play, pause, skip, next, or control music/video playback",
