@@ -1691,8 +1691,27 @@ def act_empty_trash() -> None:
     say("Trash emptied")
 
 
+def _wifi_device() -> str:
+    """Wi-Fi interface from `networksetup -listallhardwareports` (en0 fallback).
+    On a Mac mini en0 is Ethernet and Wi-Fi is usually en1."""
+    try:
+        out = shell(["networksetup", "-listallhardwareports"])
+    except Exception:
+        out = ""
+    port = ""
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("Hardware Port:"):
+            port = line.split(":", 1)[1].strip().lower()
+        elif line.startswith("Device:") and port in ("wi-fi", "airport"):
+            dev = line.split(":", 1)[1].strip()
+            if dev:
+                return dev
+    return "en0"
+
+
 def act_wifi(on: bool) -> None:
-    shell(["networksetup", "-setairportpower", "en0", "on" if on else "off"])
+    shell(["networksetup", "-setairportpower", _wifi_device(), "on" if on else "off"])
     say(f"Wi-Fi {'on' if on else 'off'}")
 
 

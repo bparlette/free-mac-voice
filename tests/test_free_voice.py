@@ -2945,3 +2945,32 @@ class TestReviewB11MicFallback(Base):
         with open(path, encoding="utf-8") as f:
             src = f.read()
         self.assertEqual(src.count('upsert_env VOICE_MIC "iPhone"'), 1)
+
+
+class TestReviewB12WifiDevice(Base):
+    PORTS = (
+        "\nHardware Port: Ethernet\nDevice: en0\nEthernet Address: aa:bb\n\n"
+        "Hardware Port: Wi-Fi\nDevice: en1\nEthernet Address: cc:dd\n\n"
+        "Hardware Port: Thunderbolt Bridge\nDevice: bridge0\n"
+    )
+
+    def test_parses_wifi_device(self):
+        with mock.patch.object(fv, "shell", return_value=self.PORTS):
+            self.assertEqual(fv._wifi_device(), "en1")
+
+    def test_falls_back_to_en0(self):
+        with mock.patch.object(fv, "shell", side_effect=RuntimeError("nope")):
+            self.assertEqual(fv._wifi_device(), "en0")
+        with mock.patch.object(fv, "shell", return_value="Hardware Port: Ethernet\nDevice: en0\n"):
+            self.assertEqual(fv._wifi_device(), "en0")
+
+    def test_act_wifi_uses_detected_device(self):
+        cmds = []
+
+        def fake_shell(cmd):
+            cmds.append(cmd)
+            return self.PORTS if "-listallhardwareports" in cmd else ""
+
+        with mock.patch.object(fv, "shell", side_effect=fake_shell):
+            fv.act_wifi(False)
+        self.assertIn(["networksetup", "-setairportpower", "en1", "off"], cmds)
