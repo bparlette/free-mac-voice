@@ -174,11 +174,11 @@ def cmd_set_volume(level: int) -> str:
 def cmd_volume_delta(delta: int) -> str:
     dev = _need_device()
     cmd = "volumeUp" if delta > 0 else "volumeDown"
-    steps = abs(delta)
+    steps = min(10, max(1, abs(delta)))  # capped per request; report what was sent
     commands = [{"component": "main",
                  "capability": "audioVolume",
                  "command": cmd,
-                 "arguments": []} for _ in range(min(10, max(1, steps)))]
+                 "arguments": []} for _ in range(steps)]
     _req("POST", f"/devices/{dev}/commands", {"commands": commands})
     direction = "up" if delta > 0 else "down"
     msg = f"TV volume {direction} by {steps}"

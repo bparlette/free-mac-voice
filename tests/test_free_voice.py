@@ -3494,3 +3494,19 @@ class TestReviewQ3ToolPaths(unittest.TestCase):
              mock.patch.object(fv, "log"):
             fv.stream_whisper_loop(lambda n, m: None)
         loop.assert_called_once()
+
+
+class TestReviewQ12SamsungVolumeSteps(unittest.TestCase):
+    def test_reports_capped_steps(self):
+        with mock.patch.object(samsung_tv, "_need_device", return_value="dev"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as req, \
+             mock.patch("builtins.print"):
+            msg = samsung_tv.cmd_volume_delta(25)
+        self.assertEqual(len(req.call_args.args[2]["commands"]), 10)
+        self.assertEqual(msg, "TV volume up by 10")
+
+    def test_small_delta_unchanged(self):
+        with mock.patch.object(samsung_tv, "_need_device", return_value="dev"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}), \
+             mock.patch("builtins.print"):
+            self.assertEqual(samsung_tv.cmd_volume_delta(-3), "TV volume down by 3")
