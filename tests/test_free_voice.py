@@ -2893,3 +2893,26 @@ class TestReviewB9RelativeVolume(Base):
         with mock.patch.object(fv, "act_volume_delta") as delta:
             fv.dispatch_tier1("set_volume", params)
             delta.assert_called_once_with(-10)
+
+
+class TestReviewB10TimerUnits(Base):
+    def test_normalize_all_units(self):
+        for raw, want in [
+            ("s", "second"), ("sec", "second"), ("secs", "second"), ("second", "second"), ("seconds", "second"),
+            ("min", "minute"), ("mins", "minute"), ("minute", "minute"), ("Minutes", "minute"),
+            ("hr", "hour"), ("hrs", "hour"), ("hour", "hour"), ("hours", "hour"),
+        ]:
+            self.assertEqual(fv._normalize_time_unit(raw), want, raw)
+        self.assertEqual(fv._normalize_time_unit("fortnight"), "minute")
+        self.assertEqual(fv._normalize_time_unit(None), "minute")
+
+    def test_thirty_seconds_is_seconds_not_minutes(self):
+        params = fv._extract_intent_params("timer", "set a timer for 30 seconds")
+        with mock.patch.object(fv, "act_timer") as t:
+            fv.dispatch_tier1("timer", params)
+            t.assert_called_once_with(30, "second")
+
+    def test_dispatch_hours(self):
+        with mock.patch.object(fv, "act_timer") as t:
+            fv.dispatch_tier1("timer", {"amount": 2, "unit": "hrs"})
+            t.assert_called_once_with(2, "hour")

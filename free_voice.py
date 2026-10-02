@@ -1717,7 +1717,20 @@ def act_settings_pane(topic: str) -> None:
         say("Opening settings")
 
 
+_TIME_UNIT_ALIASES = {
+    "s": "second", "sec": "second", "secs": "second", "second": "second", "seconds": "second",
+    "m": "minute", "min": "minute", "mins": "minute", "minute": "minute", "minutes": "minute",
+    "h": "hour", "hr": "hour", "hrs": "hour", "hour": "hour", "hours": "hour",
+}
+
+
+def _normalize_time_unit(unit, default: str = "minute") -> str:
+    """Map 's'/'sec'/'secs'/'seconds' etc. to 'second'/'minute'/'hour'."""
+    return _TIME_UNIT_ALIASES.get(str(unit or "").strip().lower(), default)
+
+
 def act_timer(amount: int, unit: str) -> None:
+    unit = _normalize_time_unit(unit)
     seconds = amount * {"second": 1, "minute": 60, "hour": 3600}[unit]
 
     def ring():
@@ -5483,9 +5496,7 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
             amount = int(p("amount", 1))
         except (TypeError, ValueError):
             amount = 1
-        unit = str(p("unit", "minutes")).rstrip("s")
-        if unit not in ("second", "minute", "hour"):
-            unit = "minute"
+        unit = _normalize_time_unit(p("unit", "minutes"))
         act_timer(amount, unit)
     elif action == "calculate":
         act_calculate(str(p("expr", "")))
