@@ -1065,6 +1065,31 @@ def _phonetic_key(s: str) -> str:
     return "".join(_soundex(t) for t in tokens)
 
 
+# Per-call recomputation caches for resolve_app. Each entry keeps a reference
+# to its source object, so a new installed_apps() list (or alias dict change)
+# invalidates it.
+_clean_aliases_cache: tuple = (None, 0, {})
+_phonetic_map_cache: tuple = (None, 0, {})
+
+
+def _clean_aliases() -> dict:
+    global _clean_aliases_cache
+    src, n, cached = _clean_aliases_cache
+    if src is not _APP_ALIASES or n != len(_APP_ALIASES):
+        cached = {_clean_name(k): v for k, v in _APP_ALIASES.items()}
+        _clean_aliases_cache = (_APP_ALIASES, len(_APP_ALIASES), cached)
+    return cached
+
+
+def _phonetic_map(apps: list[str]) -> dict:
+    global _phonetic_map_cache
+    src, n, cached = _phonetic_map_cache
+    if src is not apps or n != len(apps):
+        cached = {_phonetic_key(a): a for a in apps if _phonetic_key(a)}
+        _phonetic_map_cache = (apps, len(apps), cached)
+    return cached
+
+
 def resolve_app(spoken: str, prefer_running: bool = False) -> str | None:
     """Turn 'chrome' / 'notes' / 'es de' into a real app name.
 
@@ -1085,7 +1110,7 @@ def resolve_app(spoken: str, prefer_running: bool = False) -> str | None:
         variants.append(clean_spoken)
 
     # 0. Check aliases first for all variants & their singular forms
-    clean_aliases = {_clean_name(k): val for k, val in _APP_ALIASES.items()}
+    clean_aliases = _clean_aliases()
     for v in variants:
         if v in _APP_ALIASES:
             return _APP_ALIASES[v]
@@ -1166,7 +1191,7 @@ def resolve_app(spoken: str, prefer_running: bool = False) -> str | None:
     for v in variants:
         phone_s = _phonetic_key(v)
         if phone_s:
-            phone_map = {_phonetic_key(a): a for a in apps if _phonetic_key(a)}
+            phone_map = _phonetic_map(apps)
             if phone_s in phone_map:
                 return phone_map[phone_s]
 
@@ -1193,7 +1218,7 @@ def resolve_app_exact(spoken: str) -> str | None:
 
     clean_s = _clean_name(s)
     clean_singular = _clean_name(singular)
-    clean_aliases = {_clean_name(k): v for k, v in _APP_ALIASES.items()}
+    clean_aliases = _clean_aliases()
     if clean_s in clean_aliases:
         return clean_aliases[clean_s]
 

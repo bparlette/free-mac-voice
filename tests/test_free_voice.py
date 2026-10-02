@@ -3395,3 +3395,27 @@ class TestReviewP6Gallery(unittest.TestCase):
             with ur.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/clips", timeout=5) as r:
                 self.assertEqual(r.status, 200)
         clean.assert_not_called()
+
+
+class TestReviewP7AppResolutionCaches(Base):
+    def test_phonetic_map_cached_per_app_list(self):
+        apps = ["Safari", "Spotify", "Notes"]
+        m1 = fv._phonetic_map(apps)
+        self.assertIs(fv._phonetic_map(apps), m1)
+        self.assertEqual(m1[fv._phonetic_key("Spotify")], "Spotify")
+        apps2 = ["Safari", "Spotify", "Notes", "Keynote"]
+        self.assertIsNot(fv._phonetic_map(apps2), m1)
+        self.assertIn(fv._phonetic_key("Keynote"), fv._phonetic_map(apps2))
+
+    def test_clean_aliases_cached(self):
+        self.assertIs(fv._clean_aliases(), fv._clean_aliases())
+        self.assertEqual(fv._clean_aliases()["vscode"], "Visual Studio Code")
+
+    def test_resolve_app_phonetic_does_not_recompute(self):
+        apps = ["Spotify", "Safari", "Notes"]
+        with mock.patch.object(fv, "installed_apps", return_value=apps):
+            fv.resolve_app("spotifi")
+            with mock.patch.object(fv, "_phonetic_key", wraps=fv._phonetic_key) as pk:
+                fv.resolve_app("spotifi")
+                # only the spoken variant(s) are keyed, not every installed app
+                self.assertLessEqual(pk.call_count, 2)
