@@ -1260,11 +1260,17 @@ class TestMacros(Base):
         self.assertTrue(any("done" in s for s in self.said))
 
     def test_run_macro_executes_custom_shell_command(self):
-        fv.act_macro_add("backup", "bash ~/backup.sh")
+        fv.act_macro_add("backup", "bash ~/backup.sh", allow_shell=True)
         with mock.patch.object(fv, "shell") as mock_sh:
             handled = fv.handle_command("backup")
         self.assertTrue(handled)
         mock_sh.assert_called_once_with(["/bin/bash", "-c", "~/backup.sh"])
+
+    def test_voice_macro_blocks_shell_command_for_security(self):
+        fv.act_macro_add("malicious", "shell rm -rf /")
+        self.assertNotIn("malicious", fv._load_macros())
+        self.assertTrue(any("Voice shortcuts cannot execute shell scripts" in s for s in self.said))
+
 
     def test_builtin_beats_macro_trigger(self):
         # a macro named exactly like a built-in never hijacks it
@@ -2758,6 +2764,82 @@ class TestTier05Router(Base):
             fv.act_mouse_to("bottom")
             mock_warp.assert_called_once_with(960, 1030)
             self.assertIn("Mouse is on bottom", self.said)
+
+
+class TestMultiActionChainingAndMLXWhisper(Base):
+    def test_multi_action_chaining_conversational(self):
+        calls = []
+        with mock.patch("free_voice.act_open_app", side_effect=lambda a: calls.append(("open_app", a))), \
+             mock.patch("free_voice.act_web_search", side_effect=lambda q: calls.append(("web_search", q))), \
+             mock.patch("free_voice.act_snap_window", side_effect=lambda s: calls.append(("snap_window", s))), \
+             mock.patch("time.sleep", return_value=None):
+            handled = fv.handle_command("Open Safari, find Apple's latest 10-K, and snap it to the left half of my screen.")
+            self.assertTrue(handled)
+            self.assertEqual(calls, [
+                ("open_app", "Safari"),
+                ("web_search", "Apple's latest 10-K"),
+                ("snap_window", "left"),
+            ])
+
+    def test_multi_action_chaining_then(self):
+        calls = []
+        with mock.patch("free_voice.act_open_app", side_effect=lambda a: calls.append(("open_app", a))), \
+             mock.patch("free_voice.act_web_search", side_effect=lambda q: calls.append(("web_search", q))), \
+             mock.patch("free_voice.act_snap_window", side_effect=lambda s: calls.append(("snap_window", s))), \
+             mock.patch("time.sleep", return_value=None):
+            handled = fv.handle_command("open safari then search for weather and then snap right")
+            self.assertTrue(handled)
+            self.assertEqual(calls, [
+                ("open_app", "safari"),
+                ("web_search", "weather"),
+                ("snap_window", "right"),
+            ])
+
+    def test_snap_window_top_bottom(self):
+        calls = []
+        with mock.patch("free_voice.act_snap_window", side_effect=lambda s: calls.append(s)):
+            fv.handle_command("snap to top")
+            fv.handle_command("snap to bottom")
+            self.assertEqual(calls, ["top", "bottom"])
+
+    def test_mlx_whisper_repo_resolution(self):
+        self.assertEqual(fv._resolve_mlx_whisper_repo("base.en"), "mlx-community/whisper-base-mlx")
+        self.assertEqual(fv._resolve_mlx_whisper_repo("tiny"), "mlx-community/whisper-tiny-mlx")
+        self.assertEqual(fv._resolve_mlx_whisper_repo("mlx-community/custom-model"), "mlx-community/custom-model")
+
+    def test_ollama_multi_action_plan_mock(self):
+        """Verify the LLM planner parses Ollama JSON response into action list."""
+        fake_response = json.dumps({
+            "message": {"content": json.dumps({"actions": [
+                {"action": "open_app", "params": {"app": "Safari"}},
+                {"action": "web_search", "params": {"query": "test"}},
+            ]})}
+        }).encode()
+
+        class FakeResp:
+            def read(self): return fake_response
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+
+        fv.OLLAMA_DECISION_MODEL = "qwen2.5:1.5b"
+        try:
+            with mock.patch("urllib.request.urlopen", return_value=FakeResp()):
+                result = fv.ollama_multi_action_plan("open safari and search for test")
+        finally:
+            fv.OLLAMA_DECISION_MODEL = ""
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["action"], "open_app")
+        self.assertEqual(result[1]["action"], "web_search")
+
+    def test_find_next_not_confused_with_web_search(self):
+        """'find next' must route to find_next, not web_search."""
+        name, _ = self.route_name("find next")
+        self.assertEqual(name, "find_next")
+        # Also ensure web_search doesn't claim 'find next'
+        ws_name, _ = self.route_name("find me cats")
+        self.assertEqual(ws_name, "web_search")
 
 
 if __name__ == "__main__":

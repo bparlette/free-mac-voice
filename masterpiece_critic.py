@@ -28,6 +28,8 @@ import urllib.request
 import subprocess
 import threading
 import random
+import re
+
 from datetime import datetime
 
 import AppKit
@@ -195,16 +197,53 @@ def get_kokoro():
             pass
     return None
 
+def _split_sentences(text: str) -> list[str]:
+    """Split text into sentences for parallel TTS synthesis."""
+    import re
+    parts = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
 def speak_voice(voice_name: str, text: str):
+    """Sentence-parallel TTS: synthesize sentence N+1 in background while N plays.
+    For 1-2 sentence riffs this cuts perceived latency by ~200-400ms vs. serial synthesis."""
     kokoro = get_kokoro()
-    wav_path = "/tmp/critic_riff.wav"
     lang = "en-gb" if voice_name.startswith("b") else "en-us"
+
     if kokoro:
         try:
             import soundfile as sf
-            samples, sr = kokoro.create(text, voice=voice_name, speed=0.95, lang=lang)
-            sf.write(wav_path, samples, sr)
-            subprocess.run(["afplay", wav_path], check=True)
+            import numpy as np
+            sentences = _split_sentences(text)
+            if not sentences:
+                return
+
+            # Pre-synthesize first sentence immediately
+            wavs = [None] * len(sentences)
+            wavs[0] = kokoro.create(sentences[0], voice=voice_name, speed=0.95, lang=lang)
+
+            for i, sentence in enumerate(sentences):
+                # Kick off synthesis of next sentence in background while current plays
+                next_ready = threading.Event()
+                if i + 1 < len(sentences):
+                    def _synth_next(idx=i + 1):
+                        try:
+                            wavs[idx] = kokoro.create(sentences[idx], voice=voice_name, speed=0.95, lang=lang)
+                        except Exception:
+                            wavs[idx] = None
+                        next_ready.set()
+                    threading.Thread(target=_synth_next, daemon=True).start()
+
+                # Play current sentence
+                samples, sr = wavs[i]
+                wav_path = f"/tmp/critic_riff_{i}.wav"
+                sf.write(wav_path, samples, sr)
+                subprocess.run(["afplay", wav_path], check=True)
+
+                # Wait for next sentence to be ready (usually already done)
+                if i + 1 < len(sentences):
+                    next_ready.wait(timeout=10)
+
             return
         except Exception as e:
             print(f"[Critic] Kokoro voice error ({e}), falling back to say")
@@ -234,20 +273,288 @@ def get_active_window_info() -> tuple[str, str]:
     except Exception:
         return "Desktop", "Main Screen"
 
-def generate_critic_riff(theme_key: str, app_name: str, win_title: str) -> tuple[dict, str]:
+# OCR result cache — 5 second TTL so rapid riffs share a single screencapture
+_ocr_cache: dict = {"ts": 0.0, "thumb": "", "text": ""}
+
+def capture_screen_context() -> tuple[str, str]:
+    """Capture 512x288 JPEG thumbnail and extract on-screen subtitles/dialogue via Apple Vision OCR.
+    Results are cached for 5 seconds so rapid riffs don't re-capture an unchanged screen."""
+    thumb_path = "/tmp/critic_screen_thumb.jpg"
+    full_path = "/tmp/critic_screen_full.png"
+    text_lines = []
+
+    # 5-second TTL cache — screen rarely changes between back-to-back riffs
+    now = time.time()
+    if now - _ocr_cache["ts"] < 5.0:
+        return _ocr_cache["thumb"], _ocr_cache["text"]
+
+    try:
+        subprocess.run(["screencapture", "-x", "-C", full_path], check=True, capture_output=True, timeout=3)
+        subprocess.run(["sips", "-z", "288", "512", full_path, "--out", thumb_path], check=True, capture_output=True, timeout=2)
+    except Exception as e:
+        print(f"[Critic Vision] Screen capture error: {e}")
+
+    try:
+        import Cocoa
+        import Vision
+
+        url = Cocoa.NSURL.fileURLWithPath_(full_path)
+        handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)
+        req = Vision.VNRecognizeTextRequest.alloc().init()
+        req.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelFast)
+        req.setUsesLanguageCorrection_(True)
+        success, _ = handler.performRequests_error_([req], None)
+        if success and req.results():
+            for obs in req.results():
+                top = obs.topCandidates_(1)
+                if top:
+                    text_lines.append(top[0].string())
+    except Exception as e:
+        print(f"[Critic Vision] Vision OCR error: {e}")
+
+    ocr_text = "\n".join(text_lines[:25])
+    _ocr_cache["ts"] = time.time()
+    _ocr_cache["thumb"] = thumb_path
+    _ocr_cache["text"] = ocr_text
+    return thumb_path, ocr_text
+
+
+class CompanionVoiceListener:
+    """Listens for user comments or jokes in background, invoking on_user_speech when spoken to."""
+    _SPEECH_COOLDOWN = 3.0   # minimum seconds between banter triggers
+    _MAX_UTTERANCE_S = 15.0  # force flush if speech runs this long (stops ambient noise lock)
+
+    def __init__(self, on_user_speech, is_speaking_fn):
+        self.on_user_speech = on_user_speech
+        self.is_speaking_fn = is_speaking_fn
+        self.running = False
+        self.thread = None
+        self._last_trigger_time = 0.0  # cooldown tracker
+
+    def start(self):
+        if self.running:
+            return
+        self.running = True
+        # Pre-warm MLX-Whisper so the first real utterance isn't hit with a 1.5s model-load stall
+        threading.Thread(target=self._prewarm_whisper, daemon=True, name="whisper-prewarm").start()
+        self.thread = threading.Thread(target=self._listen_loop, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.running = False
+
+    def _prewarm_whisper(self):
+        try:
+            import numpy as np
+            import mlx_whisper
+            silence = np.zeros(1600, dtype=np.float32)  # 100ms of silence
+            mlx_whisper.transcribe(silence, path_or_hf_repo="mlx-community/whisper-tiny-mlx")
+            print("[Critic Audio] MLX-Whisper pre-warmed.")
+        except Exception as e:
+            print(f"[Critic Audio] Pre-warm skipped ({e})")
+
+    # Character names this companion responds to directly (hot-word gate)
+    _HOT_WORDS = frozenset(["leo", "cleo", "chloe", "maya", "reginald", "sir reginald", "byte", "orbit", "toby"])
+
+    def _listen_loop(self):
+        try:
+            import numpy as np
+            import sounddevice as sd
+        except Exception as e:
+            print(f"[Critic Audio] Sounddevice unavailable: {e}")
+            return
+
+        samplerate = 16000
+        block_size = int(samplerate * 0.1)  # 100ms blocks
+        silence_threshold = 0.018
+        max_speech_frames = int(self._MAX_UTTERANCE_S / 0.1)  # 150 blocks = 15s
+        speech_frames = []
+        silence_count = 0
+        in_speech = False
+
+        print("[Critic Audio] Background microphone listening started...")
+        try:
+            with sd.InputStream(samplerate=samplerate, channels=1, dtype="float32", blocksize=block_size) as stream:
+                while self.running:
+                    # If companion is actively speaking, mute input to avoid acoustic feedback
+                    if self.is_speaking_fn():
+                        time.sleep(0.15)
+                        speech_frames = []
+                        in_speech = False
+                        silence_count = 0
+                        continue
+
+                    data, _ = stream.read(block_size)
+                    audio_block = data.flatten()
+                    rms = float(np.sqrt(np.mean(audio_block ** 2)))
+
+                    if rms > silence_threshold:
+                        speech_frames.append(audio_block)
+                        silence_count = 0
+                        in_speech = True
+                    elif in_speech:
+                        speech_frames.append(audio_block)
+                        silence_count += 1
+                        # ~0.5s of silence ends utterance (reduced from 0.7s for snappier banter)
+                        trigger = silence_count > 5 or len(speech_frames) >= max_speech_frames
+                        if trigger:
+                            total_audio = np.concatenate(speech_frames)
+                            speech_frames = []
+                            in_speech = False
+                            silence_count = 0
+                            if len(total_audio) >= int(samplerate * 0.5):
+                                self._transcribe_and_trigger(total_audio)
+        except PermissionError:
+            print(
+                "[Critic Audio] ⚠️  Microphone permission denied.\n"
+                "   → Go to System Settings → Privacy & Security → Microphone\n"
+                "   → Enable access for Terminal (or your launcher app).\n"
+                "   Companion voice listening is disabled until permission is granted."
+            )
+        except Exception as e:
+            print(f"[Critic Audio] Listener stopped ({e})")
+
+    def _is_hot_word(self, text: str) -> bool:
+        """Return True if utterance addresses a character (e.g. 'Hey Leo', 'Cleo, ...') — directed banter bypasses cooldown."""
+        t = text.lower().strip()
+        # Match whole word name optionally preceded by 'hey ' / 'hi '
+        pattern = r"^(?:hey\s+|hi\s+)?(?:" + "|".join(re.escape(hw) for hw in self._HOT_WORDS) + r")\b"
+        return bool(re.search(pattern, t))
+
+
+    def _transcribe_and_trigger(self, audio_data):
+        # Hot-word utterances ("Hey Leo, ..." / "Cleo, ...") bypass cooldown — user is directly talking to companion
+        # All other utterances still observe the 3-second cooldown guard
+        now = time.time()
+        try:
+            import mlx_whisper
+            res = mlx_whisper.transcribe(audio_data, path_or_hf_repo="mlx-community/whisper-tiny-mlx")
+            text = str(res.get("text", "")).strip()
+            # Filter hallucinations on background noise
+            if not text or len(text) <= 3 or text.startswith(("[", "(", "*")):
+                return
+            is_directed = self._is_hot_word(text)
+            if not is_directed and now - self._last_trigger_time < self._SPEECH_COOLDOWN:
+                return  # cooldown active and not a directed call
+            label = " (directed)" if is_directed else ""
+            print(f"[Critic Audio] User said{label}: '{text}'")
+            self._last_trigger_time = time.time()
+            self.on_user_speech(text)
+        except Exception as e:
+            print(f"[Critic Audio] Transcription error: {e}")
+
+
+
+# --- Roast memory: rolling conversation buffer ---
+_riff_history: list[dict] = []
+_RIFF_HISTORY_MAX = 5
+
+
+def _describe_screen_visually(thumb_path: str) -> str:
+    """Send thumbnail JPEG to qwen3-vl:8b for visual scene understanding.
+    Returns a one-sentence description or '' on any failure."""
+    import base64
+    try:
+        with open(thumb_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+        body = {
+            "model": "qwen3-vl:8b",
+            "prompt": (
+                "In one very short sentence, describe the visual scene on this screen. "
+                "Focus on: what application, game, video, or content is visible. "
+                "Be specific and concise."
+            ),
+            "images": [img_b64],
+            "stream": False,
+            "options": {"temperature": 0, "num_predict": 60},
+        }
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            description = data.get("response", "").strip()
+            if description:
+                print(f"[Critic Vision] Visual scene: {description}")
+                return description
+    except Exception:
+        pass
+    return ""
+
+
+def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_path: str = "", screen_text: str = "", user_speech: str = "") -> tuple[dict, str]:
     theme = THEMES.get(theme_key, THEMES["couch_duo"])
     char = random.choice(theme["characters"])
 
+    context_parts = [
+        f"Active App: {app_name}",
+        f"Window Title: {win_title}",
+    ]
+    # TASK 1: Visual scene understanding via qwen3-vl:8b
+    if thumb_path:
+        visual_desc = _describe_screen_visually(thumb_path)
+        if visual_desc:
+            context_parts.append(f"Visual Scene: \"{visual_desc}\"")
+    if screen_text:
+        cleaned_lines = [l.strip() for l in screen_text.splitlines() if len(l.strip()) > 3]
+        if cleaned_lines:
+            ocr_snippet = " | ".join(cleaned_lines[:10])
+            context_parts.append(f"On-Screen Words / Dialogue / Subtitles: \"{ocr_snippet}\"")
+    if user_speech:
+        context_parts.append(f"The Human just said out loud: \"{user_speech}\"")
+
+    context_str = "\n".join(context_parts)
+    if user_speech:
+        instruction = (
+            f"The human sitting next to you just made a comment or joke. "
+            f"Roast or banter back directly, referencing their remark and the on-screen action in 1-2 punchy sentences. "
+            f"Return ONLY your spoken line without quotes or prefixes."
+        )
+    else:
+        instruction = (
+            f"Deliver a witty, observational roast or commentary about what is currently happening on the screen in 1-2 sentences. "
+            f"Return ONLY your spoken line without quotes or prefixes."
+        )
+
+    # TASK 2: Prepend rolling banter history for conversational memory
+    history_block = ""
+    if _riff_history:
+        recent = _riff_history[-3:]
+        lines = []
+        for entry in recent:
+            lines.append(f"{entry['char']}: {entry['riff']}")
+            if entry.get("user"):
+                lines.append(f"Human: {entry['user']}")
+        history_block = (
+            "Recent banter (for continuity — don't repeat yourself):\n"
+            + "\n".join(lines)
+            + "\n\n"
+        )
+
     prompt = (
-        f"{char['system']}\n"
-        f"Context: The human is currently using '{app_name}' with active window: '{win_title}'."
+        f"{char['system']}\n\n"
+        f"{history_block}"
+        f"Context:\n{context_str}\n\n"
+        f"{instruction}"
     )
 
+    # Smart model routing:
+    # - User-triggered banter: use the 7B vision model for better quality comebacks
+    # - Timed background riffs: use the fast 1.5B model to minimize background overhead
+    if user_speech:
+        riff_model = "qwen3-vl:8b"
+        riff_timeout = 12  # user is actively waiting, can afford more time
+    else:
+        riff_model = "qwen2.5:1.5b"
+        riff_timeout = 6
+
     body = {
-        "model": "qwen2.5:1.5b",
+        "model": riff_model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": 0.88, "num_predict": 75}
+        "options": {"temperature": 0.88, "num_predict": 75},
     }
 
     try:
@@ -256,7 +563,7 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str) -> tuple
             data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=6) as resp:
+        with urllib.request.urlopen(req, timeout=riff_timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             riff = data.get("response", "").strip().strip('"')
             # Clean any leading name prefix
@@ -264,36 +571,134 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str) -> tuple
             if riff.lower().startswith(prefix.lower()):
                 riff = riff[len(prefix):].strip()
             if riff:
+                # TASK 2: Save to rolling banter memory
+                _riff_history.append({"char": char["name"], "riff": riff, "user": user_speech})
+                if len(_riff_history) > _RIFF_HISTORY_MAX:
+                    _riff_history.pop(0)
                 return char, riff
     except Exception:
         pass
 
-    # High-quality fallback riffs per theme
+    # High-quality fallback riffs per theme (expanded library)
     fallbacks = {
         "couch_duo": [
-            "Did you just click that by accident, or was that an intentional disaster?",
-            "Look at those frantic clicks! Someone get this player a tutorial.",
-            "Watching this window is giving me nine different kinds of second-hand anxiety."
+            "Bro really thought he cooked with that loadout. It's giving NPC energy.",
+            "Massive skill issue on display right now. Time to touch grass, my guy.",
+            "Are we speedrunning 'How to throw a match'? Because this is a world record.",
+            "You're getting farmed harder than a Minecraft mob spawner.",
+            "Stack Overflow copy-paste isn't a personality trait, but pop off.",
+            "Watching you debug this is like watching someone try to download more RAM.",
+            "That code is looking real spaghetti right now. Mom's spaghetti, specifically.",
+            "Bro forgot the semicolon and is now questioning his entire existence.",
+            "Are we really doomscrolling YouTube shorts right now? Brain rot activated.",
+            "This video essay is three hours long. Who hurt you?",
+            "Absolute cinema right here. Grab the popcorn and lower your expectations.",
+            "I see we're reading Wikipedia articles about deep sea creatures at 3 AM. Normal behavior.",
+            "Closing 40 tabs without saving any of them? A true agent of chaos.",
+            "Your search history is a cry for help. Let's close that tab real quick.",
+            "Buying more keyboards instead of getting better at typing? Pure copium.",
+            "Staring at Excel cells won't make the numbers go up, I promise.",
+            "This spreadsheet is the final boss of corporate America.",
+            "Ah yes, VLOOKUP. The spell you cast when you're pretending to work.",
+            "Bro is sweating over these cells like it's a competitive ranked match.",
+            "You call that reflex? I've seen a sloth swat a fly with more urgency.",
+            "Oh, you died again. Imagine having only one life. Tragic.",
+            "Staring at a glowing rectangle and you still can't catch the red dot. Pathetic.",
+            "You typed all that just for a syntax error? A cat walking on the keyboard is more efficient.",
+            "Ah, debugging. The human equivalent of chasing your own tail, but sadder.",
+            "Why are we watching dogs? Change it to bird videos immediately, peasant.",
+            "Another impulsive online purchase? Your financial decisions live rent-free in my nightmares.",
+            "Fifty open tabs and your brain is still empty. Fascinating.",
+            "Numbers in tiny boxes. Is this what passes for enrichment in your enclosure?",
+            "Calculating your net worth? Don't bother, I already know it's less than mine."
         ],
         "wine_girls": [
-            "Oh honey, no. Tell me he didn't just spend five minutes on that.",
-            "I'm pouring another glass because watching this is a full-time endurance test.",
-            "I love the confidence, but the execution is pure chaos."
+            "Oh honey, that was a total flop. Even my ex has better aim than that.",
+            "Are we supposed to be rooting for you? Because honestly, this is a mess.",
+            "Not the rage quit! Keep it cute, we don't do temper tantrums here.",
+            "Wait, did you really just spend real money on that skin? Bestie, no...",
+            "I love how you stare at the screen like the bug is just going to apologize and fix itself.",
+            "Take a sip of wine every time the code breaks. Actually, don't, we'll need an ambulance.",
+            "Is this what tech people do? Because this looks like a whole lot of nothing.",
+            "Red text everywhere. It's giving major red flags, honestly.",
+            "Are we seriously watching a reaction to a reaction video? We are down bad.",
+            "Okay but why is this aesthetic actually kind of a vibe?",
+            "Cancel this channel immediately. My eyes are offended.",
+            "I'm obsessed with how you can waste a solid three hours on YouTube and feel absolutely nothing.",
+            "Adding to cart but never checking out? Story of my life, girl.",
+            "I saw that search query. We're taking your internet privileges away.",
+            "Your Pinterest board is writing checks your bank account can't cash.",
+            "Is that your ex's Instagram? Put the mouse down and step away slowly.",
+            "Excel? On a Friday night? We need to have an intervention.",
+            "Ooh, look at those pastel pie charts. Very demure, very mindful.",
+            "That cell just gave you a #REF! error. Wow, even the math is judging you.",
+            "I respect the hustle, but this pivot table is giving me a migraine."
         ],
         "theater_critic": [
             f"Behold the modern human struggling with {app_name}. Riveting theatre indeed.",
             f"I have witnessed profound artistic tragedies, but {win_title} rivals them all.",
-            "Could someone perhaps direct us toward something resembling competence?"
+            "Could someone perhaps direct us toward something resembling competence?",
+            "Ah, another death. The pacing of this tragedy is simply exquisite.",
+            "Your tactical choices are highly derivative. Have you considered trying to not perish?",
+            "Absolute cinema! A masterclass in digital incompetence.",
+            "I've seen avant-garde plays make more sense than whatever this strategy is.",
+            "Behold, the modern tragedy: a hero undone by a missing parenthesis.",
+            "This script is entirely mid. Shakespeare would weep at such poor structure.",
+            "Your console is bleeding red. A visceral, bold choice by the director!",
+            "Refactoring? More like rearranging deck chairs on the Titanic.",
+            "We are consuming brain rot of the highest order. Truly a reflection of our fallen society.",
+            "I rate this content one star. It lacks gravitas, plot, and basic human dignity.",
+            "Ah, the daily montage of other people achieving things while we sit here.",
+            "This cinematic framing is appalling, yet I cannot look away from the trainwreck.",
+            "Your digital footprint is a farcical comedy of errors.",
+            "Scrolling endlessly into the void. A poignant metaphor for existential dread.",
+            "Fifty tabs open, a symphony of chaos. You are the maestro of distraction.",
+            "Ah, the spreadsheet. The most soulless script ever written by man.",
+            "Calculating your expenses? A harrowing tale of hubris and financial ruin."
         ],
         "byte_orbit": [
             "User efficiency dropped 42%. Diagnostics conclude: pure confusion.",
             "Re-calculating probability of success... Result is zero point zero percent.",
-            "I have processed 10 billion calculations and none justify that decision."
+            "I have processed 10 billion calculations and none justify that decision.",
+            "Calculating win probability... error. The number is too small to compute.",
+            "Woosh! That was a close one! Just kidding, you totally faceplanted!",
+            "Skill issue detected! Need me to aim for you next time? Beep boop!",
+            "Memory leak detected in line 42. Also in your brain, apparently.",
+            "Yay, more bugs! It's like a digital petting zoo in this IDE!",
+            "Stack overflow error. The machine weeps for your logic.",
+            "Copying from ChatGPT again? I won't tell if you don't!",
+            "Attention span metrics indicate a 90% decline over the last three clips.",
+            "Buffering... just like your brain trying to process this plot twist!",
+            "Analyzing pixels. Conclusion: this content has zero nutritional value.",
+            "Smash that like button! Or don't, I'm just a drone, I can't force you!",
+            "Look at all those tabs! Your RAM must be screaming for mercy!",
+            "Tracking cookies accepted. Privacy compromised. Good job, human.",
+            "Shopping again? Initiating wallet-protection protocols... failed!",
+            "Data entry detected. Initiating sympathy subroutine.",
+            "Wow, a pivot table! You're basically a hacker now!",
+            "Formula error in cell C4. My circuits are deeply offended."
         ],
         "kids_club": [
             "Whoa! Did you see that move?! That was so awesome!",
             "Barnaby says don't give up, you're almost at the next level!",
-            "I think this is the coolest thing on the screen today!"
+            "I think this is the coolest thing on the screen today!",
+            "Barnaby barked, that means you just did something epic! Big W!",
+            "Don't give up! Every time you lose, you're just learning how to win!",
+            "You're gaming like a pro right now! Absolute GOAT!",
+            "Look at all those cool colored words! You're basically a wizard!",
+            "I don't know what that error means, but I know you're smart enough to fix it!",
+            "Barnaby says your code is looking super awesome! Keep typing!",
+            "You're building the future! That is so poggers!",
+            "This video is so funny! Can we watch it again?",
+            "Barnaby is wagging his tail! He loves this part!",
+            "You always find the best stuff to watch! W rizz on the recommendations!",
+            "Grab a juice box and chill! We're having the best time!",
+            "Look at all those cool pictures! The internet is amazing!",
+            "You read so fast! You must have a super brain!",
+            "Barnaby wants to know if we can search for pictures of bones next?",
+            "Learning new things online is the best! You're so curious!",
+            "Wow, so many numbers! You must be doing very important math!",
+            "Those charts look like a rainbow! You made math pretty!"
         ]
     }
     riff = random.choice(fallbacks.get(theme_key, fallbacks["couch_duo"]))
@@ -319,11 +724,18 @@ def cleanup_old_clips(max_age_days: float = 2.0):
             except Exception:
                 pass
 
-def record_clip_async(char_name: str, theme_name: str, duration: int = 7):
-    """Records video clip of screen while companion talks, muxing audio if available."""
+def record_clip_async(char_name: str, theme_name: str, duration: int = 7, force: bool = False):
+    """Records video clip of screen while companion talks, muxing audio if available.
+    
+    Disabled by default for privacy unless CRITIC_RECORD_CLIPS=1 or force=True (e.g. demo mode).
+    """
+    if not force and os.environ.get("CRITIC_RECORD_CLIPS", "0") != "1":
+        return
+
     def worker():
         try:
             os.makedirs(CLIPS_DIR, exist_ok=True)
+
             cleanup_old_clips(max_age_days=2.0)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             clip_path = os.path.join(CLIPS_DIR, f"clip_{timestamp}_{theme_name}_{char_name}.mp4")
@@ -578,7 +990,15 @@ class CriticOverlayController(NSObject):
         self.action_lock = threading.Lock()
         self.rotating_animations = False
         self.rotate_thread = None
+        self.voice_listener = CompanionVoiceListener(
+            on_user_speech=self.on_user_speech,
+            is_speaking_fn=lambda: self.speaking_character is not None,
+        )
         return self
+
+    def on_user_speech(self, text: str):
+        print(f"[Critic] User spoke to companion: '{text}'")
+        self.trigger_riff(user_speech=text)
 
     def start_rotation(self):
         if self.rotating_animations:
@@ -744,13 +1164,16 @@ class CriticOverlayController(NSObject):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def trigger_riff(self):
+    def trigger_riff(self, user_speech: str | None = None):
         if self.speaking_character is not None:
             return
 
         def worker():
             app, title = get_active_window_info()
-            char, riff = generate_critic_riff(self.active_theme, app, title)
+            thumb_path, screen_ocr = capture_screen_context()
+            char, riff = generate_critic_riff(
+                self.active_theme, app, title, thumb_path=thumb_path, screen_text=screen_ocr, user_speech=user_speech or ""
+            )
             char_name = char["name"]
             self.speaking_character = char_name
 
@@ -779,7 +1202,7 @@ class CriticOverlayController(NSObject):
             cleo = next((c for c in theme["characters"] if c["name"] == "Cleo"), theme["characters"][-1])
 
             # Record demo video clip
-            record_clip_async("FullShowcase", self.active_theme, duration=26)
+            record_clip_async("FullShowcase", self.active_theme, duration=26, force=True)
 
             # 1. Idle with natural chest breathing
             time.sleep(2.0)
@@ -823,6 +1246,7 @@ class CriticOverlayController(NSObject):
 
     def start_animation_and_riff_loop(self):
         self.start_animation_loop()
+        self.voice_listener.start()
 
         def main_riff_loop():
             # Initial Welcome Greeting
@@ -870,8 +1294,12 @@ class CriticOverlayController(NSObject):
                         elif cmd.startswith("set_pos:"):
                             new_pos = cmd.split("set_pos:", 1)[1].strip()
                             self.set_position(new_pos)
+                        elif cmd.startswith("user_voice:"):
+                            speech = cmd.split("user_voice:", 1)[1].strip()
+                            self.trigger_riff(user_speech=speech)
                         elif cmd == "stop":
                             self.stop_rotation()
+                            self.voice_listener.stop()
                             self.running = False
                             break
                     except Exception:
@@ -957,6 +1385,11 @@ if __name__ == "__main__":
         with open(COMMAND_FILE, "w") as f:
             f.write(f"set_pos:{sys.argv[2]}")
         print(f"Moved critic position to {sys.argv[2]}.")
+    elif len(sys.argv) > 1 and sys.argv[1] == "voice" and len(sys.argv) > 2:
+        speech = " ".join(sys.argv[2:])
+        with open(COMMAND_FILE, "w") as f:
+            f.write(f"user_voice:{speech}")
+        print(f"Sent voice remark to companion: '{speech}'")
     elif len(sys.argv) > 1 and sys.argv[1] == "stop":
         with open(COMMAND_FILE, "w") as f:
             f.write("stop")

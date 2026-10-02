@@ -144,9 +144,10 @@ migrate_env() {
     note "added OLLAMA_DECISION_MODEL default (tev1:0.8b) to .env"
   fi
   if ! grep -q 'VOICE_STT_ENGINE=' "$env" 2>/dev/null; then
-    printf '\n# Speech-to-text engine: "phonon" (164MB MLX, default) or "whisper"\nVOICE_STT_ENGINE=phonon\n' >> "$env"
-    note "added VOICE_STT_ENGINE default (phonon) to .env"
+    printf '\n# Speech-to-text engine: "mlx-whisper" (Metal GPU on Apple Silicon, default), "phonon", or "whisper"\nVOICE_STT_ENGINE=mlx-whisper\n' >> "$env"
+    note "added VOICE_STT_ENGINE default (mlx-whisper) to .env"
   fi
+
   if ! grep -q 'VOICE_USER_EMAIL=' "$env" 2>/dev/null; then
     printf '\n# "type my email" types this address. Uncomment and set it.\n# VOICE_USER_EMAIL=\n' >> "$env"
     note "added VOICE_USER_EMAIL placeholder to .env"

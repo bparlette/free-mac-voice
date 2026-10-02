@@ -49,10 +49,8 @@ generate_plist() {
     <true/>
 
     <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
+    <true/>
+
 
     <key>ProcessType</key>
     <string>Interactive</string>

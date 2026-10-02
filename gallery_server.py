@@ -315,12 +315,14 @@ class GalleryHandler(SimpleHTTPRequestHandler):
 def run_gallery():
     os.makedirs(CLIPS_DIR, exist_ok=True)
     cleanup_old_clips(max_age_days=2.0)
-    server = HTTPServer(("0.0.0.0", PORT), GalleryHandler)
-    print(f"🎬 Screen Critic Gallery running at: http://localhost:{PORT}")
+    host = os.environ.get("GALLERY_HOST", "127.0.0.1")
+    server = HTTPServer((host, PORT), GalleryHandler)
+    print(f"🎬 Screen Critic Gallery running at: http://{host}:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+
 
 
 if __name__ == "__main__":
