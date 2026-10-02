@@ -21,7 +21,6 @@ for arg in "$@"; do
     --yes|-y|--unattended) YES_MODE=1 ;;
   esac
 done
-set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV="$REPO_DIR/.venv"
