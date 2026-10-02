@@ -3097,3 +3097,45 @@ class TestReviewS9CriticThemeWhitelist(unittest.TestCase):
     def test_known_theme_kept(self):
         ctl = self._load({"theme": "byte_orbit"})
         self.assertEqual(ctl.active_theme, "byte_orbit")
+
+
+class TestReviewB36PidFiles(Base):
+    def _pidfile(self, pid):
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d, True)
+        path = os.path.join(d, "critic.pid")
+        with open(path, "w") as f:
+            f.write(str(pid))
+        return path
+
+    def test_reused_pid_is_not_trusted_and_file_removed(self):
+        path = self._pidfile(4242)
+        ps = mock.Mock(stdout="/usr/bin/some-other-process --flag\n")
+        with mock.patch.object(fv.os, "kill"), \
+             mock.patch.object(fv.subprocess, "run", return_value=ps):
+            self.assertFalse(fv._critic_running(path))
+        self.assertFalse(os.path.exists(path))
+
+    def test_real_critic_pid_is_trusted(self):
+        path = self._pidfile(4242)
+        ps = mock.Mock(stdout="/usr/bin/python3 /x/masterpiece_critic.py\n")
+        with mock.patch.object(fv.os, "kill"), \
+             mock.patch.object(fv.subprocess, "run", return_value=ps):
+            self.assertTrue(fv._critic_running(path))
+
+    def test_dead_pid(self):
+        path = self._pidfile(4242)
+        with mock.patch.object(fv.os, "kill", side_effect=ProcessLookupError):
+            self.assertFalse(fv._critic_running(path))
+        self.assertFalse(fv._critic_running(path + ".missing"))
+
+    def test_critic_removes_only_its_own_pid_file(self):
+        mc = _import_critic_with_stubs(self)
+        path = self._pidfile(os.getpid())
+        with mock.patch.object(mc, "PID_FILE", path):
+            mc._remove_pid_file()
+        self.assertFalse(os.path.exists(path))
+        other = self._pidfile(os.getpid() + 100000)
+        with mock.patch.object(mc, "PID_FILE", other):
+            mc._remove_pid_file()
+        self.assertTrue(os.path.exists(other))

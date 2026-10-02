@@ -18,6 +18,7 @@ Features:
   - Local Kokoro neural speech + local Qwen LLM
 """
 
+import atexit
 import os
 import sys
 import time
@@ -1331,6 +1332,7 @@ class CriticOverlayController(NSObject):
             self.speaking_character = char["name"]
             speak_voice(char["voice"], farewell)
             self.speaking_character = None
+            _remove_pid_file()  # NSApp.terminate_ exits without running atexit
             run_on_main(lambda: AppKit.NSApp().terminate_(None))
 
         threading.Thread(target=main_riff_loop, daemon=True).start()
@@ -1355,9 +1357,27 @@ class CriticOverlayController(NSObject):
         threading.Thread(target=anim_loop, daemon=True).start()
 
 
+def _remove_pid_file():
+    """Delete PID_FILE if it still names this process."""
+    try:
+        with open(PID_FILE) as f:
+            if f.read().strip() == str(os.getpid()):
+                os.remove(PID_FILE)
+    except Exception:
+        pass
+
+
+def _on_sigterm(signum, frame):
+    _remove_pid_file()
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
 def run_overlay():
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
+    atexit.register(_remove_pid_file)
+    signal.signal(signal.SIGTERM, _on_sigterm)
 
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)

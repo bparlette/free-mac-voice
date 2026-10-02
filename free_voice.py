@@ -1844,6 +1844,31 @@ def act_tech_radar() -> None:
         say("Unable to access tech radar report.")
 
 
+def _critic_running(pid_file: str = "/tmp/masterpiece_critic.pid") -> bool:
+    """True only if the PID file names a live process that is actually the
+    critic (guards against PID reuse). A stale PID file is removed."""
+    if not os.path.exists(pid_file):
+        return False
+    try:
+        with open(pid_file, "r") as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)
+    except Exception:
+        return False
+    try:
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
+                             capture_output=True, text=True, timeout=2, check=False)
+    except Exception:
+        return True  # can't inspect; keep the old os.kill-only behaviour
+    if "masterpiece_critic" in out.stdout:
+        return True
+    try:
+        os.remove(pid_file)  # PID was reused by an unrelated process
+    except OSError:
+        pass
+    return False
+
+
 def act_masterpiece_roast(action: str = "start", theme: str = None) -> None:
     """Launch or trigger Screen Critic overlay to roast user."""
     pid_file = "/tmp/masterpiece_critic.pid"
@@ -1851,15 +1876,7 @@ def act_masterpiece_roast(action: str = "start", theme: str = None) -> None:
     critic_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "masterpiece_critic.py")
     python_bin = sys.executable
 
-    is_running = False
-    if os.path.exists(pid_file):
-        try:
-            with open(pid_file, "r") as f:
-                pid = int(f.read().strip())
-            os.kill(pid, 0)
-            is_running = True
-        except Exception:
-            is_running = False
+    is_running = _critic_running(pid_file)
 
     if action == "stop":
         if is_running:
@@ -1932,15 +1949,7 @@ def act_set_critic_theme(theme_query: str, start_if_needed: bool = False) -> Non
     # Signal running overlay if active
     pid_file = "/tmp/masterpiece_critic.pid"
     cmd_file = "/tmp/masterpiece_critic_cmd.txt"
-    is_running = False
-    if os.path.exists(pid_file):
-        try:
-            with open(pid_file, "r") as f:
-                pid = int(f.read().strip())
-            os.kill(pid, 0)
-            is_running = True
-        except Exception:
-            is_running = False
+    is_running = _critic_running(pid_file)
 
     if is_running:
         try:
