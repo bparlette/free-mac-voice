@@ -3018,3 +3018,61 @@ class TestReviewB14VadPreroll(Base):
         self.assertEqual(len(got), 1)
         loud_samples = int((np.abs(got[0] * 32768.0 - 4000) < 1).sum())
         self.assertEqual(loud_samples, n_loud * frame_len)
+
+
+def _import_critic_with_stubs(testcase):
+    """Import masterpiece_critic on any OS by stubbing AppKit/Foundation/objc.
+    The module is dropped from sys.modules again on cleanup."""
+    import importlib
+    import types
+
+    class _NSView:
+        def initWithFrame_(self, frame):
+            return self
+
+        def setNeedsDisplay_(self, flag):
+            pass
+
+    class _NSObject:
+        def init(self):
+            return self
+
+        @classmethod
+        def alloc(cls):
+            return cls.__new__(cls)
+
+    appkit = types.ModuleType("AppKit")
+    appkit.NSView = _NSView
+    appkit.__getattr__ = lambda name: mock.MagicMock(name=f"AppKit.{name}")
+    foundation = types.ModuleType("Foundation")
+    foundation.NSObject = _NSObject
+    foundation.NSTimer = mock.MagicMock()
+    objc_mod = types.ModuleType("objc")
+    objc_mod.super = super
+    patcher = mock.patch.dict(sys.modules, {"AppKit": appkit, "Foundation": foundation, "objc": objc_mod})
+    patcher.start()
+    testcase.addCleanup(patcher.stop)
+    sys.modules.pop("masterpiece_critic", None)
+    testcase.addCleanup(sys.modules.pop, "masterpiece_critic", None)
+    return importlib.import_module("masterpiece_critic")
+
+
+class TestReviewB25ThemeLayerReset(unittest.TestCase):
+    def test_switching_theme_clears_couch_layers(self):
+        mc = _import_critic_with_stubs(self)
+        view = mc.CompanionView.__new__(mc.CompanionView)
+        view.idle_bare_image = object()
+        view.idle_chars_image = object()
+        view.leo_fg_image = object()
+        view.cat_walk_frames = [object()]
+        view.pose_images = {"idle": object()}
+        view.base_image = object()
+        with mock.patch.object(mc.os.path, "exists", return_value=False):
+            view.load_theme("wine_girls")
+        self.assertIsNone(view.idle_bare_image)
+        self.assertIsNone(view.idle_chars_image)
+        self.assertIsNone(view.leo_fg_image)
+        self.assertEqual(view.cat_walk_frames, [])
+        self.assertEqual(view.pose_images, {})
+        self.assertIsNone(view.base_image)
+        self.assertEqual(view.theme_key, "wine_girls")

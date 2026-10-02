@@ -800,6 +800,17 @@ class CompanionView(AppKit.NSView):
         self.theme_key = theme_key
         theme = THEMES.get(theme_key, THEMES["couch_duo"])
 
+        # Reset every theme-specific layer so couch_duo sprites (bare couch,
+        # characters, foreground, cat-walk frames) never leak into other themes.
+        self.base_image = None
+        self.pose_images = {}
+        self.idle_bare_image = None
+        self.idle_chars_image = None
+        self.leo_fg_image = None
+        self.cat_walk_frames = []
+        self.cat_walk_frames_left = []
+        self.is_cat_walking = False
+
         actions_dir = os.path.join(ASSETS_DIR, "couch_duo", "actions")
         if theme_key == "couch_duo" and os.path.exists(os.path.join(actions_dir, "pose_idle.png")):
             for p in ["idle", "point", "stretch", "pet"]:
@@ -828,9 +839,8 @@ class CompanionView(AppKit.NSView):
             self.base_image = self.pose_images.get("idle")
         else:
             idle_p = theme.get("idle_sprite")
-            if os.path.exists(idle_p):
+            if idle_p and os.path.exists(idle_p):
                 self.base_image = AppKit.NSImage.alloc().initWithContentsOfFile_(idle_p)
-            self.pose_images = {}
 
         char = theme["characters"][0]
         self.speaker_tag = char["tag"]
