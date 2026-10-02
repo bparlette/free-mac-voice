@@ -4290,9 +4290,11 @@ def _num(m: re.Match, i: int) -> int:
 
 
 def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
-                  allow_destructive: bool = False) -> None:
+                  allow_destructive: bool = False,
+                  raise_errors: bool = False) -> None:
     """Run the action for a routed (name, match)."""
     try:
+
         if name in _CUSTOM_HANDLERS:
             _CUSTOM_HANDLERS[name](m)
             return
@@ -4656,6 +4658,9 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
     except Exception as e:  # noqa: BLE001
         say("That didn't work")
         log(f"action failed: {e}")
+        if raise_errors:
+            raise
+
 
 
 # ---------------------------------------------------------------- Tier 1: local LLM fallback (Ollama, JSON mode)
@@ -5766,8 +5771,9 @@ def handle_command(text: str, confirm_audio_fn=None,
                 for step in plan:
                     try:
                         if step[0] == "tier0":
-                            execute_match(step[1], step[2], confirm_audio_fn, allow_destructive)
+                            execute_match(step[1], step[2], confirm_audio_fn, allow_destructive, raise_errors=True)
                         elif step[0] == "tier1":
+
                             dispatch_tier1(step[1], step[2], allow_destructive)
                     except Exception as e:
                         failed_name = step[1] if len(step) > 1 else "step"
