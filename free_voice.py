@@ -5445,10 +5445,15 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     elif action == "open_url":
         act_open_url(str(p("url", "")))
     elif action == "set_volume":
-        try:
-            act_set_volume(int(p("level", 50)))
-        except (TypeError, ValueError):
-            say("I didn't get a volume level")
+        direction = str(p("direction") or "").lower()
+        if p("level") is None and direction in ("up", "down"):
+            # "turn the volume down" -> relative change, not an absolute 50
+            act_volume_delta(10 if direction == "up" else -10)
+        else:
+            try:
+                act_set_volume(int(p("level", 50)))
+            except (TypeError, ValueError):
+                say("I didn't get a volume level")
     elif action == "volume_up":
         act_volume_delta(10)
     elif action == "volume_down":

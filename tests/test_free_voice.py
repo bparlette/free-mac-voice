@@ -2866,3 +2866,30 @@ class TestReviewB8MediaSeekDispatch(Base):
         with mock.patch.object(fv, "act_key_code"):
             fv.dispatch_tier1("media_seek", params)
         self.assertIn("Rewound 30 seconds", self.said)
+
+
+class TestReviewB9RelativeVolume(Base):
+    def test_direction_down_without_level_is_relative(self):
+        with mock.patch.object(fv, "act_volume_delta") as delta, \
+             mock.patch.object(fv, "act_set_volume") as setv:
+            fv.dispatch_tier1("set_volume", {"direction": "down"})
+            delta.assert_called_once_with(-10)
+            setv.assert_not_called()
+
+    def test_direction_up_without_level_is_relative(self):
+        with mock.patch.object(fv, "act_volume_delta") as delta:
+            fv.dispatch_tier1("set_volume", {"direction": "up"})
+            delta.assert_called_once_with(10)
+
+    def test_explicit_level_still_absolute(self):
+        with mock.patch.object(fv, "act_volume_delta") as delta, \
+             mock.patch.object(fv, "act_set_volume") as setv:
+            fv.dispatch_tier1("set_volume", {"level": 30, "direction": "down"})
+            setv.assert_called_once_with(30)
+            delta.assert_not_called()
+
+    def test_extracted_turn_volume_down(self):
+        params = fv._extract_intent_params("set_volume", "turn the volume down")
+        with mock.patch.object(fv, "act_volume_delta") as delta:
+            fv.dispatch_tier1("set_volume", params)
+            delta.assert_called_once_with(-10)
