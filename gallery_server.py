@@ -13,8 +13,9 @@ import time
 import json
 import urllib.parse
 from datetime import datetime
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import subprocess
+import threading
 
 CLIPS_DIR = os.path.expanduser("~/.config/free-voice/clips")
 PORT = 8765
@@ -215,7 +216,6 @@ class GalleryHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=CLIPS_DIR, **kwargs)
 
     def do_GET(self):
-        cleanup_old_clips(max_age_days=2.0)
         parsed = urllib.parse.urlparse(self.path)
 
         # Action: Reveal in Finder
@@ -312,11 +312,23 @@ class GalleryHandler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
 
+CLEANUP_INTERVAL_S = 3600.0
+
+
+def _cleanup_loop(interval_s: float = CLEANUP_INTERVAL_S):
+    """Prune old clips periodically instead of on every request."""
+    while True:
+        time.sleep(interval_s)
+        cleanup_old_clips(max_age_days=2.0)
+
+
 def run_gallery():
     os.makedirs(CLIPS_DIR, exist_ok=True)
     cleanup_old_clips(max_age_days=2.0)
+    threading.Thread(target=_cleanup_loop, daemon=True, name="clip-cleanup").start()
     host = os.environ.get("GALLERY_HOST", "127.0.0.1")
-    server = HTTPServer((host, PORT), GalleryHandler)
+    # Threading server: one slow video download no longer blocks other clients
+    server = ThreadingHTTPServer((host, PORT), GalleryHandler)
     print(f"🎬 Screen Critic Gallery running at: http://{host}:{PORT}")
     try:
         server.serve_forever()

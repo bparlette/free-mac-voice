@@ -3359,3 +3359,39 @@ class TestReviewS13PartDownloads(Base):
         self.assertNotIn("curl -sSL -o", src)
         self.assertEqual(src.count("curl -fSL --retry 3"), 2)
         self.assertEqual(src.count('.part"'), 6)
+
+
+class TestReviewP6Gallery(unittest.TestCase):
+    def setUp(self):
+        import gallery_server
+        self.gs = gallery_server
+        self._dir = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, self._dir, True)
+        p = mock.patch.object(gallery_server, "CLIPS_DIR", self._dir)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_run_gallery_uses_threading_server_and_cleans_at_startup(self):
+        server = mock.Mock()
+        server.serve_forever.side_effect = KeyboardInterrupt
+        with mock.patch.object(self.gs, "ThreadingHTTPServer", return_value=server) as srv, \
+             mock.patch.object(self.gs, "cleanup_old_clips") as clean, \
+             mock.patch.object(self.gs.threading, "Thread") as thr:
+            self.gs.run_gallery()
+        srv.assert_called_once_with(("0.0.0.0", self.gs.PORT), self.gs.GalleryHandler)
+        clean.assert_called_once()
+        thr.return_value.start.assert_called_once()
+
+    def test_requests_do_not_trigger_cleanup(self):
+        import threading
+        import urllib.request as ur
+        httpd = self.gs.ThreadingHTTPServer(("127.0.0.1", 0), self.gs.GalleryHandler)
+        t = threading.Thread(target=httpd.serve_forever, daemon=True)
+        t.start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        with mock.patch.object(self.gs, "cleanup_old_clips") as clean, \
+             mock.patch.object(self.gs.SimpleHTTPRequestHandler, "log_message"):
+            with ur.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/clips", timeout=5) as r:
+                self.assertEqual(r.status, 200)
+        clean.assert_not_called()
