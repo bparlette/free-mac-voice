@@ -3602,10 +3602,11 @@ def _llm_text(prompt: str, max_tokens: int = 1024, system: str | None = None) ->
                                      "temperature": 0.7},
             }
             url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-                   f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+                   f"{GEMINI_MODEL}:generateContent")
             req = urllib.request.Request(
                 url, data=json.dumps(body).encode(),
-                headers={"Content-Type": "application/json"})
+                headers={"Content-Type": "application/json",
+                         "x-goog-api-key": GEMINI_API_KEY})
             with urllib.request.urlopen(req, timeout=30) as r:
                 data = json.load(r)
             return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -5776,11 +5777,12 @@ def gemini_answer(prompt: str) -> bool:
         "generationConfig": {"maxOutputTokens": 120, "temperature": 0.3},
     }
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+           f"{GEMINI_MODEL}:generateContent")
     try:
         req = urllib.request.Request(
             url, data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"})
+            headers={"Content-Type": "application/json",
+                     "x-goog-api-key": GEMINI_API_KEY})
         with urllib.request.urlopen(req, timeout=20) as r:
             data = json.load(r)
         text = data["candidates"][0]["content"]["parts"][0]["text"].strip()

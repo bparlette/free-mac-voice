@@ -3278,3 +3278,35 @@ class TestReviewS11TtsCache(Base):
             for i in range(6):
                 fv._synthesize_kokoro(f"phrase {i}")
         self.assertEqual(len(self._cached()), 3)
+
+
+class TestReviewS12GeminiKeyHeader(Base):
+    def _fake_urlopen(self, captured):
+        payload = json.dumps({"candidates": [{"content": {"parts": [{"text": "hi"}]}}]}).encode()
+
+        def fake(req, timeout=None):
+            captured.append(req)
+            return io.BytesIO(payload)
+        return fake
+
+    def test_gemini_answer_sends_key_in_header(self):
+        fv.GEMINI_API_KEY = "test-key-123"
+        captured = []
+        with mock.patch("urllib.request.urlopen", side_effect=self._fake_urlopen(captured)):
+            self.assertTrue(fv.gemini_answer("what time is it in Tokyo"))
+        req = captured[0]
+        self.assertNotIn("key=", req.full_url)
+        self.assertNotIn("test-key-123", req.full_url)
+        self.assertEqual(req.get_header("X-goog-api-key"), "test-key-123")
+
+    def test_llm_text_gemini_fallback_sends_key_in_header(self):
+        fv.GEMINI_API_KEY = "test-key-123"
+        fv._ollama_ok = False
+        captured = []
+        with mock.patch("urllib.request.urlopen", side_effect=self._fake_urlopen(captured)):
+            out = fv._llm_text("draw a cat")
+        gem = [r for r in captured if "generativelanguage" in r.full_url]
+        self.assertTrue(gem, captured)
+        self.assertNotIn("test-key-123", gem[0].full_url)
+        self.assertEqual(gem[0].get_header("X-goog-api-key"), "test-key-123")
+        self.assertEqual(out, "hi")
