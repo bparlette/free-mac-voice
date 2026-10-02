@@ -2723,6 +2723,7 @@ class TestTier05Router(Base):
             fv.execute_match(*match)
             mock_close.assert_called_once_with("browser")
 
+    @unittest.skipUnless(sys.platform == "darwin", "needs pynput/Quartz (macOS only)")
     def test_act_keystroke_in_process_no_osascript(self):
         fv.DRY_RUN = False
         self.addCleanup(setattr, fv, "DRY_RUN", True)
@@ -2735,6 +2736,7 @@ class TestTier05Router(Base):
             self.assertTrue(mock_kb.release.called)
             mock_as.assert_not_called()
 
+    @unittest.skipUnless(sys.platform == "darwin", "needs pynput/Quartz (macOS only)")
     def test_act_key_code_in_process_no_osascript(self):
         fv.DRY_RUN = False
         self.addCleanup(setattr, fv, "DRY_RUN", True)
@@ -2746,6 +2748,7 @@ class TestTier05Router(Base):
             self.assertTrue(mock_kb.release.called)
             mock_as.assert_not_called()
 
+    @unittest.skipUnless(sys.platform == "darwin", "needs pynput/Quartz (macOS only)")
     def test_act_type_text_in_process(self):
         fv.DRY_RUN = False
         self.addCleanup(setattr, fv, "DRY_RUN", True)
@@ -2756,6 +2759,7 @@ class TestTier05Router(Base):
             self.assertEqual(mock_kb.type.call_count, 8)
             mock_as.assert_not_called()
 
+    @unittest.skipUnless(sys.platform == "darwin", "needs pynput/Quartz (macOS only)")
     def test_warp_mouse_called_on_mouse_to(self):
         fv.DRY_RUN = False
         self.addCleanup(setattr, fv, "DRY_RUN", True)
