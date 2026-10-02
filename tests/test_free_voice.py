@@ -3382,7 +3382,7 @@ class TestReviewP6Gallery(unittest.TestCase):
              mock.patch.object(self.gs, "cleanup_old_clips") as clean, \
              mock.patch.object(self.gs.threading, "Thread") as thr:
             self.gs.run_gallery()
-        srv.assert_called_once_with(("0.0.0.0", self.gs.PORT), self.gs.GalleryHandler)
+        srv.assert_called_once_with(("127.0.0.1", self.gs.PORT), self.gs.GalleryHandler)
         clean.assert_called_once()
         thr.return_value.start.assert_called_once()
 
@@ -3487,7 +3487,7 @@ class TestReviewQ3ToolPaths(unittest.TestCase):
              mock.patch.object(mc.os, "remove"), \
              mock.patch.object(mc.subprocess, "run") as run, \
              mock.patch("builtins.print"):
-            mc.record_clip_async("Leo", "couch_duo", duration=1)
+            mc.record_clip_async("Leo", "couch_duo", duration=1, force=True)
         cmds = [c.args[0] for c in run.call_args_list]
         self.assertTrue(any(c[0] == "/usr/local/bin/ffmpeg" for c in cmds), cmds)
 

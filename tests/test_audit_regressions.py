@@ -98,7 +98,7 @@ class TestAuditRegressions(unittest.TestCase):
         try:
             if "GALLERY_HOST" in os.environ:
                 del os.environ["GALLERY_HOST"]
-            with mock.patch("gallery_server.HTTPServer") as mock_server:
+            with mock.patch("gallery_server.ThreadingHTTPServer") as mock_server:
                 gallery_server.run_gallery()
                 mock_server.assert_called_once()
                 addr, port = mock_server.call_args[0][0]
