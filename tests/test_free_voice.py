@@ -3139,3 +3139,30 @@ class TestReviewB36PidFiles(Base):
         with mock.patch.object(mc, "PID_FILE", other):
             mc._remove_pid_file()
         self.assertTrue(os.path.exists(other))
+
+
+class TestReviewB31MacroRecursion(Base):
+    def setUp(self):
+        super().setUp()
+        self._old_cache = fv._macros_cache
+        self.addCleanup(setattr, fv, "_macros_cache", self._old_cache)
+        self._sleep = mock.patch.object(fv.time, "sleep", return_value=None)
+        self._sleep.start()
+        self.addCleanup(self._sleep.stop)
+
+    def test_self_referencing_macro_terminates(self):
+        fv._macros_cache = {"loop": ["loop"]}
+        self.assertTrue(fv.run_macro("loop"))
+        self.assertIn("That shortcut calls itself, so I stopped it", self.said)
+
+    def test_mutual_recursion_terminates(self):
+        fv._macros_cache = {"ping": ["pong"], "pong": ["ping"]}
+        self.assertTrue(fv.run_macro("ping"))
+        self.assertIn("That shortcut calls itself, so I stopped it", self.said)
+
+    def test_nested_non_recursive_macro_still_runs(self):
+        fv._macros_cache = {"outer": ["inner"], "inner": ["volume up"]}
+        with mock.patch.object(fv, "act_volume_delta") as delta:
+            self.assertTrue(fv.run_macro("outer"))
+        delta.assert_called()
+        self.assertNotIn("That shortcut calls itself, so I stopped it", self.said)

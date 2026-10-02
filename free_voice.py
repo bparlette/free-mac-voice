@@ -3213,8 +3213,33 @@ def act_macro_delete(trigger: str) -> None:
         say(f"No shortcut called {key}")
 
 
+_MACRO_MAX_DEPTH = 5
+_macro_tls = threading.local()
+
+
 def run_macro(text: str, confirm_audio_fn=None,
               allow_destructive: bool = False, quiet_miss: bool = False) -> bool:
+    """Recursion guard around _run_macro_unguarded: a macro that (directly or
+    via another macro) triggers itself, or nests too deep, is stopped."""
+    key = text.strip().lower()
+    stack = _macro_tls.__dict__.setdefault("stack", [])
+    if key in stack or len(stack) >= _MACRO_MAX_DEPTH:
+        if not _load_macros().get(key):
+            return False
+        log(f"shortcut/macro {key!r} skipped: recursion ({' -> '.join(stack + [key])})")
+        say("That shortcut calls itself, so I stopped it")
+        return True
+    stack.append(key)
+    try:
+        return _run_macro_unguarded(text, confirm_audio_fn=confirm_audio_fn,
+                                    allow_destructive=allow_destructive,
+                                    quiet_miss=quiet_miss)
+    finally:
+        stack.pop()
+
+
+def _run_macro_unguarded(text: str, confirm_audio_fn=None,
+                         allow_destructive: bool = False, quiet_miss: bool = False) -> bool:
     """Run a user shortcut/macro whose trigger matches the utterance."""
     parts = _load_macros().get(text.strip().lower())
     if not parts:
