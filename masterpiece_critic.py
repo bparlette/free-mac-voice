@@ -30,6 +30,7 @@ import subprocess
 import threading
 import random
 import re
+import shutil
 
 from datetime import datetime
 
@@ -744,9 +745,10 @@ def record_clip_async(char_name: str, theme_name: str, duration: int = 7, force:
             subprocess.run(["screencapture", "-V", str(duration), temp_vid], check=True, timeout=duration + 4)
             if os.path.exists(temp_vid):
                 audio_wav = "/tmp/critic_riff.wav"
-                if os.path.exists(audio_wav) and os.path.exists("/opt/homebrew/bin/ffmpeg"):
+                ffmpeg = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+                if os.path.exists(audio_wav) and os.path.exists(ffmpeg):
                     subprocess.run([
-                        "/opt/homebrew/bin/ffmpeg", "-y",
+                        ffmpeg, "-y",
                         "-i", temp_vid,
                         "-i", audio_wav,
                         "-c:v", "copy",

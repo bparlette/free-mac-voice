@@ -3461,3 +3461,36 @@ class TestReviewB29ServiceStatusExactLabel(unittest.TestCase):
         out = self._run_status("PID\\tStatus\\tLabel\\n4321\\t0\\tcom.free-mac-voice.menubar\\n"
                                "999\\t0\\tcom.free-mac-voice\\n")
         self.assertIn("RUNNING (PID 999)", out)
+
+
+class TestReviewQ3ToolPaths(unittest.TestCase):
+    def test_critic_uses_ffmpeg_from_path(self):
+        mc = _import_critic_with_stubs(self)
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+
+        class SyncThread:
+            def __init__(self, target=None, daemon=None, **kw):
+                self._t = target
+
+            def start(self):
+                self._t()
+
+        with mock.patch.object(mc, "CLIPS_DIR", tmp), \
+             mock.patch.object(mc.threading, "Thread", SyncThread), \
+             mock.patch.object(mc.shutil, "which", return_value="/usr/local/bin/ffmpeg"), \
+             mock.patch.object(mc.os.path, "exists", return_value=True), \
+             mock.patch.object(mc.os, "remove"), \
+             mock.patch.object(mc.subprocess, "run") as run, \
+             mock.patch("builtins.print"):
+            mc.record_clip_async("Leo", "couch_duo", duration=1)
+        cmds = [c.args[0] for c in run.call_args_list]
+        self.assertTrue(any(c[0] == "/usr/local/bin/ffmpeg" for c in cmds), cmds)
+
+    def test_whisper_stream_missing_falls_back_to_vad_loop(self):
+        with mock.patch("shutil.which", return_value=None), \
+             mock.patch.object(fv.os.path, "exists", return_value=False), \
+             mock.patch.object(fv, "always_listen_loop") as loop, \
+             mock.patch.object(fv, "log"):
+            fv.stream_whisper_loop(lambda n, m: None)
+        loop.assert_called_once()

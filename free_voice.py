@@ -4401,10 +4401,9 @@ def stream_whisper_loop(on_command, step_ms: int = 500, length_ms: int = 5000,
     Tokens are processed incrementally through PartialSession.
     Tier 0 commands fire instantly as soon as their words are completed.
     """
-    stream_bin = "/opt/homebrew/bin/whisper-stream"
-    if not os.path.exists(stream_bin):
-        import shutil
-        stream_bin = shutil.which("whisper-stream")
+    import shutil
+    # PATH first (Intel/MacPorts/custom installs), then the Apple Silicon Homebrew default
+    stream_bin = shutil.which("whisper-stream") or "/opt/homebrew/bin/whisper-stream"
 
     if not stream_bin or not os.path.exists(stream_bin):
         log("whisper-stream binary not found — falling back to standard always-listen loop")
