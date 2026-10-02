@@ -4,7 +4,7 @@ free_voice.py — free, fast voice control for macOS (v2: 3-tier "Instant & Free
 
 Pipeline (everything local, $0 per command):
     mic (hold right-Option, speak, release)
-      -> faster-whisper tiny.en on Metal (~100-300 ms, local, free)
+      -> mlx-whisper on Metal GPU (~100-300 ms, local, free; or faster-whisper fallback)
       -> Tier 0: deterministic regex router + completion gating (<1 ms, free)
              on partial transcripts it fires ONLY when the command is
              terminal-complete at a valid boundary ("open notes" but never
@@ -38,7 +38,7 @@ Usage:
     python3 free_voice.py                  # push-to-talk: hold RIGHT OPTION, speak, release
     python3 free_voice.py --once 6         # record 6 s without a hotkey
 
-Setup: reuse the venv from setup.sh (faster-whisper, sounddevice, pynput).
+Setup: reuse the venv from setup.sh (mlx-whisper / faster-whisper, sounddevice, pynput).
 Optional: `brew install ollama && ollama pull qwen3-vl:8b` (Tier 1 + vision;
 8GB minis: `ollama pull qwen3-vl:4b` and set OLLAMA_MODEL=qwen3-vl:4b),
 `pip install xa11y` (UI-click commands).
@@ -1015,6 +1015,10 @@ _APP_ALIASES = {
     "retroarch": "RetroArch", "vlc": "VLC",
     "books": "Books", "news": "News", "stocks": "Stocks",
     "home": "Home", "weather": "Weather", "clock": "Clock",
+    "find my": "Find My", "findmy": "Find My",
+    "find my iphone": "Find My", "find my phone": "Find My",
+    "find my ipad": "Find My", "find my mac": "Find My",
+    "find my device": "Find My",
 }
 
 _app_cache: list[str] | None = None
@@ -1037,8 +1041,8 @@ def installed_apps() -> list[str]:
     global _app_cache
     if _app_cache is None:
         names: set[str] = set()
-        for d in ("/Applications", os.path.join(HOME, "Applications"),
-                  "/Applications/Utilities"):
+        for d in ("/Applications", "/System/Applications", os.path.join(HOME, "Applications"),
+                  "/Applications/Utilities", "/System/Applications/Utilities"):
             try:
                 for e in os.listdir(d):
                     if e.endswith(".app"):
@@ -1646,6 +1650,16 @@ def act_type_text(text: str) -> None:
         log(f"typed {len(text)} chars via AppleScript")
     except Exception as e:
         log(f"AppleScript typing failed: {e}")
+
+
+def act_spotlight_search(query: str = "") -> None:
+    act_key_code(49, "command down")
+    if query:
+        time.sleep(0.15)
+        act_type_text(query)
+        say(f"Searching for {query}")
+    else:
+        say("Spotlight")
 
 
 def act_open_url(url: str) -> None:
@@ -4177,8 +4191,11 @@ _p(r"^what am i looking at$", "describe_screen")
 _p(r"^(what('?s| is) in this window|describe this window)$", "describe_window_visual")
 _p(r"^(what color|describe (the |this )?(image|diagram|video|photo))", "describe_window_visual")
 _p(r"^(are you (working|there|ok)|status|health check)$", "status", True)
-# --- web (free text: final-only)
+# --- web & search (free text: final-only)
 _p(r"^search mac$", "search_mac", True)
+_p(r"^(?:find|search(?: for)?)(?: the)? files?\s+(.+)$", "find_file")
+_p(r"^(?:spotlight(?: search)?|search spotlight(?: for)?)\s+(.+)$", "find_file")
+_p(r"^find my(?: (?:iphone|phone|ipad|mac|device|devices|watch|apple watch|airpods|tags?|airtags?|keys?|wallet|items?|friends?))?$", "find_my", True)
 _p(r"^(search|google|look up|find(?: me)?|look for)(?: the web)? for (.+)$", "web_search")
 _p(r"^(search|google|look up|find(?: me)?|look for) (.+)$", "web_search")
 _p(r"^(go to|visit|open website) ([a-z0-9][a-z0-9.\-]*\.[a-z]{2,}.*)$", "open_url")
@@ -4531,6 +4548,11 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_keystroke("f", "command down"); say("Find")
         elif name == "search_mac":
             act_key_code(49, "command down"); say("Spotlight")
+        elif name == "find_file":
+            query = m.group(1).strip()
+            act_spotlight_search(query)
+        elif name == "find_my":
+            act_open_app("Find My")
         elif name == "clear_terminal":
             act_keystroke("k", "command down"); say("Cleared")
         elif name == "next_space":
@@ -5620,6 +5642,10 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
         act_type_text(str(p("text", ""))); say("Typed")
     elif action == "web_search":
         act_web_search(str(p("query", "")))
+    elif action == "find_file":
+        act_spotlight_search(str(p("query") or p("file") or p("text") or ""))
+    elif action == "find_my":
+        act_open_app("Find My")
     elif action == "open_url":
         act_open_url(str(p("url", "")))
     elif action == "set_volume":

@@ -3550,3 +3550,106 @@ class TestReviewB28StateHeartbeat(Base):
             st = json.load(f)
         self.assertEqual(st["state"], "listening")
         self.assertEqual(st["ts"], 1050.0)
+
+
+class TestReviewQ4CriticOllamaEnvVars(unittest.TestCase):
+    def test_critic_reads_ollama_env_vars(self):
+        mc = _import_critic_with_stubs(self)
+        with mock.patch.dict(os.environ, {
+            "OLLAMA_HOST": "http://192.168.1.50:11434/",
+            "OLLAMA_MODEL": "my-custom-vision:latest",
+            "OLLAMA_DECISION_MODEL": "my-fast-decision:latest",
+        }):
+            import importlib
+            importlib.reload(mc)
+            self.assertEqual(mc.OLLAMA_HOST, "http://192.168.1.50:11434")
+            self.assertEqual(mc.OLLAMA_MODEL, "my-custom-vision:latest")
+            self.assertEqual(mc.OLLAMA_DECISION_MODEL, "my-fast-decision:latest")
+
+    def test_critic_riff_uses_configured_ollama_host_and_models(self):
+        mc = _import_critic_with_stubs(self)
+        with mock.patch.object(mc, "OLLAMA_HOST", "http://test-ollama:11434"), \
+             mock.patch.object(mc, "OLLAMA_MODEL", "custom-vl:8b"), \
+             mock.patch.object(mc, "OLLAMA_DECISION_MODEL", "custom-fast:1.5b"), \
+             mock.patch("urllib.request.urlopen") as mock_urlopen:
+            fake_resp = mock.MagicMock()
+            fake_resp.read.return_value = json.dumps({"response": "Nice shot!"}).encode("utf-8")
+            fake_resp.__enter__.return_value = fake_resp
+            mock_urlopen.return_value = fake_resp
+
+            # Background riff (no user speech) -> should use OLLAMA_DECISION_MODEL
+            mc.generate_critic_riff("couch_duo", "Safari", "YouTube")
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.full_url, "http://test-ollama:11434/api/generate")
+            body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["model"], "custom-fast:1.5b")
+
+            # User speech directed riff -> should use OLLAMA_MODEL
+            mc.generate_critic_riff("couch_duo", "Safari", "YouTube", user_speech="Hey Leo")
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.full_url, "http://test-ollama:11434/api/generate")
+            body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["model"], "custom-vl:8b")
+
+
+class TestReviewU9FindMyAndSpotlight(Base):
+    def test_route_find_my_phrases(self):
+        for phrase in ("find my iPhone", "find my iphone", "find my phone",
+                       "find my iPad", "find my mac", "find my device",
+                       "find my watch", "find my airpods", "find my keys", "find my"):
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "find_my", f"Expected find_my for '{phrase}', got '{name}'")
+
+    def test_handle_find_my_opens_app(self):
+        with mock.patch.object(fv, "act_open_app") as mock_open:
+            fv.handle_command("find my iPhone")
+            mock_open.assert_called_with("Find My")
+
+    def test_resolve_app_find_my(self):
+        self.assertEqual(fv.resolve_app("find my"), "Find My")
+        self.assertEqual(fv.resolve_app("find my iphone"), "Find My")
+
+    def test_route_find_file_phrases(self):
+        cases = [
+            ("find file resume.pdf", "resume.pdf"),
+            ("find file budget", "budget"),
+            ("find the file taxes.xlsx", "taxes.xlsx"),
+            ("search for file report", "report"),
+            ("search file presentation", "presentation"),
+            ("spotlight notes", "notes"),
+            ("spotlight search invoice", "invoice"),
+        ]
+        for phrase, expected_query in cases:
+            r = fv.route(phrase)
+            self.assertIsNotNone(r, f"Failed to route: {phrase}")
+            name, m = r
+            self.assertEqual(name, "find_file", f"Expected find_file for '{phrase}', got '{name}'")
+            self.assertEqual(m.group(1).strip(), expected_query)
+
+    def test_handle_find_file_invokes_spotlight(self):
+        with mock.patch.object(fv, "act_spotlight_search") as mock_spotlight:
+            fv.handle_command("find file resume.pdf")
+            mock_spotlight.assert_called_with("resume.pdf")
+
+    def test_act_spotlight_search_keys_and_types(self):
+        with mock.patch.object(fv, "act_key_code") as mock_kc, \
+             mock.patch.object(fv, "act_type_text") as mock_type, \
+             mock.patch.object(fv, "say") as mock_say, \
+             mock.patch("time.sleep"):
+            fv.act_spotlight_search("resume.pdf")
+            mock_kc.assert_called_with(49, "command down")
+            mock_type.assert_called_with("resume.pdf")
+            mock_say.assert_called_with("Searching for resume.pdf")
+
+    def test_web_search_still_handles_general_queries(self):
+        r = fv.route("find recipes for pizza")
+        self.assertIsNotNone(r)
+        self.assertEqual(r[0], "web_search")
+
+
+class TestReviewDocstringSTTEngine(unittest.TestCase):
+    def test_docstring_mentions_mlx_whisper(self):
+        self.assertIn("mlx-whisper", fv.__doc__)
+

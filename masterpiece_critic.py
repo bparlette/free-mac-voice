@@ -47,6 +47,10 @@ KOKORO_DIR = os.path.expanduser("~/.config/free-voice/models/kokoro")
 KOKORO_MODEL = os.path.join(KOKORO_DIR, "kokoro-v1.0.onnx")
 KOKORO_VOICES = os.path.join(KOKORO_DIR, "voices-v1.0.bin")
 
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
+OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "qwen2.5:1.5b")
+
 THEMES = {
     "couch_duo": {
         "title": "Couch Duo",
@@ -460,7 +464,7 @@ def _describe_screen_visually(thumb_path: str) -> str:
         with open(thumb_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
         body = {
-            "model": "qwen3-vl:8b",
+            "model": OLLAMA_MODEL,
             "prompt": (
                 "In one very short sentence, describe the visual scene on this screen. "
                 "Focus on: what application, game, video, or content is visible. "
@@ -471,7 +475,7 @@ def _describe_screen_visually(thumb_path: str) -> str:
             "options": {"temperature": 0, "num_predict": 60},
         }
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
+            f"{OLLAMA_HOST}/api/generate",
             data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -546,10 +550,10 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_pa
     # - User-triggered banter: use the 7B vision model for better quality comebacks
     # - Timed background riffs: use the fast 1.5B model to minimize background overhead
     if user_speech:
-        riff_model = "qwen3-vl:8b"
+        riff_model = OLLAMA_MODEL
         riff_timeout = 12  # user is actively waiting, can afford more time
     else:
-        riff_model = "qwen2.5:1.5b"
+        riff_model = OLLAMA_DECISION_MODEL
         riff_timeout = 6
 
     body = {
@@ -561,7 +565,7 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_pa
 
     try:
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
+            f"{OLLAMA_HOST}/api/generate",
             data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
