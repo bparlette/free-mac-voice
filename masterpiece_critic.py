@@ -1321,7 +1321,8 @@ class CriticOverlayController(NSObject):
 
                 time.sleep(0.5)
 
-            # Farewell
+            # Farewell: re-read the theme, it may have changed via set_theme
+            theme = THEMES.get(self.active_theme, THEMES["couch_duo"])
             farewell_speaker, farewell = theme["farewell"]
             char = next((c for c in theme["characters"] if c["name"] == farewell_speaker), theme["characters"][0])
             run_on_main(lambda: self.view.update_riff(char, farewell))
