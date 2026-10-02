@@ -3821,18 +3821,6 @@ def act_draw_svg(subject: str) -> None:
     with open(out_svg, "w") as f:
         f.write(svg_code)
 
-    out_html = os.path.join(tempfile.gettempdir(), "drawing.html")
-    html_content = (
-        "<!DOCTYPE html>\n<html><head><meta charset='utf-8'>"
-        f"<title>{clean_subj}</title>"
-        "<style>body{margin:0;display:flex;justify-content:center;align-items:center;"
-        "min-height:100vh;background:#181825;}svg{max-width:85vmin;max-height:85vmin;"
-        "filter:drop-shadow(0 12px 30px rgba(0,0,0,0.4));}</style></head>"
-        f"<body>{svg_code}</body></html>"
-    )
-    with open(out_html, "w") as f:
-        f.write(html_content)
-
     shell(["open", out_svg])
     say(f"Here's your {subject}")
 
