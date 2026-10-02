@@ -846,6 +846,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
     """
     import sounddevice as sd
     import numpy as np
+    from collections import deque
 
     frame_len = int(16000 * 0.03)  # 30 ms frames
     max_frames = int(15 / 0.03)   # 15 s safety cap per utterance
@@ -861,6 +862,10 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
             idx = wait_for_input_device()
             vad = VoiceActivityDetector(sensitivity=sensitivity)
             capturing: list[np.ndarray] = []
+            # Pre-roll: the VAD needs start_needed voiced frames before it
+            # says "start", so keep recent frames to avoid clipping the onset
+            # (e.g. the wake word "Mac").
+            preroll: deque = deque(maxlen=vad.start_needed + 5)
             log(f"microphone: {describe_input_device()} — listening")
             update_state("listening", wake_word=wake_word)
             play_chime("Tink.aiff")
@@ -884,15 +889,19 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                         samples = np.frombuffer(data, dtype=np.int16)
                         if is_speaking():
                             capturing = []
+                            preroll.clear()
                             continue
                         state = vad.update(samples)
                         if state == "start":
-                            capturing = [samples.copy()]
+                            capturing = list(preroll) + [samples.copy()]
+                            preroll.clear()
                             log("heard speech, capturing...")
                         elif state == "speech" and capturing:
                             capturing.append(samples.copy())
                             if len(capturing) >= max_frames:
                                 state = "end"  # safety cap: cut it off
+                        elif state == "silence":
+                            preroll.append(samples.copy())
                         if state == "end" and capturing:
                             audio = (np.concatenate(capturing)
                                      .astype(np.float32) / 32768.0)

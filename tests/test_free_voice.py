@@ -2974,3 +2974,47 @@ class TestReviewB12WifiDevice(Base):
         with mock.patch.object(fv, "shell", side_effect=fake_shell):
             fv.act_wifi(False)
         self.assertIn(["networksetup", "-setairportpower", "en1", "off"], cmds)
+
+
+class TestReviewB14VadPreroll(Base):
+    def test_speech_onset_is_not_clipped(self):
+        try:
+            import numpy as np
+        except ImportError:
+            self.skipTest("numpy not installed")
+        frame_len = int(16000 * 0.03)
+        quiet = np.zeros(frame_len, dtype=np.int16) + 5
+        loud = np.full(frame_len, 4000, dtype=np.int16)
+        n_loud = 20
+        frames = [quiet] * 12 + [quiet] * 30 + [loud] * n_loud + [quiet] * 40
+
+        class FakeStream:
+            def __init__(self, *a, **k):
+                self._it = iter(frames)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self, n):
+                try:
+                    return next(self._it).tobytes(), False
+                except StopIteration:
+                    raise KeyboardInterrupt
+
+        fake_sd = mock.Mock()
+        fake_sd.RawInputStream = FakeStream
+        got = []
+        with mock.patch.dict(sys.modules, {"sounddevice": fake_sd}), \
+             mock.patch.object(fv, "wait_for_input_device", return_value=None), \
+             mock.patch.object(fv, "describe_input_device", return_value="fake"), \
+             mock.patch.object(fv, "update_state"), \
+             mock.patch.object(fv, "play_chime"), \
+             mock.patch.object(fv, "is_speaking", return_value=False), \
+             mock.patch.object(fv.time, "sleep", return_value=None):
+            fv.always_listen_loop(got.append)
+        self.assertEqual(len(got), 1)
+        loud_samples = int((np.abs(got[0] * 32768.0 - 4000) < 1).sum())
+        self.assertEqual(loud_samples, n_loud * frame_len)
