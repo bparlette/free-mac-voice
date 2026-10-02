@@ -3236,3 +3236,45 @@ class TestReviewB34NotificationScreenWidth(Base):
 
     def test_left_side_group_ignored(self):
         self.assertFalse(self._run(2560, 300))
+
+
+class TestReviewS11TtsCache(Base):
+    def setUp(self):
+        super().setUp()
+        self._dir = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, self._dir, True)
+        fake_sf = mock.Mock()
+        fake_sf.write.side_effect = lambda path, s, sr: open(path, "wb").write(b"RIFF")
+        kokoro = mock.Mock()
+        kokoro.create.return_value = ([0.0], 24000)
+        for p in (mock.patch.dict(sys.modules, {"soundfile": fake_sf}),
+                  mock.patch.object(fv, "_tts_cache_dir", self._dir),
+                  mock.patch.object(fv, "_get_kokoro", return_value=kokoro),
+                  mock.patch.object(fv, "_last_uncached_wav", None)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _cached(self):
+        return [f for f in os.listdir(self._dir) if not f.startswith("uncached-")]
+
+    def test_short_phrase_cached(self):
+        p1 = fv._synthesize_kokoro("Volume 30")
+        p2 = fv._synthesize_kokoro("Volume 30")
+        self.assertEqual(p1, p2)
+        self.assertEqual(len(self._cached()), 1)
+
+    def test_long_text_not_cached_and_previous_removed(self):
+        long1 = "Here is your clipboard: my secret note that should never persist"
+        a = fv._synthesize_kokoro(long1)
+        self.assertTrue(os.path.exists(a))
+        self.assertEqual(self._cached(), [])
+        b = fv._synthesize_kokoro(long1 + " again")
+        self.assertNotEqual(a, b)
+        self.assertFalse(os.path.exists(a))
+        self.assertEqual(len(os.listdir(self._dir)), 1)
+
+    def test_cache_is_capped(self):
+        with mock.patch.object(fv, "_TTS_CACHE_MAX_FILES", 3):
+            for i in range(6):
+                fv._synthesize_kokoro(f"phrase {i}")
+        self.assertEqual(len(self._cached()), 3)

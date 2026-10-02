@@ -356,8 +356,32 @@ def _get_kokoro():
         return None
 
 
+_TTS_CACHE_MAX_CHARS = 40    # only short, fixed phrases ("Volume 30", "Muted") are cached
+_TTS_CACHE_MAX_FILES = 200   # LRU cap (mtime is bumped on every hit)
+_last_uncached_wav: str | None = None
+
+
+def _prune_tts_cache() -> None:
+    """Keep at most _TTS_CACHE_MAX_FILES cached phrases, dropping the oldest."""
+    try:
+        files = [os.path.join(_tts_cache_dir, f) for f in os.listdir(_tts_cache_dir)
+                 if f.endswith(".wav") and not f.startswith("uncached-")]
+        if len(files) <= _TTS_CACHE_MAX_FILES:
+            return
+        files.sort(key=os.path.getmtime)
+        for f in files[:len(files) - _TTS_CACHE_MAX_FILES]:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
 def _synthesize_kokoro(text: str, voice: str | None = None) -> str | None:
-    """Synthesize text using Kokoro-82M, caching common phrases. Returns wav path."""
+    """Synthesize text using Kokoro-82M, caching short common phrases only
+    (long text such as clipboard reads or LLM answers is never kept). Returns wav path."""
+    global _last_uncached_wav
     kokoro = _get_kokoro()
     if kokoro is None:
         return None
@@ -365,13 +389,31 @@ def _synthesize_kokoro(text: str, voice: str | None = None) -> str | None:
     try:
         import soundfile as sf
         os.makedirs(_tts_cache_dir, exist_ok=True)
+        if len(text) >= _TTS_CACHE_MAX_CHARS:
+            fd, wav_path = tempfile.mkstemp(prefix="uncached-", suffix=".wav", dir=_tts_cache_dir)
+            os.close(fd)
+            samples, sample_rate = kokoro.create(text, voice=v, speed=1.0, lang="en-us")
+            sf.write(wav_path, samples, sample_rate)
+            prev, _last_uncached_wav = _last_uncached_wav, wav_path
+            if prev:
+                try:
+                    os.remove(prev)  # safe even if afplay still has it open
+                except OSError:
+                    pass
+            return wav_path
+
         cache_key = hashlib.md5(f"{v}:{text}".encode("utf-8")).hexdigest()
         wav_path = os.path.join(_tts_cache_dir, f"{cache_key}.wav")
         if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+            try:
+                os.utime(wav_path)  # LRU touch
+            except OSError:
+                pass
             return wav_path
 
         samples, sample_rate = kokoro.create(text, voice=v, speed=1.0, lang="en-us")
         sf.write(wav_path, samples, sample_rate)
+        _prune_tts_cache()
         return wav_path
     except Exception as e:
         log(f"Kokoro synthesis error ({e}), falling back to native say")
