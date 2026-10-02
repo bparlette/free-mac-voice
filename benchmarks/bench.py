@@ -22,7 +22,6 @@ import platform
 import statistics
 import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime, timezone
 from unittest import mock
@@ -176,7 +175,7 @@ def _make_speech_audio():
     import numpy as np
     if platform.system() == "Darwin":
         # Use macOS `say` + `afconvert` to generate real speech audio
-        import wave, struct, tempfile
+        import wave, tempfile
         with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as f:
             aiff = f.name
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -210,7 +209,6 @@ def _make_speech_audio():
 
 
 def bench_transcribe():
-    import numpy as np
     audio = _make_speech_audio()
     from faster_whisper import WhisperModel
     if fv._whisper is None:

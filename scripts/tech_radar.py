@@ -9,7 +9,6 @@ Compares new discoveries against the current baseline:
   - Tier 1 VLM Baseline: Qwen3-VL:8b (~1.26 s)
 """
 
-import sys
 import os
 import json
 import urllib.request

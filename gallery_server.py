@@ -8,7 +8,6 @@ Runs on http://localhost:8765 (and accessible over local Wi-Fi).
 """
 
 import os
-import sys
 import time
 import json
 import urllib.parse

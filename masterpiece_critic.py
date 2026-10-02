@@ -35,7 +35,7 @@ import shutil
 from datetime import datetime
 
 import AppKit
-from Foundation import NSObject, NSTimer
+from Foundation import NSObject
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets", "themes")
@@ -1108,7 +1108,6 @@ class CriticOverlayController(NSObject):
         screen = AppKit.NSScreen.mainScreen()
         screen_frame = screen.frame()
         win_w = 360.0
-        win_h = 201.0
 
         if pos_name == "bottom_center":
             win_x = (screen_frame.size.width - win_w) / 2.0

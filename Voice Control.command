@@ -1,6 +1,6 @@
 #!/bin/bash
 # Double-click to start voice control. (Run install.sh first, once.)
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 if [[ ! -x ".venv/bin/python" ]]; then
   echo "Voice control isn't installed yet."
   echo "Double-click install.sh (or run: bash install.sh) first."

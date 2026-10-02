@@ -276,7 +276,6 @@ _say_proc = None  # in-flight speech process (say or afplay), so new speech cuts
 
 def is_speaking() -> bool:
     """Return True if TTS audio playback is currently in flight."""
-    global _say_proc
     return _say_proc is not None and _say_proc.poll() is None
 
 
@@ -617,7 +616,6 @@ def _audio_cb(indata, frames, time_info, status):  # sounddevice callback
 def record_while_held() -> bytes:
     """Record from the default mic until _recording is cleared. Returns raw PCM16."""
     import sounddevice as sd
-    import numpy as np
 
     frames: list[bytes] = []
 
@@ -640,7 +638,7 @@ def record_while_held() -> bytes:
             time.sleep(0.05)
     t.join(timeout=2.0)
     pcm = b"".join(frames)
-    import numpy as np  # noqa: F811  (kept local so --text mode needs no audio deps)
+    import numpy as np  # kept local so --text mode needs no audio deps
 
     audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
     return audio
