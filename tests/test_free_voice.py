@@ -3419,3 +3419,18 @@ class TestReviewP7AppResolutionCaches(Base):
                 fv.resolve_app("spotifi")
                 # only the spoken variant(s) are keyed, not every installed app
                 self.assertLessEqual(pk.call_count, 2)
+
+
+class TestReviewQ2NoHardcodedUserPaths(unittest.TestCase):
+    def test_no_committed_plist_hardcodes_a_home_directory(self):
+        root = os.path.join(os.path.dirname(__file__), "..")
+        for name in os.listdir(root):
+            if name.endswith(".plist") and not name.startswith("._"):
+                with open(os.path.join(root, name), encoding="utf-8", errors="replace") as f:
+                    self.assertNotIn("/Users/", f.read(), name)
+
+    def test_service_sh_generates_radar_plist(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "service.sh"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("radar-install)", src)
+        self.assertIn("${REPO_DIR}/scripts/tech_radar.py", src)
