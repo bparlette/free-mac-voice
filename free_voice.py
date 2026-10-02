@@ -4353,11 +4353,19 @@ def ensure_ggml_model(model_name: str = "tiny.en") -> str | None:
         return hb_sample
     url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{model_name}.bin"
     log(f"downloading {model_name} model for streaming ({url})…")
+    part = target + ".part"
     try:
-        urllib.request.urlretrieve(url, target)
+        # download to .part then rename, so a partial/HTML error file never
+        # sits at the final path
+        urllib.request.urlretrieve(url, part)
+        os.replace(part, target)
         return target
     except Exception as e:  # noqa: BLE001
         log(f"could not download ggml model ({e})")
+        try:
+            os.remove(part)
+        except OSError:
+            pass
         return None
 
 

@@ -3310,3 +3310,52 @@ class TestReviewS12GeminiKeyHeader(Base):
         self.assertNotIn("test-key-123", gem[0].full_url)
         self.assertEqual(gem[0].get_header("X-goog-api-key"), "test-key-123")
         self.assertEqual(out, "hi")
+
+
+class TestReviewS13PartDownloads(Base):
+    def setUp(self):
+        super().setUp()
+        self._home = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, self._home, True)
+        p = mock.patch.dict(os.environ, {"HOME": self._home})
+        p.start()
+        self.addCleanup(p.stop)
+        self._models = os.path.join(self._home, ".free-voice", "models")
+        real_exists = os.path.exists
+        # ignore any Homebrew whisper.cpp fixture on a dev Mac (that's B6's concern)
+        ex = mock.patch.object(fv.os.path, "exists",
+                               side_effect=lambda p: "/Cellar/" not in p and real_exists(p))
+        ex.start()
+        self.addCleanup(ex.stop)
+
+    def test_download_goes_through_part_file(self):
+        seen = []
+
+        def fake_retrieve(url, path):
+            seen.append(path)
+            with open(path, "wb") as f:
+                f.write(b"x" * 10)
+
+        with mock.patch("urllib.request.urlretrieve", side_effect=fake_retrieve):
+            target = fv.ensure_ggml_model("tiny.en")
+        self.assertTrue(seen[0].endswith(".part"))
+        self.assertTrue(os.path.isfile(target))
+        self.assertFalse(os.path.exists(target + ".part"))
+
+    def test_failed_download_leaves_nothing(self):
+        def fake_retrieve(url, path):
+            with open(path, "wb") as f:
+                f.write(b"<html>error")
+            raise OSError("boom")
+
+        with mock.patch("urllib.request.urlretrieve", side_effect=fake_retrieve):
+            self.assertIsNone(fv.ensure_ggml_model("tiny.en"))
+        self.assertEqual(os.listdir(self._models), [])
+
+    def test_install_sh_uses_fail_fast_curl_and_part_files(self):
+        path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        self.assertNotIn("curl -sSL -o", src)
+        self.assertEqual(src.count("curl -fSL --retry 3"), 2)
+        self.assertEqual(src.count('.part"'), 6)

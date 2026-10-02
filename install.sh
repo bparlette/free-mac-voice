@@ -115,13 +115,23 @@ KOKORO_DIR="$HOME/.config/free-voice/models/kokoro"
 mkdir -p "$KOKORO_DIR"
 if [[ ! -f "$KOKORO_DIR/voices-v1.0.bin" ]]; then
   note "Downloading Kokoro voices library (~27 MB)..."
-  curl -sSL -o "$KOKORO_DIR/voices-v1.0.bin" \
-    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin" || true
+  if curl -fSL --retry 3 -o "$KOKORO_DIR/voices-v1.0.bin.part" \
+      "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"; then
+    mv "$KOKORO_DIR/voices-v1.0.bin.part" "$KOKORO_DIR/voices-v1.0.bin"
+  else
+    rm -f "$KOKORO_DIR/voices-v1.0.bin.part"
+    warn "Kokoro voices download failed — re-run install.sh later."
+  fi
 fi
 if [[ ! -f "$KOKORO_DIR/kokoro-v1.0.onnx" ]]; then
   note "Downloading Kokoro 82M neural TTS model (~310 MB)..."
-  curl -sSL -o "$KOKORO_DIR/kokoro-v1.0.onnx" \
-    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx" || true
+  if curl -fSL --retry 3 -o "$KOKORO_DIR/kokoro-v1.0.onnx.part" \
+      "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"; then
+    mv "$KOKORO_DIR/kokoro-v1.0.onnx.part" "$KOKORO_DIR/kokoro-v1.0.onnx"
+  else
+    rm -f "$KOKORO_DIR/kokoro-v1.0.onnx.part"
+    warn "Kokoro model download failed — re-run install.sh later."
+  fi
 fi
 
 # --- 6.5 Phonon-2 Next-Gen ASR (Default on Apple Silicon) ---------------------
