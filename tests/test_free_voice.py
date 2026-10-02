@@ -3514,3 +3514,39 @@ class TestReviewQ12SamsungVolumeSteps(unittest.TestCase):
              mock.patch.object(samsung_tv, "_req", return_value={}), \
              mock.patch("builtins.print"):
             self.assertEqual(samsung_tv.cmd_volume_delta(-3), "TV volume down by 3")
+
+
+class TestReviewB28StateHeartbeat(Base):
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.object(fv, "_last_state", ("", {}))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_processing_returns_to_listening(self):
+        fv.update_state("processing", command="open notes")
+        fv.heartbeat_state("mac")
+        self.assertEqual(fv._last_state[0], "listening")
+
+    def test_wake_window_kept_until_expiry(self):
+        fv._wake_window_until = fv.time.time() + 30
+        fv.update_state("wake_heard", msg="listening for command")
+        fv.heartbeat_state("mac")
+        self.assertEqual(fv._last_state, ("wake_heard", {"msg": "listening for command"}))
+        fv._wake_window_until = 0.0
+        fv.heartbeat_state("mac")
+        self.assertEqual(fv._last_state[0], "listening")
+
+    def test_heartbeat_refreshes_timestamp(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        path = os.path.join(tmp, "state.json")
+        fv.DRY_RUN = False
+        with mock.patch.object(fv, "_STATE_FILE", path), \
+             mock.patch.object(fv.time, "time", side_effect=[1000.0, 1050.0]):
+            fv.update_state("listening", wake_word="mac")
+            fv.heartbeat_state("mac")
+        with open(path) as f:
+            st = json.load(f)
+        self.assertEqual(st["state"], "listening")
+        self.assertEqual(st["ts"], 1050.0)

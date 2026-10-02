@@ -150,8 +150,14 @@ def acknowledge_wake() -> None:
 _STATE_FILE = os.path.join(tempfile.gettempdir(), "free-voice-state.json")
 
 
+_last_state: tuple = ("", {})
+HEARTBEAT_SEC = 10.0  # menu_bar.py treats a state older than 30 s as "Not Running"
+
+
 def update_state(state: str, **kwargs) -> None:
     """Publish current status for menu bar / external observers."""
+    global _last_state
+    _last_state = (state, kwargs)
     if DRY_RUN:
         return
     try:
@@ -168,6 +174,18 @@ def update_state(state: str, **kwargs) -> None:
         os.replace(tmp, _STATE_FILE)
     except Exception:
         pass
+
+
+def heartbeat_state(wake_word: str = "") -> None:
+    """Re-publish the current state with a fresh timestamp so quiet listening
+    isn't shown as "Not Running". A finished command ("processing") or an
+    expired wake window goes back to "listening"."""
+    state, kw = _last_state
+    if not state or state == "processing" or \
+            (state == "wake_heard" and time.time() >= _wake_window_until):
+        update_state("listening", wake_word=wake_word)
+    else:
+        update_state(state, **kw)
 
 
 def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
@@ -917,6 +935,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                             stream.read(frame_len)
                         except Exception:
                             break
+                    last_hb = time.monotonic()
                     while True:
                         try:
                             data, _ = stream.read(frame_len)
@@ -924,6 +943,9 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                             log(f"microphone error ({e}) — waiting for it to come back…")
                             time.sleep(2)  # cooldown so a flapping device doesn't hot-spin
                             break
+                        if time.monotonic() - last_hb >= HEARTBEAT_SEC:
+                            heartbeat_state(wake_word)
+                            last_hb = time.monotonic()
                         samples = np.frombuffer(data, dtype=np.int16)
                         if is_speaking():
                             capturing = []
@@ -950,6 +972,8 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                                     on_utterance(audio)
                                 except Exception as e:
                                     log(f"command failed ({e}) — still listening")
+                                heartbeat_state(wake_word)  # "processing" -> "listening"
+                                last_hb = time.monotonic()
                             time.sleep(0.5)  # cooldown so one sentence = one command
             except KeyboardInterrupt:
                 raise
