@@ -3185,3 +3185,27 @@ class TestReviewB32DecisionCriteria(Base):
                 self.said.clear()
                 fv.dispatch_tier1(action, {"app": "Notes", "query": "x", "level": 10})
                 self.assertNotIn("I couldn't map that to an action", self.said, action)
+
+
+class TestReviewB33CalculateExponent(Base):
+    def test_double_star_rejected(self):
+        with mock.patch("builtins.eval") as ev:
+            fv.act_calculate("9**999999999")
+            ev.assert_not_called()
+        self.assertIn("Calculation is too large", self.said)
+
+    def test_caret_with_parenthesised_exponent_rejected(self):
+        with mock.patch("builtins.eval") as ev:
+            fv.act_calculate("9^(99999999)")
+            ev.assert_not_called()
+        self.assertIn("Exponent is too large", self.said)
+
+    def test_caret_with_huge_exponent_rejected(self):
+        fv.act_calculate("9 ^ 999999")
+        self.assertIn("Exponent is too large", self.said)
+
+    def test_small_exponent_still_works(self):
+        fv.act_calculate("2^10")
+        self.assertIn("1024", self.said)
+        fv.act_calculate("3 * (4 + 5)")
+        self.assertIn("27", self.said)

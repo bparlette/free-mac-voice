@@ -1788,11 +1788,15 @@ def act_calculate(expr: str) -> None:
     if len(expr) > 64 or not re.fullmatch(r"[\d\s+\-*/().%^]+", expr):
         say("I can only calculate plain arithmetic")
         return
-    # Guard against exponent chains that hang the thread ("9^9^9")
-    if expr.count("^") > 1 or expr.count("**") > 1:
+    # Guard against exponent chains that hang the thread ("9^9^9"). '**' is
+    # rejected outright; '^' must be followed by a plain integer <= 100.
+    if "**" in expr or expr.count("^") > 1:
         say("Calculation is too large")
         return
-    for m in re.finditer(r"\^(\d+)", expr):
+    if re.search(r"\^(?!\s*\d)", expr):
+        say("Exponent is too large")
+        return
+    for m in re.finditer(r"\^\s*(\d+)", expr):
         if int(m.group(1)) > 100:
             say("Exponent is too large")
             return
