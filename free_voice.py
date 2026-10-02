@@ -4075,9 +4075,12 @@ _p(r"^(?:stop|dismiss|close|exit|end) (?:roasting|roast|(?:the )?critic|(?:the )
 _p(r"^switch to (the )?(computer|mac|pc)$", "tv_computer", True)
 _p(r"^switch to (the )?tv$", "tv_tv", True)
 _p(r"^(switch|change)( the)? (input|source)( to)? (.+)$", "tv_input")
-_p(r"^turn (on|off)( the)? tv$", "tv_power", True)
+_p(r"^(?:turn|power)\s+(on|off)(?:\s+the)?\s+tv$", "tv_power", True)
+_p(r"^(?:turn|power)(?:\s+the)?\s+tv\s+(on|off)$", "tv_power", True)
+_p(r"^tv\s+(on|off)$", "tv_power", True)
 _p(r"^set( the)? tv volume to (\d+)$", "tv_vol_set")
-_p(r"^tv volume (up|down)( by \d+)?$", "tv_vol_delta", True)
+_p(r"^(?:turn\s+)?(?:the\s+)?tv\s+volume\s+(up|down)(?:\s+by\s+\d+)?$", "tv_vol_delta", True)
+_p(r"^turn\s+(up|down)\s+(?:the\s+)?tv\s+volume(?:\s+by\s+\d+)?$", "tv_vol_delta", True)
 _p(r"^mute( the)? tv$", "tv_mute", True)
 _p(r"^unmute( the)? tv$", "tv_unmute", True)
 _p(r"^(pause|play|stop)( the)? tv$", "tv_media", True)
@@ -4200,8 +4203,10 @@ _p(r"^(search|google|look up|find(?: me)?|look for)(?: the web)? for (.+)$", "we
 _p(r"^(search|google|look up|find(?: me)?|look for) (.+)$", "web_search")
 _p(r"^(go to|visit|open website) ([a-z0-9][a-z0-9.\-]*\.[a-z]{2,}.*)$", "open_url")
 # --- volume / brightness / media
-_p(r"^(volume|sound) up$", "vol_up", True)
-_p(r"^(volume|sound) down$", "vol_down", True)
+_p(r"^(?:turn\s+)?(?:the\s+)?(volume|sound)\s+up$", "vol_up", True)
+_p(r"^turn\s+up\s+(?:the\s+)?(volume|sound)$", "vol_up", True)
+_p(r"^(?:turn\s+)?(?:the\s+)?(volume|sound)\s+down$", "vol_down", True)
+_p(r"^turn\s+down\s+(?:the\s+)?(volume|sound)$", "vol_down", True)
 _p(r"^set (the )?volume to (\d+)( percent)?$", "vol_set")
 _p(r"^louder$", "vol_up", True)
 _p(r"^quieter$", "vol_down", True)
@@ -5648,20 +5653,37 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
         act_open_app("Find My")
     elif action == "open_url":
         act_open_url(str(p("url", "")))
-    elif action == "set_volume":
-        direction = str(p("direction") or "").lower()
-        if p("level") is None and direction in ("up", "down"):
-            # "turn the volume down" -> relative change, not an absolute 50
-            act_volume_delta(10 if direction == "up" else -10)
+    elif action in ("set_volume", "volume_up", "volume_down"):
+        if action == "volume_up":
+            act_volume_delta(10)
+        elif action == "volume_down":
+            act_volume_delta(-10)
         else:
+            level = p("level")
+            direction = str(p("direction") or "").lower()
+            if str(level).lower() in ("up", "down"):
+                act_volume_delta(10 if str(level).lower() == "up" else -10)
+            elif level is None and direction in ("up", "down"):
+                act_volume_delta(10 if direction == "up" else -10)
+            else:
+                try:
+                    act_set_volume(int(p("level", 50)))
+                except (TypeError, ValueError):
+                    say("I didn't get a volume level")
+    elif action == "tv_power":
+        act_tv_power(bool(p("on", True)))
+    elif action == "tv_volume":
+        if p("level") is not None:
             try:
-                act_set_volume(int(p("level", 50)))
+                act_tv_volume_set(int(p("level")))
             except (TypeError, ValueError):
-                say("I didn't get a volume level")
-    elif action == "volume_up":
-        act_volume_delta(10)
-    elif action == "volume_down":
-        act_volume_delta(-10)
+                act_tv_volume_delta(1)
+        else:
+            direction = str(p("direction") or "up").lower()
+            act_tv_volume_delta(1 if direction == "up" else -1)
+    elif action == "tv_input":
+        inp = str(p("input") or p("source") or "computer")
+        act_tv_input(inp, inp)
     elif action == "mute_toggle":
         cur = applescript("output muted of (get volume settings)")
         act_mute(cur != "true")

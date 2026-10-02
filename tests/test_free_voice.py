@@ -80,6 +80,14 @@ class TestTier0Routing(Base):
         self.assertEqual(name, "vol_set")
         self.assertEqual(m.group(2), "30")
 
+    def test_volume_up_down_phrases(self):
+        for phrase in ("volume up", "sound up", "turn volume up", "turn the volume up", "turn up the volume", "turn up volume", "louder"):
+            name, _ = self.route_name(phrase)
+            self.assertEqual(name, "vol_up", phrase)
+        for phrase in ("volume down", "sound down", "turn volume down", "turn the volume down", "turn down the volume", "turn down volume", "quieter"):
+            name, _ = self.route_name(phrase)
+            self.assertEqual(name, "vol_down", phrase)
+
     def test_describe_screen(self):
         for phrase in ("what's on my screen", "describe the screen",
                        "what am i looking at"):
@@ -1852,8 +1860,16 @@ class TestSamsungTV(Base):
     def test_routing_power_on_and_off(self):
         for text, state in (("turn on the tv", "on"),
                             ("turn on tv", "on"),
+                            ("turn the tv on", "on"),
+                            ("turn tv on", "on"),
+                            ("tv on", "on"),
+                            ("power on the tv", "on"),
                             ("turn off the tv", "off"),
-                            ("turn off tv", "off")):
+                            ("turn off tv", "off"),
+                            ("turn the tv off", "off"),
+                            ("turn tv off", "off"),
+                            ("tv off", "off"),
+                            ("power off the tv", "off")):
             name, m = self.route_name(text)
             self.assertEqual(name, "tv_power", text)
             self.assertEqual(m.group(1), state)
@@ -1911,7 +1927,13 @@ class TestSamsungTV(Base):
             ("set tv volume to 25", "tv_vol_set", "25"),
             ("set the tv volume to 50", "tv_vol_set", "50"),
             ("tv volume up", "tv_vol_delta", "up"),
+            ("turn tv volume up", "tv_vol_delta", "up"),
+            ("turn the tv volume up", "tv_vol_delta", "up"),
+            ("turn up tv volume", "tv_vol_delta", "up"),
             ("tv volume down by 5", "tv_vol_delta", "down"),
+            ("turn tv volume down", "tv_vol_delta", "down"),
+            ("turn the tv volume down", "tv_vol_delta", "down"),
+            ("turn down tv volume", "tv_vol_delta", "down"),
             ("mute tv", "tv_mute", None),
             ("mute the tv", "tv_mute", None),
             ("unmute tv", "tv_unmute", None),
@@ -1958,6 +1980,20 @@ class TestSamsungTV(Base):
 
 
 class TestSamsungTVScript(unittest.TestCase):
+    def setUp(self):
+        self._orig_comp = os.environ.pop("SAMSUNG_INPUT_COMPUTER", None)
+        self._orig_tv = os.environ.pop("SAMSUNG_INPUT_TV", None)
+
+    def tearDown(self):
+        if self._orig_comp is not None:
+            os.environ["SAMSUNG_INPUT_COMPUTER"] = self._orig_comp
+        else:
+            os.environ.pop("SAMSUNG_INPUT_COMPUTER", None)
+        if self._orig_tv is not None:
+            os.environ["SAMSUNG_INPUT_TV"] = self._orig_tv
+        else:
+            os.environ.pop("SAMSUNG_INPUT_TV", None)
+
     def test_script_resolve_source_aliases(self):
         self.assertEqual(samsung_tv._resolve_source("computer"), "HDMI1")
         self.assertEqual(samsung_tv._resolve_source("mac"), "HDMI1")
@@ -2076,6 +2112,30 @@ class TestSamsungTVScript(unittest.TestCase):
         with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"):
             with self.assertRaises(samsung_tv.TVError):
                 samsung_tv.cmd_power("sleep")
+
+    def test_main_cli_environment_overrides(self):
+        env = {
+            "SAMSUNG_ST_TOKEN": "test-token",
+            "SAMSUNG_TV_DEVICE_ID": "test-device-id",
+            "SAMSUNG_INPUT_COMPUTER": "HDMI4",
+            "SAMSUNG_INPUT_TV": "dtv",
+        }
+        with mock.patch.dict(os.environ, env), \
+             mock.patch.object(samsung_tv, "load_env"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req, \
+             mock.patch("sys.stdout", new_callable=io.StringIO):
+            code = samsung_tv.main(["samsung_tv.py", "set-input", "computer"])
+            self.assertEqual(code, 0)
+            mock_req.assert_called_once_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "mediaInputSource",
+                    "command": "setInputSource",
+                    "arguments": ["HDMI4"]
+                }]}
+            )
 
 
 # ------------------------------------------------------- Wake word ("Mac")
@@ -2897,6 +2957,28 @@ class TestReviewB9RelativeVolume(Base):
         with mock.patch.object(fv, "act_volume_delta") as delta:
             fv.dispatch_tier1("set_volume", params)
             delta.assert_called_once_with(-10)
+
+    def test_level_as_string_up_or_down(self):
+        with mock.patch.object(fv, "act_volume_delta") as delta:
+            fv.dispatch_tier1("set_volume", {"level": "up"})
+            delta.assert_called_once_with(10)
+        with mock.patch.object(fv, "act_volume_delta") as delta:
+            fv.dispatch_tier1("set_volume", {"level": "down"})
+            delta.assert_called_once_with(-10)
+
+    def test_tier1_tv_actions_dispatch(self):
+        with mock.patch.object(fv, "act_tv_power") as pwr:
+            fv.dispatch_tier1("tv_power", {"on": False})
+            pwr.assert_called_once_with(False)
+        with mock.patch.object(fv, "act_tv_volume_delta") as vold:
+            fv.dispatch_tier1("tv_volume", {"direction": "up"})
+            vold.assert_called_once_with(1)
+        with mock.patch.object(fv, "act_tv_volume_set") as vols:
+            fv.dispatch_tier1("tv_volume", {"level": 35})
+            vols.assert_called_once_with(35)
+        with mock.patch.object(fv, "act_tv_input") as inpt:
+            fv.dispatch_tier1("tv_input", {"source": "HDMI 2"})
+            inpt.assert_called_once_with("HDMI 2", "HDMI 2")
 
 
 class TestReviewB10TimerUnits(Base):

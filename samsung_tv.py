@@ -35,6 +35,27 @@ import sys
 import urllib.error
 import urllib.request
 
+
+def load_env() -> None:
+    for path in (
+        os.path.expanduser("~/.free-voice/.env"),
+        os.path.expanduser("~/.config/free-voice/.env"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+    ):
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip("'\"")
+                    if k not in os.environ and v:
+                        os.environ[k] = v
+        except OSError:
+            pass
+
+
 API = "https://api.smartthings.com/v1"
 TOKEN = os.environ.get("SAMSUNG_ST_TOKEN", "").strip()
 DEVICE_ID = os.environ.get("SAMSUNG_TV_DEVICE_ID", "").strip()
@@ -42,12 +63,12 @@ DEVICE_ID = os.environ.get("SAMSUNG_TV_DEVICE_ID", "").strip()
 # Friendly aliases -> raw SmartThings input-source values. Raw values differ
 # per TV model; `discover` prints the real ones for your set.
 ALIASES = {
-    "computer": os.environ.get("SAMSUNG_INPUT_COMPUTER", "HDMI1"),
-    "mac": os.environ.get("SAMSUNG_INPUT_COMPUTER", "HDMI1"),
-    "pc": os.environ.get("SAMSUNG_INPUT_COMPUTER", "HDMI1"),
-    "tv": os.environ.get("SAMSUNG_INPUT_TV", "digitalTv"),
-    "television": os.environ.get("SAMSUNG_INPUT_TV", "digitalTv"),
-    "cable": os.environ.get("SAMSUNG_INPUT_TV", "digitalTv"),
+    "computer": "HDMI1",
+    "mac": "HDMI1",
+    "pc": "HDMI1",
+    "tv": "digitalTv",
+    "television": "digitalTv",
+    "cable": "digitalTv",
 }
 
 
@@ -111,6 +132,10 @@ def cmd_discover() -> str:
 
 def _resolve_source(name: str) -> str:
     key = name.strip().lower().replace(" ", "")
+    if key in ("computer", "mac", "pc") and os.environ.get("SAMSUNG_INPUT_COMPUTER"):
+        return os.environ.get("SAMSUNG_INPUT_COMPUTER").strip()
+    if key in ("tv", "television", "cable") and os.environ.get("SAMSUNG_INPUT_TV"):
+        return os.environ.get("SAMSUNG_INPUT_TV").strip()
     if key in ALIASES:
         return ALIASES[key]
     # Accept raw values like "HDMI1", "hdmi 2", "digitalTv"
@@ -215,6 +240,10 @@ def cmd_media(action: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    global TOKEN, DEVICE_ID
+    load_env()
+    TOKEN = os.environ.get("SAMSUNG_ST_TOKEN", TOKEN).strip()
+    DEVICE_ID = os.environ.get("SAMSUNG_TV_DEVICE_ID", DEVICE_ID).strip()
     if len(argv) < 2:
         print(__doc__.strip().split("\n\n")[0])
         print("commands: discover | set-input <name> | power on|off | status | "
