@@ -110,12 +110,11 @@ if [[ -n "$IPHONE" ]]; then
   upsert_env VOICE_MIC "iPhone"
   echo "    saved VOICE_MIC=iPhone — the app will prefer your iPhone mic"
 else
-  upsert_env VOICE_MIC "iPhone"
   echo "    iPhone not visible right now. For it to appear:"
   echo "      • same Apple ID on Mac and iPhone"
   echo "      • Wi-Fi and Bluetooth ON on both, iPhone nearby and unlocked"
-  echo "    Saved VOICE_MIC=iPhone anyway — the app will use your iPhone"
-  echo "    automatically whenever it's in range, otherwise the Mac default."
+  echo "    VOICE_MIC not changed — the app will use the Mac's default input."
+  echo "    Re-run this script once your iPhone shows up to pin it."
   echo "    Opening Sound settings so you can pick it by hand if you like."
   open "x-apple.systempreferences:com.apple.settings.Sound" || true
 fi

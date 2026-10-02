@@ -508,32 +508,44 @@ def resolve_input_device(want: str = ""):
 def describe_input_device() -> str:
     """Human-readable name of the mic that will be used, for startup logging."""
     usable, idx = _usable_input()
+    want = VOICE_MIC.strip()
+    note = ""
+    if not usable and want and _usable_input("")[0]:
+        # VOICE_MIC not present; wait_for_input_device falls back to default
+        usable, idx, note = True, None, f" (default input; {want!r} not found)"
     if not usable:
-        want = VOICE_MIC.strip()
         return (f"none found — waiting for {want!r}") if want \
             else "none found — waiting for a microphone"
     try:
         import sounddevice as sd
         dev = sd.query_devices(idx) if idx is not None \
             else sd.query_devices(kind="input")
-        return str(dev.get("name", "?"))
+        return str(dev.get("name", "?")) + note
     except Exception:
-        return "?"
+        return "?" + note
 
 
-def wait_for_input_device(poll_s: float = 3.0):
+def wait_for_input_device(poll_s: float = 3.0, fallback_after_s: float = 6.0):
     """Block until a usable microphone appears; return its device index.
 
     Honors VOICE_MIC (see _usable_input). Polls so a mic connected later —
     iPhone coming in range, USB mic plugged in — is picked up automatically.
+    If VOICE_MIC is set but that mic hasn't appeared after `fallback_after_s`,
+    falls back to the system default input (None) and logs it.
     Never raises for a missing mic; KeyboardInterrupt passes through.
     """
     want = VOICE_MIC.strip()
     announced = False
+    started = time.monotonic()
     while True:
         usable, idx = _usable_input()
         if usable:
             return idx
+        if want and time.monotonic() - started >= fallback_after_s \
+                and _usable_input("")[0]:
+            log(f"VOICE_MIC {want!r} not found after {fallback_after_s:.0f}s — "
+                "falling back to the default input")
+            return None
         if not announced:
             log("no microphone found — waiting for one to be connected…"
                 + (f" (waiting for {want!r})" if want else ""))

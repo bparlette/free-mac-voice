@@ -2916,3 +2916,32 @@ class TestReviewB10TimerUnits(Base):
         with mock.patch.object(fv, "act_timer") as t:
             fv.dispatch_tier1("timer", {"amount": 2, "unit": "hrs"})
             t.assert_called_once_with(2, "hour")
+
+
+class TestReviewB11MicFallback(Base):
+    def test_falls_back_to_default_when_voice_mic_missing(self):
+        calls = []
+
+        def fake_usable(want=None):
+            calls.append(want)
+            return (True, None) if want == "" else (False, None)
+
+        logs = []
+        with mock.patch.object(fv, "VOICE_MIC", "iPhone"), \
+             mock.patch.object(fv, "_usable_input", side_effect=fake_usable), \
+             mock.patch.object(fv, "log", side_effect=logs.append), \
+             mock.patch.object(fv.time, "sleep", return_value=None):
+            idx = fv.wait_for_input_device(poll_s=0, fallback_after_s=0)
+        self.assertIsNone(idx)
+        self.assertTrue(any("falling back to the default input" in m for m in logs))
+
+    def test_prefers_voice_mic_when_present(self):
+        with mock.patch.object(fv, "VOICE_MIC", "iPhone"), \
+             mock.patch.object(fv, "_usable_input", return_value=(True, 3)):
+            self.assertEqual(fv.wait_for_input_device(poll_s=0, fallback_after_s=0), 3)
+
+    def test_prime_permissions_only_pins_iphone_when_found(self):
+        path = os.path.join(os.path.dirname(__file__), "..", "prime_permissions.sh")
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        self.assertEqual(src.count('upsert_env VOICE_MIC "iPhone"'), 1)
