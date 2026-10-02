@@ -5509,8 +5509,8 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
         say("peace")
     elif action == "media_seek":
         sec = int(p("seconds") or p("amount") or 15)
-        direction = str(p("direction") or "fwd")
-        act_media_seek(direction, sec)
+        direction = str(p("direction") or "fwd").lower()
+        act_media_seek(seconds=sec, forward=direction not in ("back", "backward", "rewind"))
     else:
         say("I couldn't map that to an action")
 

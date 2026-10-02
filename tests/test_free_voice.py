@@ -2845,3 +2845,24 @@ class TestMultiActionChainingAndMLXWhisper(Base):
 if __name__ == "__main__":
     unittest.main()
 
+# ------------------------------------------------------------------------
+# Review batch 2 regression tests. Appended after the __main__ guard so they
+# never overlap other in-flight edits; `python -m unittest discover tests`
+# picks them up.
+# ------------------------------------------------------------------------
+class TestReviewB8MediaSeekDispatch(Base):
+    def test_media_seek_back_dispatch_uses_keywords(self):
+        with mock.patch.object(fv, "act_media_seek") as seek:
+            fv.dispatch_tier1("media_seek", {"seconds": 30, "direction": "back"})
+            seek.assert_called_once_with(seconds=30, forward=False)
+
+    def test_media_seek_fwd_default(self):
+        with mock.patch.object(fv, "act_media_seek") as seek:
+            fv.dispatch_tier1("media_seek", {"seconds": 20})
+            seek.assert_called_once_with(seconds=20, forward=True)
+
+    def test_media_seek_extract_then_dispatch_no_typeerror(self):
+        params = fv._extract_intent_params("media_seek", "rewind 30 seconds")
+        with mock.patch.object(fv, "act_key_code"):
+            fv.dispatch_tier1("media_seek", params)
+        self.assertIn("Rewound 30 seconds", self.said)
