@@ -3434,3 +3434,30 @@ class TestReviewQ2NoHardcodedUserPaths(unittest.TestCase):
             src = f.read()
         self.assertIn("radar-install)", src)
         self.assertIn("${REPO_DIR}/scripts/tech_radar.py", src)
+
+
+class TestReviewB29ServiceStatusExactLabel(unittest.TestCase):
+    def _run_status(self, listing):
+        import shutil
+        import subprocess
+        if not shutil.which("bash"):
+            self.skipTest("bash not available")
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        fake = os.path.join(tmp, "launchctl")
+        with open(fake, "w") as f:
+            f.write('#!/bin/bash\n[[ "$1" == list ]] && printf "%b" "' + listing + '"\nexit 0\n')
+        os.chmod(fake, 0o755)
+        env = dict(os.environ, HOME=tmp, PATH=tmp + os.pathsep + os.environ.get("PATH", ""))
+        script = os.path.join(os.path.dirname(__file__), "..", "service.sh")
+        return subprocess.run(["bash", script, "status"], env=env, capture_output=True,
+                              text=True, timeout=20).stdout
+
+    def test_menubar_label_does_not_count_as_main_service(self):
+        out = self._run_status("PID\\tStatus\\tLabel\\n4321\\t0\\tcom.free-mac-voice.menubar\\n")
+        self.assertIn("NOT INSTALLED", out)
+
+    def test_exact_label_reports_pid(self):
+        out = self._run_status("PID\\tStatus\\tLabel\\n4321\\t0\\tcom.free-mac-voice.menubar\\n"
+                               "999\\t0\\tcom.free-mac-voice\\n")
+        self.assertIn("RUNNING (PID 999)", out)

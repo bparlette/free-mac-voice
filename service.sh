@@ -75,6 +75,12 @@ generate_plist() {
 EOF
 }
 
+# Exact-label lookup in `launchctl list` (columns: PID Status Label). A plain
+# `grep "$LABEL"` also matched com.free-mac-voice.menubar / .radar.
+launchd_pid() { # $1=label; prints the PID column, fails if not loaded
+  launchctl list | awk -v l="$1" '$3 == l { print $1; found = 1 } END { exit !found }'
+}
+
 cmd="${1:-status}"
 
 case "$cmd" in
@@ -116,8 +122,7 @@ case "$cmd" in
 
   status)
     echo "==> Service Status: $LABEL"
-    if launchctl list | grep -q "$LABEL"; then
-      PID="$(launchctl list | grep "$LABEL" | awk '{print $1}')"
+    if PID="$(launchd_pid "$LABEL")"; then
       if [[ "$PID" != "-" && -n "$PID" ]]; then
         echo "    State: RUNNING (PID $PID)"
       else
@@ -210,7 +215,7 @@ EOF
 
   radar-status)
     echo "==> Radar Schedule Status: com.free-mac-voice.radar"
-    if launchctl list | grep -q "com.free-mac-voice.radar"; then
+    if launchd_pid "com.free-mac-voice.radar" >/dev/null; then
       echo "    State: ACTIVE (Scheduled daily at 7:00 AM)"
       echo "    Report File: ~/.config/free-voice/radar_report.md"
     else
