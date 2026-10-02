@@ -280,7 +280,7 @@ On Apple Silicon, `free-mac-voice` defaults to **Phonon-2** (`VOICE_STT_ENGINE=p
 ### Wake Word & Conversation Protection
 Always-listening (`--always`) uses the wake word **"Mac"** (configurable via `VOICE_WAKE_WORD`):
 - **Single-breath:** `"Mac, open notes"` executes immediately.
-- **Two-stage:** Saying `"Mac"` alone produces instant audio feedback and activates an 8-second wake window where subsequent speech executes directly without repeating the wake word.
+- **Two-stage:** Saying `"Mac"` alone produces instant audio feedback and activates a 15-second wake window (`VOICE_WAKE_WINDOW`) where subsequent speech executes directly without repeating the wake word.
 - Ambient room chatter and TV audio outside the wake window are silently ignored (`quiet_miss=True`). Push-to-talk (Right Option ⌥) bypasses the wake word.
 
 ## 9. Files

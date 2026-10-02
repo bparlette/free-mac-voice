@@ -187,7 +187,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="header">
     <div class="title">
       <h1>🎬 Screen Critic — Highlights Gallery</h1>
-      <p>Automatic 8-second clips recorded when companions speak · Auto-cleans after 48 hours</p>
+      <p>Automatic 7-second clips recorded when companions speak · Auto-cleans after 48 hours</p>
     </div>
     <div class="badge">🔥 __CLIP_COUNT__ Clips Available</div>
   </div>

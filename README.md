@@ -173,7 +173,7 @@ Hold **Right Option ⌥**, speak naturally, and release. Earcon audio confirms k
 ### 2. Hands-Free Always-Listening (`--always`)
 Run continuously with voice activity detection:
 - **Wake Word:** Prepend commands with **"Mac"** (e.g. *"Mac, open Safari"*).
-- **Two-Stage Wake Window:** Say *"Mac"*, hear the chime acknowledgment, and you have **8 seconds** to speak your command without repeating the wake word.
+- **Two-Stage Wake Window:** Say *"Mac"*, hear the chime acknowledgment, and you have **15 seconds** (configurable with `VOICE_WAKE_WINDOW`) to speak your command without repeating the wake word.
 - **Ambient Noise Rejection:** Room chatter, podcasts, and TV audio that do not trigger the wake word are ignored silently.
 - **Double-Click Launcher:** Double-click `Voice Control (Always On).command` anytime.
 
@@ -187,7 +187,7 @@ Streams audio chunks continuously. The instant a command completes (e.g. *"Mac, 
 ### 4. Native Menu Bar Companion (`menu_bar.py`)
 A lightweight status icon in your macOS menu bar reflects live state:
 - 🎙️ **Listening** — mic open, waiting for wake word or hotkey
-- 👂 **Wake Word Heard** — wake window active (8-second countdown)
+- 👂 **Wake Word Heard** — wake window active (15-second countdown)
 - ⚙️ **Working** — executing action, OCR text locate, or model inference
 - 💤 **Idle** — paused / standby
 

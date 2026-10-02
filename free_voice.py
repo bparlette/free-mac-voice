@@ -24,9 +24,6 @@ Pipeline (everything local, $0 per command):
              button") — no brittle pixel coordinates. When the tree has no
              match, the vision model locates the element on a screenshot and
              clicks its center ("what's on my screen" describes the display).
-      -> execution: AppleScript/shell for system actions, xa11y over the
-             macOS Accessibility tree for real UI clicks ("click the Reply
-             button") — no brittle pixel coordinates
       -> macOS `say` speaks a short confirmation
 
 No TypeSafe/Jev key needed. No paid calls, ever, in the default path.
@@ -881,7 +878,8 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
     """Listen continuously; transcribe each detected utterance. Ctrl-C quits.
 
     In wake word mode, commands must start with the wake word (e.g. 'Mac, ...')
-    or follow a standalone wake word trigger within an 8-second window.
+    or follow a standalone wake word trigger within the wake window
+    (WAKE_WINDOW_SEC, 15 s by default; VOICE_WAKE_WINDOW overrides it).
     Ambient room chatter is ignored silently.
     """
     import sounddevice as sd
