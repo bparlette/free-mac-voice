@@ -4026,4 +4026,35 @@ class TestOpusFindingsFixes(unittest.TestCase):
             self.assertEqual(calls, [])
 
 
+class TestSpeakerVerification(unittest.TestCase):
+    def test_on_utterance_drops_mismatched_speaker(self):
+        import numpy as np
+        fake_audio = np.zeros(16000, dtype=np.float32)
+        with mock.patch("free_voice.verify_speaker", return_value=(False, 0.20)) as mock_verify, \
+             mock.patch("free_voice.transcribe") as mock_transcribe, \
+             mock.patch("free_voice.handle_command") as mock_handle:
+            fv.on_utterance(fake_audio)
+            mock_verify.assert_called_once()
+            mock_transcribe.assert_not_called()
+            mock_handle.assert_not_called()
+
+    def test_on_utterance_allows_matched_speaker(self):
+        import numpy as np
+        fake_audio = np.zeros(16000, dtype=np.float32)
+        with mock.patch("free_voice.verify_speaker", return_value=(True, 0.85)) as mock_verify, \
+             mock.patch("free_voice.transcribe", return_value="open safari") as mock_transcribe, \
+             mock.patch("free_voice.handle_command", return_value=True) as mock_handle:
+            fv.on_utterance(fake_audio)
+            mock_verify.assert_called_once()
+            mock_transcribe.assert_called_once()
+            mock_handle.assert_called_once_with("open safari", confirm_audio_fn=fv.record_fixed, quiet_miss=False, require_wake_word=False)
+
+    def test_cmd_speaker_status_runs_without_raising(self):
+        try:
+            fv.cmd_speaker_status()
+        except Exception as e:
+            self.fail(f"cmd_speaker_status raised unexpectedly: {e}")
+
+
+
 

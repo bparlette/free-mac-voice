@@ -69,6 +69,27 @@ import urllib.request
 from datetime import datetime
 import zlib
 
+try:
+    from speaker_id import (
+        verify_speaker,
+        enroll_speaker,
+        is_speaker_enrolled,
+        reset_speaker,
+        get_profile_path,
+        get_model_path,
+        ensure_model,
+        SPEAKER_THRESHOLD,
+    )
+except ImportError:
+    verify_speaker = lambda a, **kw: (True, 1.0)
+    enroll_speaker = lambda s, **kw: 1.0
+    is_speaker_enrolled = lambda **kw: False
+    reset_speaker = lambda **kw: False
+    get_profile_path = lambda: ""
+    get_model_path = lambda: ""
+    ensure_model = lambda **kw: ""
+    SPEAKER_THRESHOLD = 0.55
+
 # ---------------------------------------------------------------- env
 
 HOME = os.path.expanduser("~")
@@ -6487,6 +6508,12 @@ def demo_partials(text: str) -> None:
 
 
 def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = False) -> None:
+    if audio is not None and len(audio) > 16000 * 0.4:
+        is_user, sim = verify_speaker(audio)
+        if not is_user:
+            log(f"Speaker mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD}) — dropped ambient/TV voice")
+            notify_hud(f"Ignored: other voice ({sim:.2f})", "rejected")
+            return
     try:
         text = transcribe(audio)
     except Exception as e:  # noqa: BLE001
@@ -6501,6 +6528,58 @@ def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = Fals
                    require_wake_word=require_wake_word)
 
 
+def cmd_speaker_status() -> None:
+    enrolled = is_speaker_enrolled()
+    print("==> Speaker Verification Status:")
+    print(f"    Microphone:   {describe_input_device()}")
+    print(f"    Enrolled:     {'YES' if enrolled else 'NO'}")
+    print(f"    Profile path: {get_profile_path()}")
+    print(f"    Model path:   {get_model_path()}")
+    print(f"    Threshold:    {SPEAKER_THRESHOLD}")
+    if not enrolled:
+        print("    Tip: Run './.venv/bin/python free_voice.py --enroll' to register your voice.")
+
+
+def cmd_reset_speaker() -> None:
+    if reset_speaker():
+        print("==> Enrolled voice profile deleted. Speaker verification is now disabled.")
+    else:
+        print("==> No enrolled voice profile found.")
+
+
+def cmd_enroll_speaker() -> None:
+    print("==> Speaker Voice Profile Enrollment")
+    print(f"    Active Microphone: {describe_input_device()}")
+    print("    Note: Please speak from your normal commanding position and distance.")
+    print("    This records 2 short phrases to calibrate your voiceprint.")
+    print()
+    usable, _ = _usable_input()
+    if not usable:
+        _notice_no_mic()
+        return
+
+    ensure_model()
+
+    input("Press [Enter] and speak phrase 1: 'Hey Mac, set volume to 50 and open Safari' ... ")
+    print("Recording 4 seconds...")
+    audio1 = record_fixed(4.0)
+    print("Sample 1 captured!\n")
+
+    input("Press [Enter] and speak phrase 2: 'The quick brown fox jumps over the lazy dog' ... ")
+    print("Recording 4 seconds...")
+    audio2 = record_fixed(4.0)
+    print("Sample 2 captured!\n")
+
+    try:
+        consistency = enroll_speaker([audio1, audio2])
+        print(f"==> Voice profile enrolled successfully! Consistency score: {consistency:.2f}")
+        print(f"    Saved to: {get_profile_path()}")
+        print(f"    Active Microphone: {describe_input_device()}")
+        print("    Speaker verification is now ACTIVE. Background TV and podcast speech will be rejected.")
+    except Exception as e:
+        print(f"==> Enrollment failed: {e}")
+
+
 def main() -> None:
     global DRY_RUN, VOICE_MIC, VOICE_WAKE_WORD, ALWAYS_MODE
     ap = argparse.ArgumentParser(description="Free voice control for macOS")
@@ -6513,6 +6592,12 @@ def main() -> None:
     ap.add_argument("--list", action="store_true", help="show commands")
     ap.add_argument("--dry-run", action="store_true",
                     help="print actions instead of running them")
+    ap.add_argument("--enroll-speaker", "--enroll", action="store_true",
+                    help="enroll your voice profile to eliminate background TV and chatter false triggers")
+    ap.add_argument("--reset-speaker", action="store_true",
+                    help="delete enrolled voice profile")
+    ap.add_argument("--speaker-status", action="store_true",
+                    help="show speaker verification enrollment status")
     ap.add_argument("--yes", action="store_true",
                     help="allow destructive actions in --text mode")
     ap.add_argument("--always", action="store_true",
@@ -6538,6 +6623,16 @@ def main() -> None:
         VOICE_WAKE_WORD = args.wake_word.strip().lower()
     if args.no_wake_word:
         VOICE_WAKE_WORD = ""
+
+    if args.speaker_status:
+        cmd_speaker_status()
+        return
+    if args.reset_speaker:
+        cmd_reset_speaker()
+        return
+    if args.enroll_speaker:
+        cmd_enroll_speaker()
+        return
 
     if args.list:
         cmd_list()
