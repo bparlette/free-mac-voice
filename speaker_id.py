@@ -16,7 +16,7 @@ DEFAULT_CONFIG_DIR = os.path.expanduser("~/.config/free-voice")
 DEFAULT_MODEL_PATH = os.path.join(DEFAULT_CONFIG_DIR, "models", "speaker_embedding.onnx")
 DEFAULT_PROFILE_PATH = os.path.join(DEFAULT_CONFIG_DIR, "speaker_profile.npy")
 
-SPEAKER_THRESHOLD = float(os.environ.get("VOICE_SPEAKER_THRESHOLD", "0.55"))
+SPEAKER_THRESHOLD = float(os.environ.get("VOICE_SPEAKER_THRESHOLD", "0.25"))
 SPEAKER_VERIFICATION_ENABLED = os.environ.get("VOICE_SPEAKER_VERIFICATION", "1").lower() in ("1", "true", "yes")
 
 _session = None

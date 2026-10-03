@@ -88,7 +88,7 @@ except ImportError:
     get_profile_path = lambda: ""
     get_model_path = lambda: ""
     ensure_model = lambda **kw: ""
-    SPEAKER_THRESHOLD = 0.55
+    SPEAKER_THRESHOLD = 0.25
 
 # ---------------------------------------------------------------- env
 
