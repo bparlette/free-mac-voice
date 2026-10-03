@@ -4830,6 +4830,22 @@ def route(text: str, partial: bool = False):
             if resolve_app(phrase) is None:
                 continue
         return name, m
+
+    # Fallback for comma-separated single commands from Whisper STT (e.g. 'Roast, Me', 'close, window', 'click, home')
+    if "," in t and not any(k in t.lower() for k in (" and ", " then ")):
+        t_clean = re.sub(r"[,\s]+", " ", t).strip()
+        if t_clean != t:
+            for rx, name, pok in _PATTERNS:
+                if partial and not pok:
+                    continue
+                m = rx.match(t_clean)
+                if not m:
+                    continue
+                if partial and m.end() != len(t_clean):
+                    continue
+                if partial and not _partial_complete(name, m):
+                    continue
+                return name, m
     return None
 
 
@@ -4992,7 +5008,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_open_app(m.group(2))
         elif name == "switch_app":
             act_switch_app(m.group(2))
-        # quit_app is destructive: handled by the confirmation gate below, not here.
+        elif name == "quit_app":
+            act_quit_app(m.group(m.lastindex))
         elif name == "close_window":
             act_close_window()
         elif name == "close_window_named":
@@ -5237,13 +5254,10 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_lock()
         elif name == "sleep":
             act_sleep()
-        elif name in ("shutdown", "restart", "logout", "empty_trash",
-                      "quit_app", "kill_app"):
+        elif name in ("shutdown", "restart", "logout", "empty_trash", "kill_app"):
             # Destructive actions ask first (spoken "yes"), unless --yes.
             # In chained commands each destructive part is confirmed on its own.
-            if name == "quit_app":
-                desc = f"quitting {m.group(m.lastindex)}"
-            elif name == "kill_app":
+            if name == "kill_app":
                 desc = f"force quitting {m.group(1)}"
             else:
                 desc = {"shutdown": "shutting down", "restart": "restarting",
@@ -5256,9 +5270,7 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             if not ok:
                 say(f"Not {desc} without confirmation")
                 return
-            if name == "quit_app":
-                act_quit_app(m.group(m.lastindex))
-            elif name == "kill_app":
+            if name == "kill_app":
                 act_force_quit_app(m.group(1))
             else:
                 {"shutdown": lambda: shell(["osascript", "-e",
@@ -5413,7 +5425,7 @@ _TIER1_ACTIONS = {
 
 _DESTRUCTIVE_ACTIONS = {
     "shutdown", "restart", "logout", "empty_trash",
-    "quit_app", "kill_app",
+    "kill_app",
 }
 
 _INTENT_EXAMPLES: dict[str, list[str]] = {
@@ -5914,7 +5926,6 @@ def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
     is_cmd, gate_conf = is_voice_command(text)
     if not is_cmd:
         log(f"Tier 0.5b dropped non-command: {text!r} (gate conf={gate_conf:.2f})")
-        notify_hud(f'Ignored: "{text}"', "rejected")
         return None
 
     # Step 2 & 3: Fast decision model (/v1/systemone with 8-choice criteria)
@@ -6199,8 +6210,7 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     if action == "open_app":
         act_open_app(app_name)
     elif action == "quit_app":
-        if _tier1_confirm(f"quitting {app_name}", allow_destructive):
-            act_quit_app(app_name)
+        act_quit_app(app_name)
     elif action == "switch_app":
         act_switch_app(app_name)
     elif action == "close_window":
@@ -6558,12 +6568,12 @@ def handle_command(text: str, confirm_audio_fn=None,
                 rem = max(0.0, _wake_window_until - now)
                 log(f"within wake window ({rem:.1f}s remaining): {t!r}")
                 # Command gate protection: ensure ambient follow-up speech is an actual command before routing
-                is_cmd, gate_conf = is_voice_command(t)
-                if not is_cmd:
-                    log(f"wake window follow-up dropped by command gate: {t!r} (conf={gate_conf:.2f})")
-                    notify_hud(f'Ignored: "{t}"', "rejected")
-                    record_attempt(t, "REJECTED", tier="Command Gate", detail=f"Filtered (conf={gate_conf:.2f})")
-                    return False
+                if not route(t):
+                    is_cmd, gate_conf = is_voice_command(t)
+                    if not is_cmd:
+                        log(f"wake window follow-up dropped by command gate: {t!r} (conf={gate_conf:.2f})")
+                        record_attempt(t, "REJECTED", tier="Command Gate", detail=f"Filtered (conf={gate_conf:.2f})")
+                        return False
             else:
                 log(f"ignored (no wake word {VOICE_WAKE_WORD!r}): {t!r}")
                 return False
@@ -6770,7 +6780,6 @@ def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = Fals
         is_user, sim = verify_speaker(audio)
         if not is_user:
             log(f"Speaker mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD}) — dropped ambient/TV voice")
-            notify_hud(f"Ignored: other voice ({sim:.2f})", "rejected")
             record_attempt("(ambient voice)", "REJECTED", tier="Speaker ID", detail=f"Mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD})")
             return
     try:

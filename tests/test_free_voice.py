@@ -664,15 +664,10 @@ class TestDestructiveConfirmation(Base):
                              allow_destructive=allow_destructive)
             return cs, qa, caw
 
-    def test_quit_app_confirmed_runs(self):
-        _, qa, _ = self._exec("quit spotify", confirm=True)
-        qa.assert_called_once()
-
-    def test_quit_app_declined_skips(self):
+    def test_quit_app_runs_directly(self):
         cs, qa, _ = self._exec("quit spotify", confirm=False)
-        qa.assert_not_called()
-        cs.assert_called_once()
-        self.assertTrue(any("without confirmation" in s for s in self.said))
+        qa.assert_called_once()
+        cs.assert_not_called()
 
     def test_close_all_windows_runs_without_confirmation(self):
         cs, _, caw = self._exec("close all windows", confirm=False)
@@ -693,23 +688,10 @@ class TestDestructiveConfirmation(Base):
         qa.assert_called_once()
         cs.assert_not_called()
 
-    def test_tier1_quit_app_allow_destructive(self):
+    def test_tier1_quit_app_runs_directly(self):
         with mock.patch.object(fv, "act_quit_app") as qa:
-            fv.dispatch_tier1("quit_app", {"app": "safari"},
-                              allow_destructive=True)
+            fv.dispatch_tier1("quit_app", {"app": "safari"})
         qa.assert_called_once_with("safari")
-
-    def test_tier1_quit_app_declines_without_mic(self):
-        fv.DRY_RUN = False
-        try:
-            with mock.patch.object(fv, "record_fixed",
-                                   side_effect=RuntimeError("no mic")), \
-                 mock.patch.object(fv, "act_quit_app") as qa:
-                fv.dispatch_tier1("quit_app", {"app": "safari"})
-            qa.assert_not_called()
-            self.assertTrue(any("without confirmation" in s for s in self.said))
-        finally:
-            fv.DRY_RUN = True
 
 
 # ------------------------------------------------- status / health check
@@ -3469,7 +3451,7 @@ class TestReviewB32DecisionCriteria(Base):
     def test_close_app_mapped_to_gated_quit_app(self):
         self.assertNotIn("close_app", fv._DECISION_CRITERIA)
         self.assertIn("quit_app", fv._DECISION_CRITERIA)
-        self.assertIn("quit_app", fv._DESTRUCTIVE_ACTIONS)
+        self.assertNotIn("quit_app", fv._DESTRUCTIVE_ACTIONS)
 
     def test_every_criterion_is_dispatchable(self):
         for action in fv._DECISION_CRITERIA:
