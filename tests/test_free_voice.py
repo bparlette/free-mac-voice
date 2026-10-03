@@ -1825,12 +1825,16 @@ class TestSamsungTV(Base):
     def test_routing_switch_to_computer(self):
         for text in ("switch to computer", "switch to the computer",
                      "switch to mac", "switch to the mac",
-                     "switch to pc", "switch to the pc"):
+                     "switch to pc", "switch to the pc",
+                     "turn computer on", "turn on computer",
+                     "turn on the computer", "turn the computer on",
+                     "computer on"):
             name, _ = self.route_name(text)
             self.assertEqual(name, "tv_computer", text)
 
     def test_routing_switch_to_tv(self):
-        for text in ("switch to tv", "switch to the tv"):
+        for text in ("switch to tv", "switch to the tv",
+                     "switch to television", "home", "samsung home"):
             name, _ = self.route_name(text)
             self.assertEqual(name, "tv_tv", text)
 
@@ -1864,12 +1868,16 @@ class TestSamsungTV(Base):
                             ("turn tv on", "on"),
                             ("tv on", "on"),
                             ("power on the tv", "on"),
+                            ("turn on the television", "on"),
+                            ("turn television on", "on"),
                             ("turn off the tv", "off"),
                             ("turn off tv", "off"),
                             ("turn the tv off", "off"),
                             ("turn tv off", "off"),
                             ("tv off", "off"),
-                            ("power off the tv", "off")):
+                            ("power off the tv", "off"),
+                            ("turn off the television", "off"),
+                            ("turn television off", "off")):
             name, m = self.route_name(text)
             self.assertEqual(name, "tv_power", text)
             self.assertEqual(m.group(1), state)
@@ -2038,7 +2046,7 @@ class TestSamsungTVScript(unittest.TestCase):
              mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
             msg_on = samsung_tv.cmd_power("on")
             self.assertEqual(msg_on, "TV power on")
-            mock_req.assert_called_with(
+            mock_req.assert_any_call(
                 "POST",
                 "/devices/test-device-id/commands",
                 {"commands": [{
@@ -2048,6 +2056,17 @@ class TestSamsungTVScript(unittest.TestCase):
                     "arguments": []
                 }]}
             )
+            mock_req.assert_any_call(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "samsungvd.remoteControl",
+                    "command": "send",
+                    "arguments": ["HOME"]
+                }]}
+            )
+            mock_req.reset_mock()
             msg_off = samsung_tv.cmd_power("off")
             self.assertEqual(msg_off, "TV power off")
             mock_req.assert_called_with(
@@ -2058,6 +2077,22 @@ class TestSamsungTVScript(unittest.TestCase):
                     "capability": "switch",
                     "command": "off",
                     "arguments": []
+                }]}
+            )
+
+    def test_script_cmd_home_post_shape(self):
+        with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
+            msg = samsung_tv.cmd_home()
+            self.assertEqual(msg, "TV home")
+            mock_req.assert_called_once_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "samsungvd.remoteControl",
+                    "command": "send",
+                    "arguments": ["HOME"]
                 }]}
             )
 

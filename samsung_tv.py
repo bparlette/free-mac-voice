@@ -157,6 +157,18 @@ def _resolve_source(name: str) -> str:
     return key.upper().replace("HDMI ", "HDMI") if key.startswith("hdmi") else name.strip()
 
 
+def cmd_home() -> str:
+    dev = _need_device()
+    _req("POST", f"/devices/{dev}/commands", {
+        "commands": [{"component": "main",
+                      "capability": "samsungvd.remoteControl",
+                      "command": "send",
+                      "arguments": ["HOME"]}]})
+    msg = "TV home"
+    print(msg)
+    return msg
+
+
 def cmd_set_input(name: str) -> str:
     dev = _need_device()
     source = _resolve_source(name)
@@ -165,6 +177,11 @@ def cmd_set_input(name: str) -> str:
                       "capability": "mediaInputSource",
                       "command": "setInputSource",
                       "arguments": [source]}]})
+    if source.lower() in ("digitaltv", "dtv"):
+        try:
+            cmd_home()
+        except Exception:
+            pass
     msg = f"TV input -> {source}"
     print(msg)
     return msg
@@ -198,12 +215,14 @@ def cmd_power(state: str) -> str:
                       "capability": "switch",
                       "command": state,
                       "arguments": []}]})
-    if state == "on" and os.environ.get("SAMSUNG_TV_STANDBY", "").lower() in ("ambient", "art"):
-        target_input = os.environ.get("SAMSUNG_INPUT_COMPUTER") or "HDMI4"
+    if state == "on":
         try:
-            cmd_set_input(target_input)
+            cmd_home()
         except Exception:
-            pass
+            try:
+                cmd_set_input("tv")
+            except Exception:
+                pass
     msg = f"TV power {state}"
     print(msg)
     return msg
@@ -298,6 +317,8 @@ def main(argv: list[str]) -> int:
             cmd_power(rest[0])
         elif cmd == "art":
             cmd_art()
+        elif cmd == "home":
+            cmd_home()
         elif cmd == "status":
             cmd_status()
         elif cmd == "set-volume" and rest:
