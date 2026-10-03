@@ -124,7 +124,7 @@ VOICE_WAKE_CHIME = os.environ.get("VOICE_WAKE_CHIME", "Tink.aiff").strip()
 WAKE_WINDOW_SEC = float(os.environ.get("VOICE_WAKE_WINDOW", "15.0"))
 WAKE_WINDOW_MAX_CAP_SEC = float(os.environ.get("VOICE_WAKE_MAX_CAP", "60.0"))
 VOICE_WAKE_PHRASE = os.environ.get("VOICE_WAKE_PHRASE", "what you want").strip()
-VOICE_VAD_SENSITIVITY = float(os.environ.get("VOICE_VAD_SENSITIVITY", "1.8"))
+VOICE_VAD_SENSITIVITY = float(os.environ.get("VOICE_VAD_SENSITIVITY", "1.35"))
 _wake_window_until = 0.0
 _wake_window_opened_at = 0.0
 DRY_RUN = False
@@ -725,7 +725,7 @@ def transcribe(audio) -> str:
             audio,
             beam_size=1,
             vad_filter=True,
-            initial_prompt="Mac, Hey Mac. Turn off the TV, switch to computer, turn volume up, open Safari, what time is it. Draw an ASCII art picture of a heart, cat, flower, rose.",
+            initial_prompt="Mac, Hey Mac, turn on the TV, turn off the TV, switch to computer.",
         )
         return " ".join(s.text for s in segments).strip()
 
@@ -738,7 +738,7 @@ def transcribe(audio) -> str:
             res = mlx_whisper.transcribe(
                 audio,
                 path_or_hf_repo=repo,
-                initial_prompt="Mac, Hey Mac. Turn off the TV, switch to computer, turn volume up, open Safari, what time is it. Draw an ASCII art picture of a heart, cat, flower, rose.",
+                initial_prompt="Mac, Hey Mac, turn on the TV, turn off the TV, switch to computer.",
             )
             return str(res.get("text", "")).strip()
         except Exception as e:
@@ -752,7 +752,7 @@ def transcribe(audio) -> str:
         audio,
         beam_size=1,
         vad_filter=True,
-        initial_prompt="Mac, Hey Mac. Turn off the TV, switch to computer, turn volume up, open Safari, what time is it. Draw an ASCII art picture of a heart, cat, flower, rose.",
+        initial_prompt="Mac, Hey Mac, turn on the TV, turn off the TV, switch to computer.",
     )
     text = " ".join(s.text for s in segments).strip()
     return text
@@ -853,8 +853,8 @@ class VoiceActivityDetector:
     Hysteresis (separate start/stop thresholds) avoids chattering.
     """
 
-    def __init__(self, sensitivity: float = 1.8, frame_ms: int = 30,
-                 start_ms: int = 90, end_ms: int = 700):
+    def __init__(self, sensitivity: float = 1.35, frame_ms: int = 30,
+                 start_ms: int = 90, end_ms: int = 900):
         self.sensitivity = sensitivity
         self.start_needed = max(1, start_ms // frame_ms)
         self.end_needed = max(1, end_ms // frame_ms)
@@ -900,7 +900,7 @@ class VoiceActivityDetector:
         return "speech"
 
 
-def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = "") -> None:
+def always_listen_loop(on_utterance, sensitivity: float = 1.35, wake_word: str = "") -> None:
     """Listen continuously; transcribe each detected utterance. Ctrl-C quits.
 
     In wake word mode, commands must start with the wake word (e.g. 'Mac, ...')
@@ -949,6 +949,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                         vad.floor = max(float(np.median(startup_rms)), 60.0)
 
                     last_hb = time.monotonic()
+                    was_speaking = False
                     while True:
                         try:
                             data, _ = stream.read(frame_len)
@@ -962,6 +963,19 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                         samples = np.frombuffer(data, dtype=np.int16)
                         if is_speaking():
                             capturing = []
+                            preroll.clear()
+                            vad.reset()
+                            was_speaking = True
+                            continue
+                        if was_speaking:
+                            was_speaking = False
+                            # Drain any speaker echo lingering in the audio buffer
+                            try:
+                                avail = stream.read_available
+                                if avail > 0:
+                                    stream.read(avail)
+                            except Exception:
+                                pass
                             preroll.clear()
                             vad.reset()
                             continue
@@ -4120,9 +4134,9 @@ _p(r"^(?:stop|dismiss|close|exit|end) (?:roasting|roast|(?:the )?critic|(?:the )
 _p(r"^switch to (the )?(computer|mac|pc)$", "tv_computer", True)
 _p(r"^switch to (the )?tv$", "tv_tv", True)
 _p(r"^(switch|change)( the)? (input|source)( to)? (.+)$", "tv_input")
-_p(r"^(?:turn|power)\s+(on|off)(?:\s+the)?\s+tv$", "tv_power", True)
-_p(r"^(?:turn|power)(?:\s+the)?\s+tv\s+(on|off)$", "tv_power", True)
-_p(r"^tv\s+(on|off)$", "tv_power", True)
+_p(r"^(?:turn|power)\s+(on|off)(?:\s+the)?\s+(?:samsung\s+)?(?:tv|television)$", "tv_power", True)
+_p(r"^(?:turn|power)(?:\s+the)?\s+(?:samsung\s+)?(?:tv|television)\s+(on|off)$", "tv_power", True)
+_p(r"^(?:samsung\s+)?(?:tv|television)\s+(on|off)$", "tv_power", True)
 _p(r"^set( the)? tv volume to (\d+)$", "tv_vol_set")
 _p(r"^(?:turn\s+)?(?:the\s+)?tv\s+volume\s+(up|down)(\s+by\s+\d+)?$", "tv_vol_delta", True)
 _p(r"^turn\s+(up|down)\s+(?:the\s+)?tv\s+volume(\s+by\s+\d+)?$", "tv_vol_delta", True)
@@ -6246,9 +6260,8 @@ def main() -> None:
     ap.add_argument("--stream", action="store_true",
                     help="listen continuously using real-time whisper.cpp streaming "
                          "(sub-500ms mid-speech firing via PartialSession)")
-    ap.add_argument("--sensitivity", type=float, default=3.0, metavar="X",
-                    help="always-listen mic sensitivity multiplier "
-                         "(higher = easier to trigger; default 3.0)")
+    ap.add_argument("--sensitivity", type=float, default=VOICE_VAD_SENSITIVITY, metavar="X",
+                    help=f"always-listen mic sensitivity multiplier (default {VOICE_VAD_SENSITIVITY})")
     ap.add_argument("--wake-word", metavar="WORD", default=VOICE_WAKE_WORD,
                     help=f"wake word required in --always mode (default: {VOICE_WAKE_WORD!r})")
     ap.add_argument("--no-wake-word", action="store_true",
