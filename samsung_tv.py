@@ -31,6 +31,7 @@ Usage:
 
 import json
 import os
+import socket
 import sys
 import urllib.error
 import urllib.request
@@ -56,9 +57,23 @@ def load_env() -> None:
             pass
 
 
+load_env()
+
 API = "https://api.smartthings.com/v1"
 TOKEN = os.environ.get("SAMSUNG_ST_TOKEN", "").strip()
 DEVICE_ID = os.environ.get("SAMSUNG_TV_DEVICE_ID", "").strip()
+
+
+def send_wol(mac: str) -> None:
+    """Send a Wake-on-LAN magic packet to wake the TV if it is in deep sleep."""
+    try:
+        clean = mac.replace(":", "").replace("-", "").replace(".", "")
+        payload = bytes.fromhex("FF" * 6 + clean * 16)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            s.sendto(payload, ("255.255.255.255", 9))
+    except Exception:
+        pass
 
 # Friendly aliases -> raw SmartThings input-source values. Raw values differ
 # per TV model; `discover` prints the real ones for your set.
@@ -155,11 +170,29 @@ def cmd_set_input(name: str) -> str:
     return msg
 
 
+def cmd_art() -> str:
+    dev = _need_device()
+    _req("POST", f"/devices/{dev}/commands", {
+        "commands": [{"component": "main",
+                      "capability": "samsungvd.ambient",
+                      "command": "setAmbientOn",
+                      "arguments": []}]})
+    msg = "TV art mode on"
+    print(msg)
+    return msg
+
+
 def cmd_power(state: str) -> str:
     dev = _need_device()
     state = state.lower()
     if state not in ("on", "off"):
         raise TVError("power must be 'on' or 'off'")
+    if state == "on":
+        mac = os.environ.get("SAMSUNG_TV_MAC", "").strip()
+        if mac:
+            send_wol(mac)
+    elif state == "off" and os.environ.get("SAMSUNG_TV_STANDBY", "").lower() in ("ambient", "art"):
+        return cmd_art()
     _req("POST", f"/devices/{dev}/commands", {
         "commands": [{"component": "main",
                       "capability": "switch",
@@ -257,6 +290,8 @@ def main(argv: list[str]) -> int:
             cmd_set_input(" ".join(rest))
         elif cmd == "power" and rest:
             cmd_power(rest[0])
+        elif cmd == "art":
+            cmd_art()
         elif cmd == "status":
             cmd_status()
         elif cmd == "set-volume" and rest:

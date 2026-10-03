@@ -1940,6 +1940,10 @@ class TestSamsungTV(Base):
             ("pause tv", "tv_media", "pause"),
             ("play the tv", "tv_media", "play"),
             ("stop tv", "tv_media", "stop"),
+            ("art mode", "tv_art", None),
+            ("tv art mode", "tv_art", None),
+            ("screensaver", "tv_art", None),
+            ("turn on tv screensaver", "tv_art", None),
         ]
         for text, want_name, want_val in cases:
             name, m = self.route_name(text)
@@ -1983,6 +1987,7 @@ class TestSamsungTVScript(unittest.TestCase):
     def setUp(self):
         self._orig_comp = os.environ.pop("SAMSUNG_INPUT_COMPUTER", None)
         self._orig_tv = os.environ.pop("SAMSUNG_INPUT_TV", None)
+        self._orig_standby = os.environ.pop("SAMSUNG_TV_STANDBY", None)
 
     def tearDown(self):
         if self._orig_comp is not None:
@@ -1993,6 +1998,10 @@ class TestSamsungTVScript(unittest.TestCase):
             os.environ["SAMSUNG_INPUT_TV"] = self._orig_tv
         else:
             os.environ.pop("SAMSUNG_INPUT_TV", None)
+        if self._orig_standby is not None:
+            os.environ["SAMSUNG_TV_STANDBY"] = self._orig_standby
+        else:
+            os.environ.pop("SAMSUNG_TV_STANDBY", None)
 
     def test_script_resolve_source_aliases(self):
         self.assertEqual(samsung_tv._resolve_source("computer"), "HDMI1")
@@ -2134,6 +2143,39 @@ class TestSamsungTVScript(unittest.TestCase):
                     "capability": "mediaInputSource",
                     "command": "setInputSource",
                     "arguments": ["HDMI4"]
+                }]}
+            )
+
+    def test_cmd_art_mode(self):
+        with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
+            msg = samsung_tv.cmd_art()
+            self.assertEqual(msg, "TV art mode on")
+            mock_req.assert_called_once_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "samsungvd.ambient",
+                    "command": "setAmbientOn",
+                    "arguments": []
+                }]}
+            )
+
+    def test_power_off_ambient_standby_override(self):
+        with mock.patch.dict(os.environ, {"SAMSUNG_TV_STANDBY": "ambient"}), \
+             mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
+            msg = samsung_tv.cmd_power("off")
+            self.assertEqual(msg, "TV art mode on")
+            mock_req.assert_called_once_with(
+                "POST",
+                "/devices/test-device-id/commands",
+                {"commands": [{
+                    "component": "main",
+                    "capability": "samsungvd.ambient",
+                    "command": "setAmbientOn",
+                    "arguments": []
                 }]}
             )
 

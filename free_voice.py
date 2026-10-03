@@ -3975,7 +3975,8 @@ def act_tv_input(alias: str, spoken_name: str) -> None:
         return
     try:
         shell([sys.executable, _TV_SCRIPT, "set-input", alias])
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log(f"TV set-input failed: {e}")
         say("I couldn't reach the Samsung TV")
         return
     say(f"Switching to {spoken_name}")
@@ -3988,7 +3989,8 @@ def act_tv_power(on: bool) -> None:
         return
     try:
         shell([sys.executable, _TV_SCRIPT, "power", "on" if on else "off"])
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log(f"TV power failed: {e}")
         say("I couldn't reach the Samsung TV")
         return
     say(f"Turning the TV {'on' if on else 'off'}")
@@ -4001,7 +4003,8 @@ def act_tv_volume_set(level: int) -> None:
         return
     try:
         shell([sys.executable, _TV_SCRIPT, "set-volume", str(level)])
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log(f"TV set-volume failed: {e}")
         say("I couldn't reach the Samsung TV")
         return
     say(f"TV volume {level}")
@@ -4015,7 +4018,8 @@ def act_tv_volume_delta(delta: int) -> None:
     try:
         cmd = "volume-up" if delta > 0 else "volume-down"
         shell([sys.executable, _TV_SCRIPT, cmd, str(abs(delta))])
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log(f"TV volume-delta failed: {e}")
         say("I couldn't reach the Samsung TV")
         return
     say(f"TV volume {'up' if delta > 0 else 'down'}")
@@ -4028,7 +4032,8 @@ def act_tv_mute(mute: bool) -> None:
         return
     try:
         shell([sys.executable, _TV_SCRIPT, "mute" if mute else "unmute"])
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log(f"TV mute failed: {e}")
         say("I couldn't reach the Samsung TV")
         return
     say(f"TV {'muted' if mute else 'unmuted'}")
@@ -4041,10 +4046,25 @@ def act_tv_media(action: str) -> None:
         return
     try:
         shell([sys.executable, _TV_SCRIPT, "media", action])
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log(f"TV media failed: {e}")
         say("I couldn't reach the Samsung TV")
         return
     say(f"TV {action}")
+
+
+def act_tv_art() -> None:
+    """'art mode' — put Samsung The Frame TV into Art/Ambient mode."""
+    if not _tv_configured():
+        say("Samsung TV isn't set up yet — see samsung_tv.py for the one-time setup")
+        return
+    try:
+        shell([sys.executable, _TV_SCRIPT, "art"])
+    except Exception as e:  # noqa: BLE001
+        log(f"TV art mode failed: {e}")
+        say("I couldn't reach the Samsung TV")
+        return
+    say("TV art mode")
 
 
 # ---------------------------------------------------------------- Tier 0: regex router + completion gating
@@ -4079,11 +4099,13 @@ _p(r"^(?:turn|power)\s+(on|off)(?:\s+the)?\s+tv$", "tv_power", True)
 _p(r"^(?:turn|power)(?:\s+the)?\s+tv\s+(on|off)$", "tv_power", True)
 _p(r"^tv\s+(on|off)$", "tv_power", True)
 _p(r"^set( the)? tv volume to (\d+)$", "tv_vol_set")
-_p(r"^(?:turn\s+)?(?:the\s+)?tv\s+volume\s+(up|down)(?:\s+by\s+\d+)?$", "tv_vol_delta", True)
-_p(r"^turn\s+(up|down)\s+(?:the\s+)?tv\s+volume(?:\s+by\s+\d+)?$", "tv_vol_delta", True)
+_p(r"^(?:turn\s+)?(?:the\s+)?tv\s+volume\s+(up|down)(\s+by\s+\d+)?$", "tv_vol_delta", True)
+_p(r"^turn\s+(up|down)\s+(?:the\s+)?tv\s+volume(\s+by\s+\d+)?$", "tv_vol_delta", True)
 _p(r"^mute( the)? tv$", "tv_mute", True)
 _p(r"^unmute( the)? tv$", "tv_unmute", True)
 _p(r"^(pause|play|stop)( the)? tv$", "tv_media", True)
+_p(r"^(?:tv |the tv )?(?:art mode|ambient mode|picture mode|screensaver)$", "tv_art", True)
+_p(r"^turn on (?:the )?(?:tv )?(?:art mode|ambient mode|screensaver)$", "tv_art", True)
 # --- apps & tabs (specific "open tab" / "open X settings" / "open trash" BEFORE generic open)
 _p(r"^(new|open)( a)? tab$", "new_tab", True)
 _p(r"^close( the)? tab$", "close_tab", True)
@@ -4728,7 +4750,7 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         elif name == "tv_vol_delta":
             direction = m.group(1).lower()
             delta = 1
-            if m.group(2):
+            if len(m.groups()) >= 2 and m.group(2):
                 nums = re.findall(r"\d+", m.group(2))
                 if nums:
                     delta = int(nums[0])
@@ -4739,6 +4761,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_tv_mute(False)
         elif name == "tv_media":
             act_tv_media(m.group(1).lower())
+        elif name == "tv_art":
+            act_tv_art()
         elif name == "lock":
             act_lock()
         elif name == "sleep":
@@ -5718,6 +5742,8 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
         act_tv_input(inp, inp)
     elif action == "tv_mute":
         act_tv_mute(bool(p("mute", True)))
+    elif action == "tv_art":
+        act_tv_art()
     elif action == "mute_toggle":
         cur = applescript("output muted of (get volume settings)")
         act_mute(cur != "true")
