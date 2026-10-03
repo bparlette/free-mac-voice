@@ -4038,5 +4038,38 @@ class TestSpeakerVerification(unittest.TestCase):
             self.fail(f"cmd_speaker_status raised unexpectedly: {e}")
 
 
+class TestVideoPlaybackOnScreen(Base):
+    def test_play_video_routes(self):
+        r1 = fv.route("play the first video")
+        self.assertEqual(r1[0], "play_ordinal_video")
+        self.assertEqual(r1[1].group(1), "first")
+
+        r2 = fv.route("play video 3")
+        self.assertEqual(r2[0], "play_ordinal_video")
+        self.assertEqual(r2[1].group(1), "3")
+
+        r3 = fv.route("choose the second video")
+        self.assertEqual(r3[0], "play_ordinal_video")
+
+        r4 = fv.route("play the video about quantum physics")
+        self.assertEqual(r4[0], "play_video_on_screen")
+        self.assertEqual(r4[1].group(1), "quantum physics")
+
+        r5 = fv.route("play Marques Brownlee")
+        self.assertEqual(r5[0], "play_video_on_screen")
+        self.assertEqual(r5[1].group(1), "Marques Brownlee")
+
+    def test_play_video_on_screen_executes_dry_run(self):
+        with mock.patch.object(fv, "say") as mock_say:
+            fv.handle_command("play Marques Brownlee")
+            mock_say.assert_called_with("Playing Marques Brownlee")
+
+    def test_play_ordinal_video_executes_dry_run(self):
+        with mock.patch.object(fv, "say") as mock_say:
+            fv.handle_command("play the first video")
+            mock_say.assert_called_with("Playing video 1")
+
+
+
 
 

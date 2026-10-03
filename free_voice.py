@@ -4407,6 +4407,188 @@ def act_play_genre(genre: str) -> None:
     say(f"Playing {g}")
 
 
+def act_play_ordinal_video(ordinal_str: str) -> None:
+    """Choose and play the Nth video visible on the screen."""
+    clean = ordinal_str.lower().strip()
+    ord_map = {
+        "first": 1, "1st": 1, "top": 1, "1": 1,
+        "second": 2, "2nd": 2, "2": 2,
+        "third": 3, "3rd": 3, "3": 3,
+        "fourth": 4, "4th": 4, "4": 4,
+        "fifth": 5, "5th": 5, "5": 5,
+    }
+    idx = ord_map.get(clean)
+    if not idx and clean.isdigit():
+        idx = int(clean)
+    if not idx:
+        idx = 1
+
+    if DRY_RUN:
+        log(f"DRY-RUN play ordinal video #{idx}")
+        say(f"Playing video {idx}")
+        return
+
+    Vision, NSURL = _load_vision_framework()
+    if Vision is None or NSURL is None:
+        loc = vision_locate(f"the {ordinal_str} video thumbnail on screen")
+        if loc:
+            _click_xy(loc[0], loc[1], f"video #{idx}")
+            say(f"Playing video {idx}")
+        else:
+            say(f"Couldn't find video {idx} on screen")
+        return
+
+    path = capture_screenshot()
+    if not path or not os.path.exists(path):
+        say("Couldn't capture screen")
+        return
+
+    try:
+        from AppKit import NSScreen
+        f = NSScreen.mainScreen().frame()
+        sw, sh = int(f.size.width), int(f.size.height)
+    except Exception:
+        sw, sh = 1920, 1080
+
+    try:
+        req = Vision.VNRecognizeTextRequest.alloc().init()
+        url = NSURL.fileURLWithPath_(path)
+        h = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)
+        h.performRequests_error_([req], None)
+        results = req.results() or []
+    except Exception as e:
+        log(f"OCR failed for ordinal video: {e}")
+        results = []
+
+    candidates = []
+    for obs in results:
+        if not obs.topCandidates_(1):
+            continue
+        text = obs.topCandidates_(1)[0].string().strip()
+        b = obs.boundingBox()
+        cx = int((b.origin.x + b.size.width / 2.0) * sw)
+        cy = int((1.0 - (b.origin.y + b.size.height / 2.0)) * sh)
+        if cx > 240 and cy > 180 and len(text) >= 12:
+            candidates.append((cx, cy, text))
+
+    if not candidates:
+        loc = vision_locate(f"the {ordinal_str} video thumbnail on screen")
+        if loc:
+            _click_xy(loc[0], loc[1], f"video #{idx}")
+            say(f"Playing video {idx}")
+        else:
+            say(f"Couldn't find video {idx} on screen")
+        return
+
+    candidates.sort(key=lambda item: (item[1] // 220, item[0]))
+    cards = []
+    for cx, cy, text in candidates:
+        if not any(abs(cx - kx) < 220 and abs(cy - ky) < 180 for kx, ky, _ in cards):
+            cards.append((cx, cy, text))
+
+    if 1 <= idx <= len(cards):
+        cx, cy, text = cards[idx - 1]
+        log(f"Playing video #{idx}: ({cx}, {cy}) -> {text!r}")
+        _click_xy(cx, cy, f"video #{idx}")
+        say(f"Playing video {idx}")
+    else:
+        say(f"I only see {len(cards)} videos on the screen")
+
+
+def act_play_video_on_screen(query: str) -> None:
+    """Search on-screen content (YouTube, browser, video grid) for a matching video and click it."""
+    clean = re.sub(r"^(?:the\s+)?(?:video|item|result|one)?\s*(?:about|called|titled|named|on)?\s*", "", query, flags=re.I).strip()
+    if not clean:
+        say("What video would you like to play?")
+        return
+
+    if DRY_RUN:
+        log(f"DRY-RUN play video on screen matching: {clean!r}")
+        say(f"Playing {clean}")
+        return
+
+    path = capture_screenshot()
+    if not path or not os.path.exists(path):
+        say("Couldn't capture screen")
+        return
+
+    Vision, NSURL = _load_vision_framework()
+    best_loc = None
+    best_title = clean
+
+    if Vision is not None and NSURL is not None:
+        try:
+            from AppKit import NSScreen
+            f = NSScreen.mainScreen().frame()
+            sw, sh = int(f.size.width), int(f.size.height)
+        except Exception:
+            sw, sh = 1920, 1080
+
+        try:
+            req = Vision.VNRecognizeTextRequest.alloc().init()
+            url = NSURL.fileURLWithPath_(path)
+            h = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)
+            h.performRequests_error_([req], None)
+            results = req.results() or []
+        except Exception as e:
+            log(f"OCR request failed: {e}")
+            results = []
+
+        import difflib
+        q_lower = clean.lower().strip()
+        q_words = [w for w in re.findall(r"\w+", q_lower) if len(w) >= 2]
+        best_score = 0.0
+
+        for obs in results:
+            if not obs.topCandidates_(1):
+                continue
+            text = obs.topCandidates_(1)[0].string().strip()
+            t_lower = text.lower().strip()
+            b = obs.boundingBox()
+            cx = int((b.origin.x + b.size.width / 2.0) * sw)
+            cy = int((1.0 - (b.origin.y + b.size.height / 2.0)) * sh)
+
+            # Skip top window titlebar / URL bar (cy < 120) and left navigation menu (cx < 180)
+            if cy < 120 or cx < 180:
+                continue
+
+            score = 0.0
+            if q_lower == t_lower:
+                score = 1.0
+            elif re.search(r"\b" + re.escape(q_lower) + r"\b", t_lower):
+                score = 0.98
+            elif q_words:
+                matched_words = sum(1 for qw in q_words if re.search(r"\b" + re.escape(qw) + r"\b", t_lower))
+                if matched_words == len(q_words):
+                    score = 0.95
+                elif matched_words > 0:
+                    score = 0.5 + (matched_words / len(q_words)) * 0.4
+                else:
+                    ratio = difflib.SequenceMatcher(None, q_lower, t_lower).ratio()
+                    score = ratio * 0.7
+
+            if score > best_score:
+                best_score = score
+                best_loc = (cx, cy)
+                best_title = text
+
+        if best_score < 0.65:
+            best_loc = None
+
+    if not best_loc:
+        log(f"OCR found no direct text match for {clean!r}; falling back to vision VLM...")
+        vloc = vision_locate(f"video thumbnail or card for '{clean}'")
+        if vloc:
+            best_loc = vloc
+
+    if best_loc:
+        _click_xy(best_loc[0], best_loc[1], clean)
+        short_title = best_title[:35].strip() if len(best_title) > 35 else best_title
+        say(f"Playing {short_title}")
+    else:
+        say(f"I couldn't find a video matching {clean} on screen")
+
+
 # --- Samsung TV control (SmartThings cloud API) ---------------------------
 _TV_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "samsung_tv.py")
@@ -4770,6 +4952,14 @@ _p(r"^remind me in (\d+) (seconds?|minutes?|hours?) to (.+)$", "reminder")
 _p(r"^read (my|the) screen( to me| aloud)?$", "read_screen", True)
 # --- music
 _p(r"^play some (.+)$", "play_genre", True)
+# --- YouTube and on-screen video control
+_p(r"^play (?:the )?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|top) video$", "play_ordinal_video", True)
+_p(r"^(?:choose|select|click) (?:the )?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|top) video$", "play_ordinal_video", True)
+_p(r"^play video (\d+)$", "play_ordinal_video", True)
+_p(r"^(?:choose|select|click) video (\d+)$", "play_ordinal_video", True)
+_p(r"^play (?:the )?(?:video|result|stream|item)\s*(?:about |called |titled |on |named )?(.+)$", "play_video_on_screen", True)
+_p(r"^(?:choose|select|click) (?:the )?(?:video|result|stream|item)\s*(?:about |called |titled |on |named )?(.+)$", "play_video_on_screen", True)
+_p(r"^play (.+)$", "play_video_on_screen", True)
 # --- silent mode & command review log
 _p(r"^(?:enable |turn on )?(?:silent|quiet)(?: mode)?$", "quiet_on", True)
 _p(r"^(?:disable |turn off )?(?:silent|quiet)(?: mode)?|voice (?:on|feedback)$", "quiet_off", True)
@@ -5363,6 +5553,10 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_read_screen()
         elif name == "play_genre":
             act_play_genre(m.group(1))
+        elif name == "play_ordinal_video":
+            act_play_ordinal_video(m.group(1))
+        elif name == "play_video_on_screen":
+            act_play_video_on_screen(m.group(1))
         elif name == "quiet_on":
             act_set_quiet_mode(True)
         elif name == "quiet_off":
