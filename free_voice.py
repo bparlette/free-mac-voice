@@ -4630,6 +4630,27 @@ def act_play_video_on_screen(query: str) -> None:
         say(f"I couldn't find a video matching {clean} on screen")
 
 
+# --- 3D Voice-Reactive Vector Runner Game --------------------------------
+def act_start_runner_game() -> None:
+    """'start runner game' — fire up the Vector Runner orchestrator and WebGL game."""
+    try:
+        from integrations.runner_game.runner_manager import start_runner_game
+        start_runner_game(say_fn=say)
+    except Exception as e:
+        log(f"start_runner_game failed: {e}")
+        say("I couldn't start the runner game")
+
+
+def act_close_runner_game() -> None:
+    """'close game' — cleanly terminate the Vector Runner and close window."""
+    try:
+        from integrations.runner_game.runner_manager import close_runner_game
+        close_runner_game(say_fn=say)
+    except Exception as e:
+        log(f"close_runner_game failed: {e}")
+        say("I couldn't close the runner game")
+
+
 # --- Samsung TV control (SmartThings cloud API) ---------------------------
 _TV_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "samsung_tv.py")
@@ -4806,6 +4827,9 @@ _p(r"^open trash$", "open_trash", True)
 _p(r"^(?:watch|stream) (youtube|netflix|hulu|disney(?: plus)?|max|hbo|prime(?: video)?|apple tv)$", "watch_stream", True)
 _p(r"^(?:open|launch) (youtube|netflix|hulu|disney(?: plus)?|max|hbo|prime(?: video)?)$", "watch_stream", True)
 _p(r"^(?:search|find on) youtube (?:for )?(.+)$", "search_youtube")
+# --- 3D Voice-Reactive Vector Runner Game
+_p(r"^(?:play|start|launch|open)\s+(?:the\s+)?(?:voice\s+)?(?:vector\s+)?runner(?:\s+game)?$", "start_runner_game", True)
+_p(r"^(?:close|quit|stop|exit)\s+(?:the\s+)?(?:runner\s+)?game$", "close_runner_game", True)
 _p(r"^(open|opens|launch|start) the (.+?) (app|application)$", "open_app", True)
 _p(r"^(open|opens|launch|start) (.+)$", "open_app", True)
 _p(r"^(next app|app forward)$", "next_app", True)
@@ -5602,6 +5626,10 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_set_quiet_mode(True)
         elif name == "quiet_off":
             act_set_quiet_mode(False)
+        elif name == "start_runner_game":
+            act_start_runner_game()
+        elif name == "close_runner_game":
+            act_close_runner_game()
         elif name == "show_review":
             act_show_review()
         else:
@@ -6773,6 +6801,27 @@ def handle_command(text: str, confirm_audio_fn=None,
     t = text.strip().rstrip(".!?").strip()
     if not t:
         return False
+
+    # 3D Vector Runner Game Mode Interception
+    try:
+        from integrations.runner_game.runner_manager import is_runner_active, pipe_voice_to_runner
+        if is_runner_active():
+            is_wake, stripped = parse_wake_word(t, VOICE_WAKE_WORD or "mac")
+            if is_wake:
+                if re.match(r"^(?:close|quit|stop|exit)\s+(?:the\s+)?(?:runner\s+)?game$", stripped, re.I):
+                    act_close_runner_game()
+                    return True
+                # User specifically addressed "Mac" / "Hey Mac": continue to execute on Mac
+                require_wake_word = False
+                t = stripped
+            else:
+                # In-game command without wake word: route exclusively to runner, bypass macOS actions
+                pipe_voice_to_runner(t)
+                log(f"[Game Mode] routed '{t}' exclusively to runner (macOS ignored)")
+                notify_hud(f"🎮 {t}", "transcribed")
+                return True
+    except Exception as e:
+        log(f"runner mode check error: {e}")
 
     if VOICE_WAKE_WORD:
         is_wake, cmd = parse_wake_word(t, VOICE_WAKE_WORD)

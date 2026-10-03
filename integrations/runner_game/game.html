@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Voice-Reactive Vector Runner</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+        #ui { position: absolute; top: 20px; width: 100%; text-align: center; color: #00ffcc; text-shadow: 0 0 8px #00ffcc; pointer-events: none; font-size: 24px; z-index: 10; }
+        #hud { position: absolute; bottom: 20px; left: 20px; color: #888; font-size: 14px; z-index: 10; line-height: 1.5; }
+        #themeDisplay { position: absolute; top: 60px; width: 100%; text-align: center; color: #ff00ff; text-shadow: 0 0 8px #ff00ff; font-size: 16px; z-index: 10; }
+        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff0044; font-size: 48px; text-shadow: 0 0 15px #ff0044; display: none; z-index: 20; text-align: center; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="ui">SCORE: <span id="score">0</span></div>
+    <div id="themeDisplay">SECTOR: CYBER VECTOR</div>
+    <div id="gameOver">SHIELD DEPLETED<br><span style="font-size:24px; color:#fff">Press SPACE or say "restart"</span></div>
+    <div id="hud">Controls: [A/D or ←/→] Left/Right | [W/S or ↑/↓] Faster/Slower | [Space] Jump/Restart | [F] Shoot<br>Voice: "left", "right", "jump", "faster", "slower", "shoot", "change world [theme]"</div>
+    
+    <script>
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        scene.fog = new THREE.FogExp2(0x000000, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 12);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- PALETTE & THEME ---
+        let currentTheme = {
+            world_name: 'Cyber Vector',
+            grid_color: '#00ffcc',
+            fog_color: '#000000',
+            laser_color: '#ff00ff',
+            obstacle_type: 'cube',
+            speed_multiplier: 1.0
+        };
+        let targetTheme = { ...currentTheme };
+        let themeLerpProgress = 1.0;
+        
+        const gridMaterial = new THREE.LineBasicMaterial({ color: currentTheme.grid_color, transparent: true, opacity: 0.5 });
+        const gridHelper = new THREE.GridHelper(400, 100, currentTheme.grid_color, currentTheme.grid_color);
+        gridHelper.position.y = -1;
+        gridHelper.material = gridMaterial;
+        scene.add(gridHelper);
+
+        // --- PLAYER SHIP (Delta Wing) ---
+        const shipGeo = new THREE.ConeGeometry(1, 2, 3);
+        shipGeo.rotateX(Math.PI / 2);
+        const edges = new THREE.EdgesGeometry(shipGeo);
+        const shipMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+        const ship = new THREE.LineSegments(edges, shipMat);
+        scene.add(ship);
+        
+        const thrusterGeo = new THREE.BufferGeometry();
+        thrusterGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0], 3));
+        const thrusterMat = new THREE.PointsMaterial({ color: 0x00ffcc, size: 0.8, sizeAttenuation: true });
+        const thruster = new THREE.Points(thrusterGeo, thrusterMat);
+        thruster.position.set(0, 0, 1);
+        ship.add(thruster);
+
+        // --- GAME STATE ---
+        let isGameOver = false;
+        let score = 0;
+        let baseSpeed = 0.5;
+        let activeSpeed = baseSpeed;
+        
+        const lanes = [-4, 0, 4];
+        let currentLaneIdx = 1;
+        let targetX = lanes[currentLaneIdx];
+        let velocityY = 0;
+        const gravity = -0.02;
+        let isJumping = false;
+        let boostTimer = 0;
+        
+        const obstacles = [];
+        const lasers = [];
+        const particles = [];
+
+        // --- PROCEDURAL GENERATORS ---
+        function spawnObstacle() {
+            if (isGameOver) return;
+            const lane = lanes[Math.floor(Math.random() * lanes.length)];
+            let geo;
+            
+            if (currentTheme.obstacle_type === 'pyramid') geo = new THREE.ConeGeometry(1.5, 3, 4);
+            else if (currentTheme.obstacle_type === 'ring') geo = new THREE.TorusGeometry(1.5, 0.2, 8, 20);
+            else geo = new THREE.BoxGeometry(2, 2, 2);
+            
+            const edgeGeo = new THREE.EdgesGeometry(geo);
+            const mat = new THREE.LineBasicMaterial({ color: currentTheme.grid_color });
+            const mesh = new THREE.LineSegments(edgeGeo, mat);
+            mesh.position.set(lane, 0, -200);
+            scene.add(mesh);
+            obstacles.push({ mesh, active: true });
+        }
+        setInterval(spawnObstacle, 1000);
+
+        const starsGeo = new THREE.BufferGeometry();
+        const starsArray = [];
+        for (let i = 0; i < 600; i++) {
+            starsArray.push((Math.random() - 0.5) * 200, (Math.random() * 100), -Math.random() * 200);
+        }
+        starsGeo.setAttribute('position', new THREE.Float32BufferAttribute(starsArray, 3));
+        const starsMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.2 });
+        const starfield = new THREE.Points(starsGeo, starsMat);
+        scene.add(starfield);
+
+        // --- ACTIONS ---
+        function moveLeft() { if (currentLaneIdx > 0) currentLaneIdx--; }
+        function moveRight() { if (currentLaneIdx < 2) currentLaneIdx++; }
+        function jump() { if (!isJumping) { velocityY = 0.5; isJumping = true; } }
+        let slowTimer = 0;
+        function faster() { boostTimer = 180; slowTimer = 0; }
+        function slower() { slowTimer = 180; boostTimer = 0; }
+        function shoot() {
+            const mat = new THREE.LineBasicMaterial({ color: currentTheme.laser_color });
+            const points = [new THREE.Vector3(ship.position.x - 0.5, ship.position.y, ship.position.z), new THREE.Vector3(ship.position.x - 0.5, ship.position.y, ship.position.z - 10)];
+            const points2 = [new THREE.Vector3(ship.position.x + 0.5, ship.position.y, ship.position.z), new THREE.Vector3(ship.position.x + 0.5, ship.position.y, ship.position.z - 10)];
+            
+            const l1 = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), mat);
+            const l2 = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points2), mat);
+            scene.add(l1); scene.add(l2);
+            lasers.push(l1, l2);
+        }
+        function shatter(obstacle) {
+            scene.remove(obstacle.mesh);
+            obstacle.active = false;
+            
+            const pGeo = new THREE.BufferGeometry();
+            const pArr = [];
+            for (let i=0; i<20; i++) pArr.push(obstacle.mesh.position.x, obstacle.mesh.position.y, obstacle.mesh.position.z);
+            pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pArr, 3));
+            const pMat = new THREE.PointsMaterial({ color: currentTheme.grid_color, size: 0.5 });
+            const pMesh = new THREE.Points(pGeo, pMat);
+            scene.add(pMesh);
+            particles.push({ mesh: pMesh, life: 30, v: pArr.map(() => (Math.random()-0.5)*2) });
+        }
+        function restart() {
+            isGameOver = false; score = 0;
+            obstacles.forEach(o => scene.remove(o.mesh)); obstacles.length = 0;
+            currentLaneIdx = 1; ship.position.set(0, 0, 0);
+            boostTimer = 0; slowTimer = 0;
+            document.getElementById('gameOver').style.display = 'none';
+        }
+
+        // --- PUBLIC WEBSOCKET API ---
+        window.morphWorld = function(themeData) {
+            targetTheme = { ...currentTheme, ...themeData };
+            themeLerpProgress = 0.0;
+            if (themeData.world_name) {
+                document.getElementById('themeDisplay').innerText = `SECTOR: ${themeData.world_name.toUpperCase()}`;
+            }
+        };
+
+        // --- CONTROLS ---
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft();
+            if (e.code === 'KeyD' || e.code === 'ArrowRight') moveRight();
+            if (e.code === 'Space') isGameOver ? restart() : jump();
+            if (e.code === 'KeyW' || e.code === 'ArrowUp') faster();
+            if (e.code === 'KeyS' || e.code === 'ArrowDown') slower();
+            if (e.code === 'KeyF') shoot();
+        });
+
+        function connectWS() {
+            const ws = new WebSocket('ws://localhost:8765');
+            ws.onopen = () => console.log('Connected to Vector Runner Orchestrator');
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.action) {
+                    if (data.action === 'left' || data.action === 'move_left') moveLeft();
+                    if (data.action === 'right' || data.action === 'move_right') moveRight();
+                    if (data.action === 'jump') jump();
+                    if (data.action === 'faster' || data.action === 'boost') faster();
+                    if (data.action === 'slower' || data.action === 'slow') slower();
+                    if (data.action === 'shoot') shoot();
+                    if (data.action === 'restart') restart();
+                }
+                if (data.theme) window.morphWorld(data.theme);
+            };
+            ws.onclose = () => setTimeout(connectWS, 2000);
+        }
+        connectWS();
+
+        // --- RENDER LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isGameOver) return;
+
+            // 1. Theme Lerping (90 frames)
+            if (themeLerpProgress < 1.0) {
+                themeLerpProgress += 1/90;
+                if (themeLerpProgress > 1.0) themeLerpProgress = 1.0;
+                
+                const cGrid = new THREE.Color(currentTheme.grid_color).lerp(new THREE.Color(targetTheme.grid_color), themeLerpProgress);
+                const cFog = new THREE.Color(currentTheme.fog_color).lerp(new THREE.Color(targetTheme.fog_color), themeLerpProgress);
+                
+                gridMaterial.color.copy(cGrid);
+                scene.fog.color.copy(cFog);
+                scene.background.copy(cFog);
+                thrusterMat.color.copy(new THREE.Color(currentTheme.laser_color).lerp(new THREE.Color(targetTheme.laser_color), themeLerpProgress));
+                
+                if (themeLerpProgress === 1.0) currentTheme = { ...targetTheme };
+            }
+
+            // 2. Physics & Ship Placement
+            targetX = lanes[currentLaneIdx];
+            ship.position.x += (targetX - ship.position.x) * 0.15;
+            
+            if (isJumping) {
+                ship.position.y += velocityY;
+                velocityY += gravity;
+                if (ship.position.y <= 0) {
+                    ship.position.y = 0;
+                    isJumping = false;
+                }
+            }
+
+            // 3. Speed & FOV Effects (Faster & Slower)
+            if (boostTimer > 0) {
+                boostTimer--;
+                activeSpeed = baseSpeed * 2.0 * currentTheme.speed_multiplier;
+                camera.fov = THREE.MathUtils.lerp(camera.fov, 100, 0.1);
+            } else if (slowTimer > 0) {
+                slowTimer--;
+                activeSpeed = baseSpeed * 0.45 * currentTheme.speed_multiplier;
+                camera.fov = THREE.MathUtils.lerp(camera.fov, 65, 0.1);
+            } else {
+                activeSpeed = baseSpeed * currentTheme.speed_multiplier;
+                camera.fov = THREE.MathUtils.lerp(camera.fov, 75, 0.1);
+            }
+            camera.updateProjectionMatrix();
+
+            // 4. Conveyor Motion (Grid & Stars)
+            gridHelper.position.z += activeSpeed;
+            if (gridHelper.position.z > 10) gridHelper.position.z -= 10;
+
+            const pos = starfield.geometry.attributes.position.array;
+            for(let i=2; i<pos.length; i+=3) {
+                pos[i] += activeSpeed * 2;
+                if (pos[i] > 10) pos[i] = -200;
+            }
+            starfield.geometry.attributes.position.needsUpdate = true;
+
+            // 5. Lasers
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                lasers[i].position.z -= activeSpeed * 5;
+                if (lasers[i].position.z < -200) { scene.remove(lasers[i]); lasers.splice(i, 1); }
+            }
+
+            // 6. Obstacles & Collisions
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const o = obstacles[i];
+                if (!o.active) continue;
+                o.mesh.position.z += activeSpeed;
+                
+                // Ship Collision
+                if (Math.abs(o.mesh.position.z - ship.position.z) < 1.5 && 
+                    Math.abs(o.mesh.position.x - ship.position.x) < 1.5 && 
+                    ship.position.y < 1.5) {
+                    isGameOver = true;
+                    document.getElementById('gameOver').style.display = 'block';
+                }
+
+                // Laser Collision
+                lasers.forEach((l, lIdx) => {
+                    if (Math.abs(o.mesh.position.z - (ship.position.z + l.position.z)) < 4 && Math.abs(o.mesh.position.x - (ship.position.x + l.position.x)) < 1.5) {
+                        shatter(o); scene.remove(l); lasers.splice(lIdx, 1); score += 100;
+                    }
+                });
+
+                if (o.mesh.position.z > 10) {
+                    scene.remove(o.mesh); obstacles.splice(i, 1); score += 10;
+                }
+            }
+
+            // 7. Particle Cleanup
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life--;
+                const arr = p.mesh.geometry.attributes.position.array;
+                for(let j=0; j<arr.length; j+=3) {
+                    arr[j] += p.v[j]*0.2; arr[j+1] += p.v[j+1]*0.2; arr[j+2] += p.v[j+2]*0.2;
+                }
+                p.mesh.geometry.attributes.position.needsUpdate = true;
+                if (p.life <= 0) { scene.remove(p.mesh); particles.splice(i, 1); }
+            }
+
+            document.getElementById('score').innerText = score;
+            renderer.render(scene, camera);
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

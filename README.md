@@ -160,6 +160,23 @@ flowchart TD
 | `“draw a cat”` | Local LLM generates an SVG vector art file and opens it |
 | `“tell me a joke”` / `“roll a die”` / `“flip a coin”` | Built-in conversational utilities |
 
+### 🎮 3D Voice-Reactive Vector Runner (Zero-Interference Game Mode)
+Free Mac Voice features a built-in 3D endless vector runner powered by WebGL (Three.js), sub-second local reflex routing, and generative world shifts:
+
+| Voice Command | Action |
+|---|---|
+| `“Mac, start runner game”` / `“play runner game”` | Fires up Ollama, starts backend orchestrator, and launches 60 FPS WebGL game in Safari |
+| `“left”` / `“right”` | Steers ship lane without saying "Mac" |
+| `“jump”` | Hops over obstacles without saying "Mac" |
+| `“faster”` / `“slower”` | Dynamic 2x turbo boost / 0.45x braking slow-motion |
+| `“shoot”` | Fires twin laser cannons to shatter obstacles |
+| `“change world to [theme]”` | Asynchronously hallucinates 3D palettes via local Qwen (e.g. *"change world to neon matrix"*) |
+| `“Mac, close game”` / `“Hey Mac, quit game”` | Terminates runner orchestrator, closes Safari window, restores standard desktop voice control |
+| `“Mac, <any macOS command>”` | Wake-word override: controls your Mac mid-game without interference (e.g. *"Mac, open notes"*) |
+
+> [!NOTE]
+> **Zero-Interference Game Mode**: While the runner is active, in-game speech (`left`, `jump`, `faster`, `shoot`, `change world...`) is captured exclusively by the game engine in `<1ms`. `free-mac-voice` will **never** trigger macOS accessibility clicks, window movements, or system actions on game words. Saying **"Mac"** or **"Hey Mac"** instantly handshakes back to macOS.
+
 > [!TIP]
 > **Update-Proof Customization**: All spoken shortcuts and custom extensions are saved directly to `~/.config/free-voice/` (outside the git repository). You can pull updates, run `bash upgrade.sh`, or reinstall anytime—your custom phrases, aliases, and shell macros are preserved forever. Developers can also drop custom Python handlers into `~/.config/free-voice/extensions.py` to add arbitrary code.
 
