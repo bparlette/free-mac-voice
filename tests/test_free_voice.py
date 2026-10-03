@@ -3946,3 +3946,40 @@ class TestReviewDocstringSTTEngine(unittest.TestCase):
     def test_docstring_mentions_mlx_whisper(self):
         self.assertIn("mlx-whisper", fv.__doc__)
 
+
+class TestNativeWindowAndHUD(unittest.TestCase):
+    def test_act_snap_window_uses_native_axuielement(self):
+        with mock.patch("free_voice._native_set_front_window_bounds", return_value=True) as mock_native, \
+             mock.patch("free_voice.applescript") as mock_as, \
+             mock.patch("free_voice.say") as mock_say:
+            fv.act_snap_window("left")
+            mock_native.assert_called_once()
+            mock_as.assert_not_called()
+            mock_say.assert_called_once_with("Snapped left")
+
+    def test_act_snap_window_falls_back_to_applescript(self):
+        with mock.patch("free_voice._native_set_front_window_bounds", return_value=False) as mock_native, \
+             mock.patch("free_voice.applescript") as mock_as, \
+             mock.patch("free_voice.say") as mock_say:
+            fv.act_snap_window("right")
+            mock_native.assert_called_once()
+            mock_as.assert_called_once()
+            mock_say.assert_called_once_with("Snapped right")
+
+    def test_act_move_next_display_uses_hammerspoon(self):
+        with mock.patch("free_voice._notify_hammerspoon_display_next", return_value=True) as mock_hs, \
+             mock.patch("free_voice.applescript") as mock_as, \
+             mock.patch("free_voice.say") as mock_say:
+            fv.act_move_next_display()
+            mock_hs.assert_called_once()
+            mock_as.assert_not_called()
+            mock_say.assert_called_once_with("Moved to next display")
+
+    def test_notify_hud_safe_when_offline(self):
+        # Should not raise under any circumstances
+        try:
+            fv.notify_hud("Test message", "action")
+        except Exception as e:
+            self.fail(f"notify_hud raised unexpectedly: {e}")
+
+

@@ -195,6 +195,53 @@ def heartbeat_state(wake_word: str = "") -> None:
         update_state(state, **kw)
 
 
+VOICE_ENABLE_HUD = os.environ.get("VOICE_ENABLE_HUD", "1").lower() in ("1", "true", "yes")
+_IN_TESTS = "unittest" in sys.modules or "pytest" in sys.modules
+
+
+def notify_hud(text: str, state: str = "action") -> None:
+    """Send an asynchronous notification to the on-screen HUD (e.g. Hammerspoon).
+
+    Non-blocking: fire-and-forget in a daemon thread. Silently ignores if no HUD is running.
+    """
+    if not VOICE_ENABLE_HUD or DRY_RUN or _IN_TESTS or not text:
+        return
+
+    def _send():
+        try:
+            payload = json.dumps({"text": text, "state": state}).encode("utf-8")
+            req = urllib.request.Request(
+                "http://127.0.0.1:19825/hud",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=0.08):
+                pass
+        except Exception:
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def _notify_hammerspoon_display_next() -> bool:
+    """Ask Hammerspoon to move the focused window to the next display via its HTTP API."""
+    if not VOICE_ENABLE_HUD or DRY_RUN or _IN_TESTS:
+        return False
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:19825/display/next",
+            data=b"",
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=0.15) as resp:
+            if resp.status == 200:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
     """Check if text begins with the wake word (e.g. 'Mac', 'Hey Mac', 'Mack').
 
@@ -449,6 +496,7 @@ def say(text: str, blocking: bool = False, voice: str | None = None) -> None:
     Pass blocking=True when the full prompt must be heard before continuing."""
     global _say_proc
     log(f"say: {text}")
+    notify_hud(text, "action")
     if DRY_RUN:
         return
     try:
@@ -1535,6 +1583,51 @@ def get_screen_bounds() -> tuple[int, int, int, int]:
         return 0, 30, 1920, 1050
 
 
+def _native_set_front_window_bounds(pos: tuple[int, int], size: tuple[int, int]) -> bool:
+    """Set position and size of the frontmost focused window directly in-process via PyObjC AXUIElement.
+
+    Bypasses /usr/bin/osascript System Events, reducing window snapping latency from ~150ms
+    to ~1-2ms, and functioning reliably on non-AppleScript apps (Electron, browsers, terminals).
+    Returns True on success, or False to fall back to AppleScript.
+    """
+    try:
+        from AppKit import NSWorkspace, CGPoint, CGSize
+        from ApplicationServices import (
+            AXUIElementCreateApplication,
+            AXUIElementCopyAttributeValue,
+            AXUIElementSetAttributeValue,
+            AXValueCreate,
+            kAXPositionAttribute,
+            kAXSizeAttribute,
+            kAXFocusedWindowAttribute,
+            kAXWindowsAttribute,
+            kAXValueTypeCGPoint,
+            kAXValueTypeCGSize,
+        )
+        ws = NSWorkspace.sharedWorkspace()
+        front = ws.frontmostApplication()
+        if not front:
+            return False
+        app_el = AXUIElementCreateApplication(front.processIdentifier())
+        err, win = AXUIElementCopyAttributeValue(app_el, kAXFocusedWindowAttribute, None)
+        if err != 0 or not win:
+            err, wins = AXUIElementCopyAttributeValue(app_el, kAXWindowsAttribute, None)
+            if err == 0 and wins:
+                win = wins[0]
+        if not win:
+            return False
+
+        new_pos = AXValueCreate(kAXValueTypeCGPoint, CGPoint(pos[0], pos[1]))
+        new_size = AXValueCreate(kAXValueTypeCGSize, CGSize(size[0], size[1]))
+        AXUIElementSetAttributeValue(win, kAXPositionAttribute, new_pos)
+        AXUIElementSetAttributeValue(win, kAXSizeAttribute, new_size)
+        AXUIElementSetAttributeValue(win, kAXPositionAttribute, new_pos)
+        return True
+    except Exception as e:
+        log(f"native window bounds failed ({e}), falling back to AppleScript")
+        return False
+
+
 def act_snap_window(side: str) -> None:
     """Snap frontmost window to left half, right half, maximize, or center."""
     x, y, w, h = get_screen_bounds()
@@ -1565,15 +1658,20 @@ def act_snap_window(side: str) -> None:
     else:
         say("I don't know that position")
         return
-    applescript(
-        'tell application "System Events" to tell (first application process whose frontmost is true) to '
-        f'tell window 1 to set {{position, size}} to {{{{{pos[0]}, {pos[1]}}}, {{{size[0]}, {size[1]}}}}}'
-    )
+
+    if not _native_set_front_window_bounds(pos, size):
+        applescript(
+            'tell application "System Events" to tell (first application process whose frontmost is true) to '
+            f'tell window 1 to set {{position, size}} to {{{{{pos[0]}, {pos[1]}}}, {{{size[0]}, {size[1]}}}}}'
+        )
     say(label)
 
 
 def act_move_next_display() -> None:
     """Move frontmost window to the next connected display."""
+    if _notify_hammerspoon_display_next():
+        say("Moved to next display")
+        return
     try:
         from AppKit import NSScreen
         screens = NSScreen.screens()
@@ -1583,13 +1681,49 @@ def act_move_next_display() -> None:
         s0, s1 = screens[0].frame(), screens[1].frame()
         dx = int(s1.origin.x - s0.origin.x)
         dy = int(s1.origin.y - s0.origin.y)
-        applescript(
-            'tell application "System Events" to tell (first application process whose frontmost is true) to '
-            'tell window 1\n'
-            '  set {wx, wy} to position\n'
-            f'  set position to {{wx + ({dx}), wy + ({dy})}}\n'
-            'end tell'
-        )
+
+        # Attempt native PyObjC move first
+        moved = False
+        try:
+            from AppKit import NSWorkspace, CGPoint
+            from ApplicationServices import (
+                AXUIElementCreateApplication,
+                AXUIElementCopyAttributeValue,
+                AXUIElementSetAttributeValue,
+                AXValueCreate,
+                AXValueGetValue,
+                kAXPositionAttribute,
+                kAXFocusedWindowAttribute,
+                kAXWindowsAttribute,
+                kAXValueTypeCGPoint,
+            )
+            ws = NSWorkspace.sharedWorkspace()
+            front = ws.frontmostApplication()
+            if front:
+                app_el = AXUIElementCreateApplication(front.processIdentifier())
+                err, win = AXUIElementCopyAttributeValue(app_el, kAXFocusedWindowAttribute, None)
+                if err != 0 or not win:
+                    err, wins = AXUIElementCopyAttributeValue(app_el, kAXWindowsAttribute, None)
+                    if err == 0 and wins:
+                        win = wins[0]
+                if win:
+                    err_pos, pos_val = AXUIElementCopyAttributeValue(win, kAXPositionAttribute, None)
+                    if err_pos == 0 and pos_val:
+                        _, pt = AXValueGetValue(pos_val, kAXValueTypeCGPoint, None)
+                        new_pt = AXValueCreate(kAXValueTypeCGPoint, CGPoint(pt.x + dx, pt.y + dy))
+                        AXUIElementSetAttributeValue(win, kAXPositionAttribute, new_pt)
+                        moved = True
+        except Exception as e:
+            log(f"native display move failed: {e}")
+
+        if not moved:
+            applescript(
+                'tell application "System Events" to tell (first application process whose frontmost is true) to '
+                'tell window 1\n'
+                '  set {wx, wy} to position\n'
+                f'  set position to {{wx + ({dx}), wy + ({dy})}}\n'
+                'end tell'
+            )
         say("Moved to next display")
     except Exception as e:
         log(f"move to next display failed: {e}")
@@ -5497,6 +5631,7 @@ def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
     is_cmd, gate_conf = is_voice_command(text)
     if not is_cmd:
         log(f"Tier 0.5b dropped non-command: {text!r} (gate conf={gate_conf:.2f})")
+        notify_hud(f'Ignored: "{text}"', "rejected")
         return None
 
     # Step 2 & 3: Fast decision model (/v1/systemone with 8-choice criteria)
@@ -6151,6 +6286,7 @@ def handle_command(text: str, confirm_audio_fn=None,
 
     log(f"heard: {t!r}")
     update_state("processing", command=t)
+    notify_hud(f'"{t}"', "transcribed")
 
     # Tier 0: instant regex (final transcript — no gating needed)
     r = route(t, partial=False)
