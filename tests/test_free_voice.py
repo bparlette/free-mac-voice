@@ -3983,3 +3983,47 @@ class TestNativeWindowAndHUD(unittest.TestCase):
             self.fail(f"notify_hud raised unexpectedly: {e}")
 
 
+class TestOpusFindingsFixes(unittest.TestCase):
+    def test_is_voice_command_fails_closed_on_error(self):
+        with mock.patch("urllib.request.urlopen", side_effect=RuntimeError("connection refused")):
+            is_cmd, prob = fv.is_voice_command("so anyway what did you think about that")
+            self.assertFalse(is_cmd)
+            self.assertEqual(prob, 0.0)
+
+    def test_wake_window_followup_blocked_by_command_gate(self):
+        # Simulate active wake window
+        now = fv.time.time()
+        fv._wake_window_until = now + 15.0
+        fv._wake_window_opened_at = now
+
+        with mock.patch("free_voice.is_voice_command", return_value=(False, 0.2)) as mock_gate:
+            res = fv.handle_command("I was just talking to someone on the phone", require_wake_word=True)
+            self.assertFalse(res)
+            mock_gate.assert_called_once()
+
+    def test_ask_before_acting_confirmed(self):
+        calls = []
+        with mock.patch("free_voice.tier05_route", return_value=("open_app", {"app": "Safari"}, 0.60)), \
+             mock.patch("free_voice.confirm_spoken", return_value=True) as mock_conf, \
+             mock.patch("free_voice.dispatch_tier1", side_effect=lambda a, p, d: calls.append((a, p))):
+            fake_audio_fn = lambda d: b""
+            handled = fv.handle_command("maybe look into safari", confirm_audio_fn=fake_audio_fn)
+            self.assertTrue(handled)
+            mock_conf.assert_called_once_with("open Safari", fake_audio_fn)
+            self.assertEqual(calls, [("open_app", {"app": "Safari"})])
+
+    def test_ask_before_acting_cancelled(self):
+        calls = []
+        with mock.patch("free_voice.tier05_route", return_value=("open_app", {"app": "Safari"}, 0.60)), \
+             mock.patch("free_voice.confirm_spoken", return_value=False) as mock_conf, \
+             mock.patch("free_voice.say") as mock_say, \
+             mock.patch("free_voice.dispatch_tier1", side_effect=lambda a, p, d: calls.append((a, p))):
+            fake_audio_fn = lambda d: b""
+            handled = fv.handle_command("maybe look into safari", confirm_audio_fn=fake_audio_fn)
+            self.assertTrue(handled)
+            mock_conf.assert_called_once()
+            mock_say.assert_called_with("Action cancelled")
+            self.assertEqual(calls, [])
+
+
+

@@ -166,6 +166,7 @@ local server = hs.httpserver.new(function(method, path, headers, body)
 end)
 
 server:setPort(19825)
+server:setInterface("localhost")
 server:start()
 
 hs.notify.new({

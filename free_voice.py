@@ -3386,6 +3386,27 @@ def confirm_spoken(action_desc: str, audio_fn) -> bool:
     return bool(re.search(r"\b(yes|confirm|confirmed|do it|proceed|affirmative|yep|yeah)\b", text))
 
 
+def describe_action_for_prompt(action: str, params: dict) -> str:
+    """Format action and params into a concise, natural spoken confirmation phrase."""
+    if action == "open_app":
+        return f"open {params.get('app', 'app')}"
+    elif action == "quit_app":
+        return f"quit {params.get('app', 'app')}"
+    elif action == "switch_app":
+        return f"switch to {params.get('app', 'app')}"
+    elif action == "set_volume":
+        if "level" in params:
+            return f"set volume to {params['level']}"
+        return f"turn volume {params.get('direction', 'down')}"
+    elif action == "media":
+        return f"{params.get('op', 'media action')}"
+    elif action == "timer":
+        return f"set timer for {params.get('minutes', 5)} minutes"
+    elif action == "web_search":
+        return f"search the web for {params.get('query', '')}"
+    return action.replace("_", " ")
+
+
 
 # --------------------------------- continuous dictation, macros, fun stuff
 
@@ -5561,7 +5582,7 @@ _DECISION_CRITERIA = {
 
 _COMMAND_VERB_PREFIX_RE = re.compile(
     r"^(?:please\s+|can you\s+|could you\s+|would you\s+|go ahead and\s+|i want you to\s+|hey mac\s+|hay mac\s+|mac\s+)?"
-    r"(?:open|launch|start|switch|change|focus|quit|close|kill|set|turn|mute|unmute|play|pause|stop|skip|next|prev|previous|rewind|fast forward|search|google|find|browse|look up|show|bring up|watch|stream|timer|countdown|alarm|remind|snap|maximize|minimize|center|lock|sleep|restart|shutdown|type|draw|sketch|render|take a screenshot|screenshot|(?:john|call)\s+(?:an?\s+)?(?:askey|ascii))\b",
+    r"(?:open|launch|start|switch|change|focus|quit|close|kill|set|turn|mute|unmute|play|pause|stop|skip|next|prev|previous|rewind|fast forward|search|google|find|browse|look up|show|bring up|watch|stream|timer|countdown|alarm|remind|snap|maximize|minimize|center|lock|sleep|restart|shutdown|type|draw|sketch|render|take a screenshot|screenshot|dismiss|never mind|that's all|stop listening|peace out|cancel|(?:john|call)\s+(?:an?\s+)?(?:askey|ascii))\b",
     re.IGNORECASE,
 )
 
@@ -5616,9 +5637,9 @@ def is_voice_command(text: str) -> tuple[bool, float]:
         log(f"Command gate ({gate_model}): choice={choice!r} cmd_prob={cmd_prob:.2f} -> {'ALLOW' if is_cmd else 'REJECT'}")
         return is_cmd, cmd_prob
     except Exception as e:
-        # If gate model endpoint is unreachable or model doesn't support systemone, fail-open
-        log(f"Command gate ({gate_model}) fallback: {e}")
-        return True, 1.0
+        # If gate model endpoint is unreachable or errors, fail-closed to prevent ambient TV false triggers
+        log(f"Command gate ({gate_model}) fallback: {e} -> failing closed")
+        return False, 0.0
 
 
 def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
@@ -6272,6 +6293,12 @@ def handle_command(text: str, confirm_audio_fn=None,
                     _wake_window_until = min(now + WAKE_WINDOW_SEC, (_wake_window_opened_at or now) + WAKE_WINDOW_MAX_CAP_SEC)
                 rem = max(0.0, _wake_window_until - now)
                 log(f"within wake window ({rem:.1f}s remaining): {t!r}")
+                # Command gate protection: ensure ambient follow-up speech is an actual command before routing
+                is_cmd, gate_conf = is_voice_command(t)
+                if not is_cmd:
+                    log(f"wake window follow-up dropped by command gate: {t!r} (conf={gate_conf:.2f})")
+                    notify_hud(f'Ignored: "{t}"', "rejected")
+                    return False
             else:
                 log(f"ignored (no wake word {VOICE_WAKE_WORD!r}): {t!r}")
                 return False
@@ -6357,10 +6384,16 @@ def handle_command(text: str, confirm_audio_fn=None,
                 return True
 
 
-    # Tier 0.5: embedding cosine-match + fast decision model (qwen2.5:1.5b)
+    # Tier 0.5: embedding cosine-match + fast decision model (tev1:0.8b / qwen2.5:1.5b)
     t05 = tier05_route(t)
     if t05:
         action, params, conf = t05
+        # Ask before acting when router is unsure (medium confidence 0.50 <= conf < 0.70)
+        if 0.50 <= conf < 0.70 and confirm_audio_fn is not None:
+            desc = describe_action_for_prompt(action, params)
+            if not confirm_spoken(desc, confirm_audio_fn):
+                say("Action cancelled")
+                return True
         try:
             dispatch_tier1(action, params, allow_destructive)
         except Exception as e:  # noqa: BLE001
