@@ -801,7 +801,7 @@ def transcribe(audio) -> str:
             audio,
             beam_size=1,
             vad_filter=True,
-            initial_prompt="Mac, Hey Mac, turn on the TV, turn off the TV, switch to computer.",
+            initial_prompt="Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume.",
         )
         return " ".join(s.text for s in segments).strip()
 
@@ -814,7 +814,7 @@ def transcribe(audio) -> str:
             res = mlx_whisper.transcribe(
                 audio,
                 path_or_hf_repo=repo,
-                initial_prompt="Mac, Hey Mac, turn on the TV, turn off the TV, switch to computer.",
+                initial_prompt="Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume.",
             )
             return str(res.get("text", "")).strip()
         except Exception as e:
@@ -828,7 +828,7 @@ def transcribe(audio) -> str:
         audio,
         beam_size=1,
         vad_filter=True,
-        initial_prompt="Mac, Hey Mac, turn on the TV, turn off the TV, switch to computer.",
+        initial_prompt="Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume.",
     )
     text = " ".join(s.text for s in segments).strip()
     return text
@@ -1104,6 +1104,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.35, wake_word: str =
 _APP_ALIASES = {
     "chrome": "Google Chrome", "google chrome": "Google Chrome",
     "safari": "Safari", "firefox": "Firefox", "edge": "Microsoft Edge", "browser": "Safari",
+    "fire": "Safari", "the fire": "Safari", "safire": "Safari", "so fire": "Safari",
     "notes": "Notes", "apple notes": "Notes", "mail": "Mail", "apple mail": "Mail", "email": "Mail",
     "messages": "Messages", "imessage": "Messages", "imessages": "Messages", "text messages": "Messages",
     "facetime": "FaceTime", "photos": "Photos", "music": "Music", "itunes": "Music", "apple music": "Music",
@@ -1433,6 +1434,31 @@ def act_minimize(name: str = "") -> None:
         )
         say(f"Minimizing {app}")
         return
+    # If window is fullscreen, macOS blocks Cmd+M; un-fullscreen first
+    try:
+        from AppKit import NSWorkspace
+        from ApplicationServices import (
+            AXUIElementCreateApplication,
+            AXUIElementCopyAttributeValue,
+            AXUIElementSetAttributeValue,
+            kAXFocusedWindowAttribute,
+            kAXWindowsAttribute,
+        )
+        ws = NSWorkspace.sharedWorkspace()
+        front = ws.frontmostApplication()
+        if front:
+            app_el = AXUIElementCreateApplication(front.processIdentifier())
+            err, win = AXUIElementCopyAttributeValue(app_el, kAXFocusedWindowAttribute, None)
+            if err != 0 or not win:
+                err, wins = AXUIElementCopyAttributeValue(app_el, kAXWindowsAttribute, None)
+                win = wins[0] if (err == 0 and wins) else None
+            if win:
+                err_fs, is_fs = AXUIElementCopyAttributeValue(win, "AXFullScreen", None)
+                if err_fs == 0 and is_fs:
+                    AXUIElementSetAttributeValue(win, "AXFullScreen", False)
+                    time.sleep(0.3)
+    except Exception:
+        pass
     act_keystroke("m", "command down")
     say("Minimized")
 
@@ -1640,9 +1666,11 @@ def _native_set_front_window_bounds(pos: tuple[int, int], size: tuple[int, int])
 
         new_pos = AXValueCreate(kAXValueTypeCGPoint, CGPoint(pos[0], pos[1]))
         new_size = AXValueCreate(kAXValueTypeCGSize, CGSize(size[0], size[1]))
-        AXUIElementSetAttributeValue(win, kAXPositionAttribute, new_pos)
-        AXUIElementSetAttributeValue(win, kAXSizeAttribute, new_size)
-        AXUIElementSetAttributeValue(win, kAXPositionAttribute, new_pos)
+        err1 = AXUIElementSetAttributeValue(win, kAXPositionAttribute, new_pos)
+        err2 = AXUIElementSetAttributeValue(win, kAXSizeAttribute, new_size)
+        err3 = AXUIElementSetAttributeValue(win, kAXPositionAttribute, new_pos)
+        if err2 != 0 or (err1 != 0 and err3 != 0):
+            return False
         return True
     except Exception as e:
         log(f"native window bounds failed ({e}), falling back to AppleScript")
@@ -4357,8 +4385,8 @@ _p(r"^open trash$", "open_trash", True)
 _p(r"^(?:watch|stream) (youtube|netflix|hulu|disney(?: plus)?|max|hbo|prime(?: video)?|apple tv)$", "watch_stream", True)
 _p(r"^(?:open|launch) (youtube|netflix|hulu|disney(?: plus)?|max|hbo|prime(?: video)?)$", "watch_stream", True)
 _p(r"^(?:search|find on) youtube (?:for )?(.+)$", "search_youtube")
-_p(r"^(open|launch|start) the (.+?) (app|application)$", "open_app", True)
-_p(r"^(open|launch|start) (.+)$", "open_app", True)
+_p(r"^(open|opens|launch|start) the (.+?) (app|application)$", "open_app", True)
+_p(r"^(open|opens|launch|start) (.+)$", "open_app", True)
 _p(r"^(next app|app forward)$", "next_app", True)
 _p(r"^(previous app|prev app|app back)$", "prev_app", True)
 _p(r"^(switch to|focus|bring up) (.+)$", "switch_app", True)
