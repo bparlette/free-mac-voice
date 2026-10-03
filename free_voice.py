@@ -104,8 +104,15 @@ VOICE_STT_ENGINE = os.environ.get("VOICE_STT_ENGINE", "mlx-whisper").strip().low
 # routing, Q&A, AND screen understanding. 8GB minis: use qwen3-vl:4b instead.
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
-# Local fast decision model for sub-100ms intent classification (qwen2.5:1.5b by default)
-OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "qwen2.5:1.5b")
+# Local fast decision model for sub-100ms intent classification (tev1:0.8b by default, or qwen2.5:1.5b)
+OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "tev1:0.8b").strip()
+# Confidence threshold for decision routing: 0.7 for tev1:0.8b, 0.5 for qwen2.5:1.5b
+DECISION_MIN_CONFIDENCE = float(os.environ.get("DECISION_MIN_CONFIDENCE", "0.7" if "tev1" in OLLAMA_DECISION_MODEL.lower() else "0.5"))
+# Model for multi-action sequential planning in JSON chat mode (generative model required)
+OLLAMA_PLANNER_MODEL = os.environ.get("OLLAMA_PLANNER_MODEL", "qwen2.5:1.5b").strip()
+# Pre-routing voice command gate (1=enabled, 0=disabled)
+VOICE_COMMAND_GATE = os.environ.get("VOICE_COMMAND_GATE", "1").strip().lower() in ("1", "true", "yes")
+VOICE_COMMAND_GATE_MODEL = os.environ.get("VOICE_COMMAND_GATE_MODEL", "tev1:0.8b").strip()
 # Fast text model for SVG vector generation (qwen2.5:1.5b by default: ~2s generation, zero thinking overhead)
 OLLAMA_DRAW_MODEL = os.environ.get("OLLAMA_DRAW_MODEL", "qwen2.5:1.5b")
 OLLAMA_TIER1 = os.environ.get("OLLAMA_TIER1", "1") == "1"
@@ -5391,21 +5398,15 @@ def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, f
 
 
 _TIER05_DECISION_SYSTEM = (
-    "You are a voice intent classifier for a Mac assistant. "
-    "Classify the user's spoken command into exactly ONE action and extract parameters into JSON. "
+    "You are a fast voice intent classifier for a Mac assistant. "
+    "Classify the spoken command into exactly ONE action and extract parameters into JSON. "
     "Handle acoustic mishearings from speech-to-text gracefully (e.g. 'john askey' -> draw_ascii, 'call ascii' -> draw_ascii). "
     "Allowed actions: "
-    "draw_ascii {subject: string}, draw_svg {subject: string}, ascii_art {}, "
-    "open_app {app: string}, switch_app {app: string}, quit_app {app: string}, kill_app {app: string}, "
-    "close_window {}, close_all_windows {}, snap_left {}, snap_right {}, maximize_window {}, center_window {}, "
-    "minimize {app: optional string}, hide {app: optional string}, "
-    "new_tab {}, close_tab {}, reopen_tab {}, refresh_page {}, nav_back {}, nav_forward {}, "
-    "scroll_down {}, scroll_up {}, type_text {text: string}, web_search {query: string}, open_url {url: string}, "
-    "set_volume {level: 0-100 or direction: 'up'|'down'}, mute_toggle {}, media {op: 'play'|'pause'|'next'|'previous'}, "
-    "timer {amount: number, unit: 'seconds'|'minutes'|'hours'}, dark_mode {on: boolean}, wifi {on: boolean}, "
-    "screenshot {target: 'full'|'window'|'selection'}, lock {}, sleep {}, "
-    "status {}, dismiss {}, help {}, calculate {expr: string}. "
-    "If it is small talk, general knowledge question, or not a Mac command, reply: "
+    "open_app {app: string}, switch_app {app: string}, quit_app {app: string}, "
+    "set_volume {level: 0-100 or direction: 'up'|'down'}, media {op: 'play'|'pause'|'next'|'previous'}, "
+    "timer {amount: number, unit: 'seconds'|'minutes'|'hours'}, web_search {query: string}, "
+    "draw_ascii {subject: string}, draw_svg {subject: string}. "
+    "If it is small talk, general question, or not an action, reply: "
     '{"action": "none", "params": {}, "confidence": 0.0}. '
     "Reply with ONLY valid JSON: {\"action\": \"...\", \"params\": {...}, \"confidence\": 0.0-1.0}."
 )
@@ -5419,18 +5420,87 @@ _DECISION_CRITERIA = {
     "media": "Play, pause, skip, next, or control music/video playback",
     "timer": "Set a timer, countdown, or reminder",
     "web_search": "Search the web or Google for a topic",
+    "draw_ascii": "Draw, generate, or display ASCII text art or pictures (including 'john askey')",
+    "draw_svg": "Draw, sketch, or generate a vector drawing or illustration",
     "unknown": "None of the above, complex question, or ambiguous",
 }
 
+_COMMAND_VERB_PREFIX_RE = re.compile(
+    r"^(?:please\s+|can you\s+|could you\s+|would you\s+|go ahead and\s+|i want you to\s+|hey mac\s+|hay mac\s+|mac\s+)?"
+    r"(?:open|launch|start|switch|change|focus|quit|close|kill|set|turn|mute|unmute|play|pause|stop|skip|next|prev|previous|rewind|fast forward|search|google|find|browse|look up|show|bring up|watch|stream|timer|countdown|alarm|remind|snap|maximize|minimize|center|lock|sleep|restart|shutdown|type|draw|sketch|render|take a screenshot|screenshot|(?:john|call)\s+(?:an?\s+)?(?:askey|ascii))\b",
+    re.IGNORECASE,
+)
+
+
+def is_voice_command(text: str) -> tuple[bool, float]:
+    """Step 1 Gate: Fast pre-routing check to filter out ambient conversation,
+    TV dialogue, and statements before invoking the intent router.
+    Returns (is_command, confidence).
+    """
+    if not VOICE_COMMAND_GATE:
+        return True, 1.0
+
+    clean = text.strip()
+    if not clean:
+        return False, 0.0
+
+    # Fast path (0ms): Obvious imperative command verbs bypass model check
+    if _COMMAND_VERB_PREFIX_RE.search(clean):
+        return True, 1.0
+
+    # Decision model gate check via /v1/systemone
+    gate_model = VOICE_COMMAND_GATE_MODEL or OLLAMA_DECISION_MODEL
+    url = f"{OLLAMA_HOST}/v1/systemone"
+    payload = {
+        "model": gate_model,
+        "state": clean,
+        "questions": {
+            "is_command": {
+                "type": "choice",
+                "instructions": "Is this spoken phrase an imperative command or action directed at a computer assistant?",
+                "criteria": {
+                    "command": "An instruction or command for the computer to perform an action (e.g. open an app, adjust volume, search, play music, set timer)",
+                    "none": "Casual speech, statement, question, TV/podcast dialogue, or not asking the assistant to take an action",
+                },
+            }
+        },
+    }
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=3) as r:
+            data = json.load(r)
+        ans = data.get("answers", {}).get("is_command")
+        if not ans:
+            return True, 1.0
+        choice = ans.get("choice")
+        probs = ans.get("probabilities", {})
+        cmd_prob = float(probs.get("command", 0.0))
+        is_cmd = (choice == "command") and (cmd_prob >= 0.5)
+        log(f"Command gate ({gate_model}): choice={choice!r} cmd_prob={cmd_prob:.2f} -> {'ALLOW' if is_cmd else 'REJECT'}")
+        return is_cmd, cmd_prob
+    except Exception as e:
+        # If gate model endpoint is unreachable or model doesn't support systemone, fail-open
+        log(f"Command gate ({gate_model}) fallback: {e}")
+        return True, 1.0
+
 
 def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
-    """Step (b): Fast decision model (qwen2.5:1.5b) in JSON mode for intent & slot classification."""
+    """Fast decision model (tev1:0.8b or qwen2.5:1.5b) for intent & slot classification."""
     global _decision_ok
     if not OLLAMA_DECISION_MODEL or _decision_ok is False:
         return None
 
-    # Backward compatibility: if OLLAMA_DECISION_MODEL is tev1:0.8b, try /v1/systemone first
-    if "tev1" in OLLAMA_DECISION_MODEL.lower():
+    # Step 1: Pre-routing Command Gate (rejects background chatter & TV audio)
+    is_cmd, gate_conf = is_voice_command(text)
+    if not is_cmd:
+        log(f"Tier 0.5b dropped non-command: {text!r} (gate conf={gate_conf:.2f})")
+        return None
+
+    # Step 2 & 3: Fast decision model (/v1/systemone with 8-choice criteria)
+    if any(k in OLLAMA_DECISION_MODEL.lower() for k in ("tev1", "julia", "laya", "kev")):
         url = f"{OLLAMA_HOST}/v1/systemone"
         payload = {
             "model": OLLAMA_DECISION_MODEL,
@@ -5453,14 +5523,21 @@ def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
             _decision_ok = True
             ans = data.get("answers", {}).get("action", {})
             choice = ans.get("choice")
-            if choice and choice != "unknown":
+            if choice and choice not in ("unknown", "none"):
                 prob = float(ans.get("probabilities", {}).get(choice, 0.0))
-                if prob >= TIER1_MIN_CONFIDENCE:
-                    return choice, _extract_intent_params(choice, text), prob
-        except Exception:
+                min_conf = DECISION_MIN_CONFIDENCE
+                if prob >= min_conf:
+                    params = _extract_intent_params(choice, text)
+                    log(f"Tier 0.5b ({OLLAMA_DECISION_MODEL}) -> {choice} {params} prob={prob:.2f}")
+                    return choice, params, prob
+                else:
+                    log(f"Tier 0.5b ({OLLAMA_DECISION_MODEL}) low confidence: {choice} prob={prob:.2f} < {min_conf:.2f}")
+            return None
+        except Exception as e:
+            log(f"Tier 0.5b decision model unreachable ({OLLAMA_DECISION_MODEL}): {e}")
             pass
 
-    # Standard Ollama JSON mode for qwen2.5:1.5b
+    # Standard Ollama JSON mode for qwen2.5:1.5b (fallback)
     t0 = time.time()
     body = {
         "model": OLLAMA_DECISION_MODEL,
@@ -5501,7 +5578,8 @@ def ollama_decision_route(text: str) -> tuple[str, dict, float] | None:
     params = parsed.get("params", {}) or {}
 
     log(f"Tier 0.5b ({OLLAMA_DECISION_MODEL}) -> {action} {params} conf={conf:.2f} in {dt:.2f}s")
-    if action == "none" or conf < 0.5:
+    min_conf = DECISION_MIN_CONFIDENCE
+    if action in ("none", "unknown") or conf < min_conf:
         return None
     return action, params, conf
 
@@ -5541,12 +5619,13 @@ _MULTI_ACTION_PLANNER_SYSTEM = (
 
 
 def ollama_multi_action_plan(text: str) -> list[dict] | None:
-    """Use fast decision model (qwen2.5:1.5b) to decompose complex multi-step prompts into actions."""
+    """Use fast planner model (qwen2.5:1.5b) to decompose complex multi-step prompts into actions."""
     global _decision_ok
-    if not OLLAMA_DECISION_MODEL or _decision_ok is False:
+    if not OLLAMA_PLANNER_MODEL or _decision_ok is False:
         return None
+    planner_model = OLLAMA_PLANNER_MODEL
     body = {
-        "model": OLLAMA_DECISION_MODEL,
+        "model": planner_model,
         "format": "json",
         "stream": False,
         "keep_alive": "60m",

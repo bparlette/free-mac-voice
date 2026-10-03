@@ -234,6 +234,7 @@ class TestChaining(Base):
         opened = []
         with mock.patch.object(fv, "act_open_app", lambda n: opened.append(n)), \
              mock.patch.object(fv, "ollama_route", return_value=None), \
+             mock.patch.object(fv, "ollama_multi_action_plan", return_value=None), \
              mock.patch("time.sleep"):
             # second half matches nothing -> NOTHING runs, not even part one
             fv.handle_command("open notes and zzzqqq nonsense", quiet_miss=True)
@@ -2652,6 +2653,51 @@ class TestDecisionRouter(Base):
             mock_url.return_value = resp_mock
 
             res = fv.ollama_decision_route("what is the capital of France")
+            self.assertIsNone(res)
+
+    def test_is_voice_command_fast_path(self):
+        self.assertTrue(fv.is_voice_command("open safari")[0])
+        self.assertTrue(fv.is_voice_command("please turn up the volume")[0])
+        self.assertTrue(fv.is_voice_command("hey mac snap left")[0])
+
+    def test_is_voice_command_gate_rejects_chatter(self):
+        fake_gate_resp = {
+            "answers": {
+                "is_command": {
+                    "choice": "none",
+                    "probabilities": {"command": 0.25, "none": 0.75},
+                }
+            }
+        }
+        with mock.patch("urllib.request.urlopen") as mock_url:
+            resp_mock = mock.MagicMock()
+            resp_mock.read.return_value = json.dumps(fake_gate_resp).encode()
+            resp_mock.__enter__.return_value = resp_mock
+            mock_url.return_value = resp_mock
+
+            is_cmd, prob = fv.is_voice_command("did you see that news story yesterday")
+            self.assertFalse(is_cmd)
+            self.assertAlmostEqual(prob, 0.25)
+
+    def test_decision_route_rejects_below_threshold(self):
+        fv.OLLAMA_DECISION_MODEL = "tev1:0.8b"
+        fv.DECISION_MIN_CONFIDENCE = 0.7
+        fake_resp = {
+            "answers": {
+                "action": {
+                    "choice": "web_search",
+                    "probabilities": {"web_search": 0.55},
+                }
+            }
+        }
+        with mock.patch("urllib.request.urlopen") as mock_url:
+            resp_mock = mock.MagicMock()
+            resp_mock.read.return_value = json.dumps(fake_resp).encode()
+            resp_mock.__enter__.return_value = resp_mock
+            mock_url.return_value = resp_mock
+
+            # 0.55 is below 0.7 threshold -> should reject and return None
+            res = fv.ollama_decision_route("search for something weird")
             self.assertIsNone(res)
 
 
