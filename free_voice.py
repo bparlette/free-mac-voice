@@ -204,11 +204,11 @@ def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
         return bool(t), t
     w = wake_word.strip().lower()
 
-    # Greetings can be followed by commas or spaces: "Hey, Mac", "Hello Mac", "Okay, Mac"
-    greeting = r"(?:(?:hey|hi|hello|ok|okay|yo)[,\s]+)*"
+    # Greetings can be followed by commas or spaces, or merged: "Hey, Mac", "Hay Mac", "And Mac", "heymac"
+    greeting = r"(?:(?:hey|hay|hi|hello|ok|okay|yo|ay|ey|and|a|an)[,\s]*)*"
     if w == "mac":
-        # Handle "mac", "mack", and common Whisper phoneme variants ("matt", "max", "mark", "match")
-        target = r"(?:(?:mac|mack|matt|max|mark|match)\b[,\s:!\.-]*)+"
+        # Handle "mac", "mack", and common Whisper phoneme variants
+        target = r"(?:(?:mac|mack|matt|max|mark|match|make|mike|mock|macs|mac\'s)\b[,\s:!\.-]*)+"
     else:
         target = r"(?:" + re.escape(w) + r"\b[,\s:!\.-]*)+"
 
@@ -725,7 +725,7 @@ def transcribe(audio) -> str:
             audio,
             beam_size=1,
             vad_filter=True,
-            initial_prompt="Mac, Hey Mac. Draw an ASCII art picture of a heart, cat, flower, rose. Open terminal, type text, click button, scroll, volume, peace.",
+            initial_prompt="Mac, Hey Mac. Turn off the TV, switch to computer, turn volume up, open Safari, what time is it. Draw an ASCII art picture of a heart, cat, flower, rose.",
         )
         return " ".join(s.text for s in segments).strip()
 
@@ -738,7 +738,7 @@ def transcribe(audio) -> str:
             res = mlx_whisper.transcribe(
                 audio,
                 path_or_hf_repo=repo,
-                initial_prompt="Mac, Hey Mac. Draw an ASCII art picture of a heart, cat, flower, rose. Open terminal, type text, click button, scroll, volume, peace.",
+                initial_prompt="Mac, Hey Mac. Turn off the TV, switch to computer, turn volume up, open Safari, what time is it. Draw an ASCII art picture of a heart, cat, flower, rose.",
             )
             return str(res.get("text", "")).strip()
         except Exception as e:
@@ -752,7 +752,7 @@ def transcribe(audio) -> str:
         audio,
         beam_size=1,
         vad_filter=True,
-        initial_prompt="Mac, Hey Mac. Draw an ASCII art picture of a heart, cat, flower, rose. Open terminal, type text, click button, scroll, volume, peace.",
+        initial_prompt="Mac, Hey Mac. Turn off the TV, switch to computer, turn volume up, open Safari, what time is it. Draw an ASCII art picture of a heart, cat, flower, rose.",
     )
     text = " ".join(s.text for s in segments).strip()
     return text
@@ -854,7 +854,7 @@ class VoiceActivityDetector:
     """
 
     def __init__(self, sensitivity: float = 1.8, frame_ms: int = 30,
-                 start_ms: int = 180, end_ms: int = 800):
+                 start_ms: int = 90, end_ms: int = 700):
         self.sensitivity = sensitivity
         self.start_needed = max(1, start_ms // frame_ms)
         self.end_needed = max(1, end_ms // frame_ms)
@@ -862,6 +862,14 @@ class VoiceActivityDetector:
         self.in_speech = False
         self._speech_frames = 0
         self._silence_frames = 0
+
+    def reset(self, new_floor: float | None = None) -> None:
+        """Reset detection state and optionally calibrate the noise floor."""
+        self.in_speech = False
+        self._speech_frames = 0
+        self._silence_frames = 0
+        if new_floor is not None and new_floor > 0:
+            self.floor = max(new_floor, 60.0)
 
     def update(self, samples) -> str:
         import numpy as np
@@ -918,10 +926,9 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
             idx = wait_for_input_device()
             vad = VoiceActivityDetector(sensitivity=sensitivity)
             capturing: list[np.ndarray] = []
-            # Pre-roll: the VAD needs start_needed voiced frames before it
-            # says "start", so keep recent frames to avoid clipping the onset
-            # (e.g. the wake word "Mac").
-            preroll: deque = deque(maxlen=vad.start_needed + 5)
+            # Pre-roll: keep ~750ms of audio before speech onset to prevent
+            # clipping soft consonants and the wake word (e.g. "Mac").
+            preroll: deque = deque(maxlen=max(25, vad.start_needed + 15))
             log(f"microphone: {describe_input_device()} — listening")
             update_state("listening", wake_word=wake_word)
             play_chime("Tink.aiff")
@@ -929,12 +936,18 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                 with sd.RawInputStream(samplerate=16000, channels=1, dtype="int16",
                                        blocksize=frame_len,
                                        device=idx) as stream:
-                    # Drain startup frames (chime echo / stream stabilization)
-                    for _ in range(12):
+                    # Drain startup frames (chime echo / stream stabilization) and calibrate initial noise floor
+                    startup_rms = []
+                    for _ in range(16):
                         try:
-                            stream.read(frame_len)
+                            d, _ = stream.read(frame_len)
+                            s_init = np.frombuffer(d, dtype=np.int16)
+                            startup_rms.append(float(np.sqrt(np.mean(s_init.astype(np.float64) ** 2))))
                         except Exception:
                             break
+                    if startup_rms:
+                        vad.floor = max(float(np.median(startup_rms)), 60.0)
+
                     last_hb = time.monotonic()
                     while True:
                         try:
@@ -950,6 +963,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                         if is_speaking():
                             capturing = []
                             preroll.clear()
+                            vad.reset()
                             continue
                         state = vad.update(samples)
                         if state == "start":
@@ -960,9 +974,11 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                             capturing.append(samples.copy())
                             if len(capturing) >= max_frames:
                                 state = "end"  # safety cap: cut it off
+                                vad.reset()
                         elif state == "silence":
                             preroll.append(samples.copy())
                         if state == "end" and capturing:
+                            vad.reset()
                             audio = (np.concatenate(capturing)
                                      .astype(np.float32) / 32768.0)
                             capturing = []
@@ -974,7 +990,16 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.8, wake_word: str = 
                                     log(f"command failed ({e}) — still listening")
                                 heartbeat_state(wake_word)  # "processing" -> "listening"
                                 last_hb = time.monotonic()
-                            time.sleep(0.5)  # cooldown so one sentence = one command
+                            # Drain stale audio accumulated in buffer while transcribing/speaking
+                            try:
+                                avail = stream.read_available
+                                if avail > 0:
+                                    stream.read(avail)
+                            except Exception:
+                                pass
+                            preroll.clear()
+                            vad.reset()
+                            time.sleep(0.3)  # cooldown so one sentence = one command
             except KeyboardInterrupt:
                 raise
             except Exception as e:

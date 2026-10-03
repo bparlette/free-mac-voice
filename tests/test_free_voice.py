@@ -2194,6 +2194,13 @@ class TestWakeWord(Base):
             ("Yo Mac, what time is it", "what time is it"),
             ("Mac! Open notes", "Open notes"),
             ("Mac - open notes", "open notes"),
+            ("Hay Mac, open notes", "open notes"),
+            ("hay mac open notes", "open notes"),
+            ("And Mac, open notes", "open notes"),
+            ("heymac open notes", "open notes"),
+            ("haymac open notes", "open notes"),
+            ("Make, open notes", "open notes"),
+            ("Mike open notes", "open notes"),
         ]
         for utterance, want_cmd in cases:
             is_wake, cmd = fv.parse_wake_word(utterance, "mac")
@@ -2201,10 +2208,29 @@ class TestWakeWord(Base):
             self.assertEqual(cmd, want_cmd, f"mismatched stripped command for {utterance!r}")
 
     def test_parse_wake_word_standalone(self):
-        for utterance in ("Mac", "Hey Mac", "Mack", "OK Mac!", "Yo Mac:"):
+        for utterance in ("Mac", "Hey Mac", "Mack", "OK Mac!", "Yo Mac:", "hay mac", "Hay Mac", "And Mac", "heymac", "haymac", "A Mac", "An Mac"):
             is_wake, cmd = fv.parse_wake_word(utterance, "mac")
             self.assertTrue(is_wake, f"failed for standalone {utterance!r}")
             self.assertEqual(cmd, "", f"expected empty command for {utterance!r}")
+
+    def test_vad_reset_and_recovery(self):
+        import numpy as np
+        vad = fv.VoiceActivityDetector(sensitivity=1.8, start_ms=90, end_ms=200)
+        # Simulate loud noise that puts VAD into speech
+        loud = (np.random.randn(int(16000 * 0.03)) * 1200).astype(np.int16)
+        states = [vad.update(loud) for _ in range(10)]
+        self.assertTrue(vad.in_speech)
+
+        # Calling reset should immediately clear in_speech and frame counters
+        vad.reset(new_floor=1200.0)
+        self.assertFalse(vad.in_speech)
+        self.assertEqual(vad._speech_frames, 0)
+        self.assertEqual(vad._silence_frames, 0)
+        self.assertGreaterEqual(vad.floor, 1200.0)
+
+        # Baseline noise at 1200 should now be treated as silence, not speech
+        st = vad.update(loud)
+        self.assertEqual(st, "silence")
 
     def test_parse_wake_word_non_matches(self):
         non_matches = [
