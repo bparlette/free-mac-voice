@@ -2043,6 +2043,8 @@ class TestSamsungTVScript(unittest.TestCase):
 
     def test_script_cmd_power_post_shape(self):
         with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv.time, "sleep"), \
+             mock.patch.dict(os.environ, {"SAMSUNG_TV_STANDBY": "", "SAMSUNG_TV_MAC": ""}), \
              mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
             msg_on = samsung_tv.cmd_power("on")
             self.assertEqual(msg_on, "TV power on")
@@ -2079,6 +2081,60 @@ class TestSamsungTVScript(unittest.TestCase):
                     "arguments": []
                 }]}
             )
+
+    def _frame_req(self, apps):
+        """Fake _req: status GETs return successive tvChannelName values."""
+        seq = list(apps)
+        calls = []
+
+        def fake(method, path, payload=None):
+            calls.append((method, path, payload))
+            if method == "GET":
+                app = seq.pop(0) if len(seq) > 1 else seq[0]
+                return {"components": {"main": {
+                    "switch": {"switch": {"value": "on"}},
+                    "tvChannel": {"tvChannelName": {"value": app}}}}}
+            return {}
+        return fake, calls
+
+    @staticmethod
+    def _homes(calls):
+        return sum(1 for m, _, pl in calls if m == "POST" and pl
+                   and pl["commands"][0]["capability"] == "samsungvd.remoteControl")
+
+    def test_power_on_leaves_frame_art_mode_with_home_retry(self):
+        fake, calls = self._frame_req(["art", "com.samsung.tv.csfs"])
+        with mock.patch.object(samsung_tv, "_need_device", return_value="d"), \
+             mock.patch.object(samsung_tv.time, "sleep"), \
+             mock.patch.dict(os.environ, {"SAMSUNG_TV_MAC": ""}), \
+             mock.patch.object(samsung_tv, "_req", side_effect=fake):
+            self.assertEqual(samsung_tv.cmd_power("on"), "TV power on")
+        self.assertEqual(self._homes(calls), 2)
+
+    def test_power_on_reports_stuck_in_art_mode(self):
+        fake, calls = self._frame_req(["art"])
+        with mock.patch.object(samsung_tv, "_need_device", return_value="d"), \
+             mock.patch.object(samsung_tv.time, "sleep"), \
+             mock.patch.dict(os.environ, {"SAMSUNG_TV_MAC": ""}), \
+             mock.patch.object(samsung_tv, "_req", side_effect=fake):
+            with self.assertRaises(samsung_tv.TVError):
+                samsung_tv.cmd_power("on")
+        self.assertEqual(self._homes(calls), 3)
+
+    def test_art_mode_off_reports_when_tv_ignores_it(self):
+        fake, _ = self._frame_req(["com.samsung.tv.csfs"])
+        with mock.patch.object(samsung_tv, "_need_device", return_value="d"), \
+             mock.patch.object(samsung_tv.time, "sleep"), \
+             mock.patch.dict(os.environ, {"SAMSUNG_TV_STANDBY": "ambient"}), \
+             mock.patch.object(samsung_tv, "_req", side_effect=fake):
+            with self.assertRaises(samsung_tv.TVError):
+                samsung_tv.cmd_power("off")
+        fake, _ = self._frame_req(["art"])
+        with mock.patch.object(samsung_tv, "_need_device", return_value="d"), \
+             mock.patch.object(samsung_tv.time, "sleep"), \
+             mock.patch.dict(os.environ, {"SAMSUNG_TV_STANDBY": "ambient"}), \
+             mock.patch.object(samsung_tv, "_req", side_effect=fake):
+            self.assertEqual(samsung_tv.cmd_power("off"), "TV art mode on")
 
     def test_script_cmd_home_post_shape(self):
         with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
@@ -2183,10 +2239,12 @@ class TestSamsungTVScript(unittest.TestCase):
 
     def test_cmd_art_mode(self):
         with mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv.time, "sleep"), \
              mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
             msg = samsung_tv.cmd_art()
             self.assertEqual(msg, "TV art mode on")
-            mock_req.assert_called_once_with(
+            # first call is the command; a refresh + status check follow
+            self.assertEqual(mock_req.call_args_list[0], mock.call(
                 "POST",
                 "/devices/test-device-id/commands",
                 {"commands": [{
@@ -2195,15 +2253,16 @@ class TestSamsungTVScript(unittest.TestCase):
                     "command": "setAmbientOn",
                     "arguments": []
                 }]}
-            )
+            ))
 
     def test_power_off_ambient_standby_override(self):
         with mock.patch.dict(os.environ, {"SAMSUNG_TV_STANDBY": "ambient"}), \
              mock.patch.object(samsung_tv, "_need_device", return_value="test-device-id"), \
+             mock.patch.object(samsung_tv.time, "sleep"), \
              mock.patch.object(samsung_tv, "_req", return_value={}) as mock_req:
             msg = samsung_tv.cmd_power("off")
             self.assertEqual(msg, "TV art mode on")
-            mock_req.assert_called_once_with(
+            mock_req.assert_any_call(
                 "POST",
                 "/devices/test-device-id/commands",
                 {"commands": [{

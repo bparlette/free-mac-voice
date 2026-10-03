@@ -4031,7 +4031,15 @@ def act_tv_power(on: bool) -> None:
         shell([sys.executable, _TV_SCRIPT, "power", "on" if on else "off"])
     except Exception as e:  # noqa: BLE001
         log(f"TV power failed: {e}")
-        say("I couldn't reach the Samsung TV")
+        err = str(e).lower()
+        if "art mode" in err and "did not go" in err:
+            say("The TV didn't switch to art mode")
+        elif "art mode" in err:
+            say("The TV is stuck on the art screen")
+        elif "fully off" in err:
+            say("The TV is fully off and won't wake over Wi-Fi. Use the remote")
+        else:
+            say("I couldn't reach the Samsung TV")
         return
     say(f"Turning the TV {'on' if on else 'off'}")
 

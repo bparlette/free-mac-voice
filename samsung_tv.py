@@ -33,6 +33,7 @@ import json
 import os
 import socket
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -187,6 +188,29 @@ def cmd_set_input(name: str) -> str:
     return msg
 
 
+def _state(refresh: bool = True) -> tuple[str | None, str | None]:
+    """Return (power, app) from SmartThings.
+
+    The Frame reports switch=on while it shows Art Mode; the only reliable
+    tell is tvChannel.tvChannelName == "art" (verified live on a 2024 Frame).
+    A refresh is needed first or the cloud value can be minutes stale.
+    Unknown values come back as None so callers never fail on missing data.
+    """
+    dev = _need_device()
+    if refresh:
+        try:
+            _req("POST", f"/devices/{dev}/commands", {
+                "commands": [{"component": "main", "capability": "refresh",
+                              "command": "refresh", "arguments": []}]})
+        except TVError:
+            pass
+        time.sleep(2.0)
+    main = _req("GET", f"/devices/{dev}/status").get("components", {}).get("main", {})
+    power = main.get("switch", {}).get("switch", {}).get("value")
+    app = main.get("tvChannel", {}).get("tvChannelName", {}).get("value")
+    return power, app
+
+
 def cmd_art() -> str:
     dev = _need_device()
     _req("POST", f"/devices/{dev}/commands", {
@@ -194,6 +218,14 @@ def cmd_art() -> str:
                       "capability": "samsungvd.ambient",
                       "command": "setAmbientOn",
                       "arguments": []}]})
+    # setAmbientOn returns 200 even when the TV ignores it, so check.
+    time.sleep(4.0)
+    try:
+        _, app = _state()
+    except TVError:
+        app = None
+    if app is not None and app != "art":
+        raise TVError("the TV did not go into art mode (it is still on)")
     msg = "TV art mode on"
     print(msg)
     return msg
@@ -204,26 +236,46 @@ def cmd_power(state: str) -> str:
     state = state.lower()
     if state not in ("on", "off"):
         raise TVError("power must be 'on' or 'off'")
-    if state == "on":
-        mac = os.environ.get("SAMSUNG_TV_MAC", "").strip()
-        if mac:
-            send_wol(mac)
-    elif state == "off" and os.environ.get("SAMSUNG_TV_STANDBY", "").lower() in ("ambient", "art"):
-        return cmd_art()
+    if state == "off":
+        if os.environ.get("SAMSUNG_TV_STANDBY", "").lower() in ("ambient", "art"):
+            return cmd_art()
+        _req("POST", f"/devices/{dev}/commands", {
+            "commands": [{"component": "main", "capability": "switch",
+                          "command": "off", "arguments": []}]})
+        msg = "TV power off"
+        print(msg)
+        return msg
+
+    # ON. On The Frame, Art Mode already counts as switch=on, so switch.on is
+    # a no-op there; the HOME key is what leaves Art Mode for the Samsung Home
+    # screen. Send it, confirm art mode is gone, and retry a couple of times.
+    mac = os.environ.get("SAMSUNG_TV_MAC", "").strip()
+    if mac:
+        send_wol(mac)
     _req("POST", f"/devices/{dev}/commands", {
-        "commands": [{"component": "main",
-                      "capability": "switch",
-                      "command": state,
-                      "arguments": []}]})
-    if state == "on":
+        "commands": [{"component": "main", "capability": "switch",
+                      "command": "on", "arguments": []}]})
+    power, app = None, None
+    for attempt in range(3):
+        time.sleep(1.5 if attempt == 0 else 2.5)
         try:
             cmd_home()
-        except Exception:
-            try:
-                cmd_set_input("tv")
-            except Exception:
-                pass
-    msg = f"TV power {state}"
+        except TVError:
+            if attempt == 2:
+                raise
+            continue
+        try:
+            power, app = _state()
+        except TVError:
+            break  # cannot verify; HOME was sent, assume it worked
+        if power != "off" and app != "art":
+            break
+    if power == "off":
+        raise TVError("the TV is fully off and did not wake; turn on "
+                      "'Power On with Mobile' on the TV or use the remote")
+    if app == "art":
+        raise TVError("the TV is still showing art mode")
+    msg = "TV power on"
     print(msg)
     return msg
 
