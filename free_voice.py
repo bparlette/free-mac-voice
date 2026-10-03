@@ -1515,7 +1515,17 @@ def act_close_window(target_app_name: str | None = None) -> bool:
                 pass
 
     if target_pid is None:
-        # Identify topmost real application window (layer 0, size >= 150)
+        try:
+            from AppKit import NSWorkspace
+            front = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if front:
+                target_pid = front.processIdentifier()
+                target_name = front.localizedName()
+        except Exception:
+            pass
+
+    if target_pid is None:
+        # Fall back to topmost real application window (layer 0, size >= 150)
         Q = _load_quartz()
         if Q:
             try:
@@ -1532,31 +1542,27 @@ def act_close_window(target_app_name: str | None = None) -> bool:
             except Exception as e:
                 log(f"Quartz window search failed: {e}")
 
-    if target_pid is None:
-        try:
-            from AppKit import NSWorkspace
-            front = NSWorkspace.sharedWorkspace().frontmostApplication()
-            if front:
-                target_pid = front.processIdentifier()
-                target_name = front.localizedName()
-        except Exception:
-            pass
-
     closed = False
     if target_pid is not None:
         try:
             import ApplicationServices as AX
             ax_app = AX.AXUIElementCreateApplication(target_pid)
-            err, windows = AX.AXUIElementCopyAttributeValue(ax_app, "AXWindows", None)
-            if not err and windows:
-                for win in windows:
-                    err_btn, btn = AX.AXUIElementCopyAttributeValue(win, "AXCloseButton", None)
-                    if not err_btn and btn:
-                        res = AX.AXUIElementPerformAction(btn, "AXPress")
-                        if res == 0:
-                            closed = True
-                            log(f"closed window of {target_name} (pid {target_pid}) via AXCloseButton")
-                            break
+            # Try focused window first
+            err_f, focused_win = AX.AXUIElementCopyAttributeValue(ax_app, "AXFocusedWindow", None)
+            wins_to_try = [focused_win] if (not err_f and focused_win) else []
+            err_w, windows = AX.AXUIElementCopyAttributeValue(ax_app, "AXWindows", None)
+            if not err_w and windows:
+                for w in windows:
+                    if w not in wins_to_try:
+                        wins_to_try.append(w)
+            for win in wins_to_try:
+                err_btn, btn = AX.AXUIElementCopyAttributeValue(win, "AXCloseButton", None)
+                if not err_btn and btn:
+                    res = AX.AXUIElementPerformAction(btn, "AXPress")
+                    if res == 0:
+                        closed = True
+                        log(f"closed window of {target_name} (pid {target_pid}) via AXCloseButton")
+                        break
         except Exception as e:
             log(f"AXCloseButton failed: {e}")
 
@@ -2930,7 +2936,7 @@ def act_mouse_to(name: str) -> None:
 
 
 def act_close_notifications() -> None:
-    """Dismiss macOS Notification Center alert banners."""
+    """Dismiss macOS Notification Center alert banners in the top right corner."""
     xa = _load_xa11y()
     if xa is None:
         say("Accessibility control unavailable")
@@ -2940,41 +2946,82 @@ def act_close_notifications() -> None:
     except Exception:
         say("No notifications open")
         return
+
     mouse, _ = _mouse()
-    # Banners sit at the right edge; compare against the real screen width
-    # instead of a hardcoded x > 1000 (breaks on small/scaled displays).
+    orig_pos = mouse.position if mouse else None
     min_x = _screen_dimensions()[0] / 2
-    closed = 0
-    for _ in range(3):
+
+    def get_banners():
+        banners = []
         try:
-            groups = app.locator("group").elements()
+            if hasattr(app, "locator"):
+                loc_groups = app.locator("group").elements()
+                if loc_groups:
+                    for g in loc_groups:
+                        b = getattr(g, "bounds", None)
+                        if b and getattr(b, "width", 0) > 150 and getattr(b, "x", 0) > min_x:
+                            banners.append(g)
+                    if banners:
+                        return banners
         except Exception:
+            pass
+
+        try:
+            windows = app.windows()
+            if not windows:
+                return []
+            win = windows[0]
+            def rec(el):
+                b = getattr(el, "bounds", None)
+                if b and getattr(b, "width", 0) > 150 and getattr(b, "x", 0) > min_x and getattr(el, "role", "") == "group" and getattr(el, "name", None):
+                    banners.append(el)
+                for c in el.children():
+                    rec(c)
+            rec(win)
+            return banners
+        except Exception:
+            return []
+
+    total_closed = 0
+    for _ in range(10):
+        banners = get_banners()
+        if not banners:
             break
-        closed_this_pass = False
-        for g in groups:
-            if g.name:
-                b = g.bounds
-                if b and b.width > 200 and b.x > min_x:
-                    _warp_mouse(b.x + 10, b.y + 10)
-                    if mouse:
-                        mouse.position = (b.x + 10, b.y + 10)
-                        time.sleep(0.1)
-                    try:
-                        for c in g.children():
-                            if c.role == "button" and c.name == "Close":
-                                c.press()
-                                closed += 1
-                                closed_this_pass = True
-                                time.sleep(0.2)
-                                break
-                    except Exception:
-                        pass
-        if not closed_this_pass:
+        clicked_any = False
+        for b_el in banners:
+            b = b_el.bounds
+            if not b:
+                continue
+            _warp_mouse(b.x + 10, b.y + 10)
+            if mouse:
+                mouse.position = (b.x + 10, b.y + 10)
+            time.sleep(0.12)
+            try:
+                for c in b_el.children():
+                    if c.role == "button" and c.name in ("Close", "Clear All", "Clear", "Dismiss"):
+                        c.press()
+                        total_closed += 1
+                        clicked_any = True
+                        time.sleep(0.25)
+                        break
+            except Exception:
+                pass
+            if clicked_any:
+                break
+        if not clicked_any:
             break
-    if closed:
-        say(f"Closed {closed} notification{'s' if closed != 1 else ''}")
+
+    if orig_pos and mouse:
+        try:
+            mouse.position = orig_pos
+            _warp_mouse(orig_pos[0], orig_pos[1])
+        except Exception:
+            pass
+
+    if total_closed:
+        say(f"Closed {total_closed} alert{'s' if total_closed != 1 else ''}")
     else:
-        say("No notifications to close")
+        say("No alerts to close")
 
 
 def act_mouse_move(direction: str, amount: str | None) -> None:
@@ -4390,7 +4437,9 @@ _p(r"^(open|opens|launch|start) (.+)$", "open_app", True)
 _p(r"^(next app|app forward)$", "next_app", True)
 _p(r"^(previous app|prev app|app back)$", "prev_app", True)
 _p(r"^(switch to|focus|bring up) (.+)$", "switch_app", True)
-# --- windows / tabs / quit / hide
+# --- windows / tabs / quit / hide / notifications
+_p(r"^(?:close|clear|dismiss)(?: all)?(?: the)? (?:apple )?(?:notifications?|alerts?)(?: in (?:the )?(?:top right|corner)(?: corner)?)?$", "close_notifications", True)
+_p(r"^(?:close|clear|dismiss) (?:all )?(?:notifications?|alerts?)$", "close_notifications", True)
 _p(r"^(close all( the)? windows?|close every window|close all)$", "close_all_windows", True)
 _p(r"^(close( the| this| current| active)? windows?|close this window|close this)$", "close_window", True)
 _p(r"^close (the )?(.+?) windows?$", "close_window_named", True)
@@ -4794,6 +4843,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_close_window(m.group(2).strip())
         elif name == "close_all_windows":
             act_close_all_windows()
+        elif name == "close_notifications":
+            act_close_notifications()
         elif name == "next_window":
             act_keystroke("`", "command down"); say("Next window")
         elif name == "show_all_windows":
@@ -5167,7 +5218,7 @@ _TIER1_SYSTEM = (
     "Valid actions and params: "
     "open_app {app: name}, quit_app {app: name}, switch_app {app: name}, "
     "minimize {app: optional name}, hide {app: optional name}, "
-    "close_window {}, close_all_windows {}, "
+    "close_window {}, close_all_windows {}, close_notifications {}, "
     "new_tab {}, close_tab {}, reopen_tab {}, refresh_page {}, "
     "nav_back {}, nav_forward {}, scroll_down {}, scroll_up {}, "
     "next_space {}, prev_space {}, move_next_display {}, "
@@ -5186,7 +5237,7 @@ _TIER1_SYSTEM = (
 
 _TIER1_ACTIONS = {
     "open_app", "quit_app", "switch_app", "minimize", "hide",
-    "close_window", "close_all_windows",
+    "close_window", "close_all_windows", "close_notifications",
     "new_tab", "close_tab", "reopen_tab", "refresh_page",
     "nav_back", "nav_forward", "scroll_down", "scroll_up",
     "next_space", "prev_space", "move_next_display",
@@ -5994,6 +6045,8 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
         act_close_window(str(p("app", "")))
     elif action == "close_all_windows":
         act_close_all_windows()
+    elif action == "close_notifications":
+        act_close_notifications()
     elif action == "new_tab":
         act_keystroke("t", "command down"); say("New tab")
     elif action == "close_tab":
