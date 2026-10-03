@@ -2750,6 +2750,20 @@ def _press_first(app_name: str, roles: list[str], name: str) -> None:
                     return
                 say(f"Clicked {safe}")
                 return
+        # If specific roles didn't match, try universal accessibility name match in this app
+        try:
+            univ_els = app.locator(f"[name*='{safe}']").elements()
+            for u in univ_els:
+                if "press" in getattr(u, "actions", []):
+                    u.press()
+                    say(f"Clicked {safe}")
+                    return
+                b = getattr(u, "bounds", None)
+                if b and b.width > 0 and b.height > 0:
+                    if _click_xy(int(b.x + b.width / 2), int(b.y + b.height / 2), safe):
+                        return
+        except Exception as e:
+            log(f"xa11y universal query failed ({aname}): {e}")
     # Tree had no match — Tier 1: Apple Vision OCR fast-path
     ocr_res = ocr_locate(safe)
     if ocr_res == "ambiguous":
@@ -2773,7 +2787,10 @@ def act_click_link(name: str) -> None:
 
 
 def act_click_any(name: str) -> None:
-    _press_first(frontmost_app(), ["button", "link", "checkbox"], name)
+    _press_first(frontmost_app(), [
+        "button", "link", "checkbox", "table_cell", "cell", "row",
+        "tab", "menu_item", "radio_button", "pop_up_button"
+    ], name)
 
 
 def _locate_first(app_name: str, roles: list[str],
