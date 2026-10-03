@@ -313,6 +313,122 @@ def note_error(msg: str) -> None:
     log(f"error noted: {msg}")
 
 
+# ---------------------------------------------------------------- command review & attempts log
+_ATTEMPTS_FILE = os.path.join(HOME, ".free-voice", "attempts.jsonl")
+_REVIEW_MD_FILE = os.path.join(HOME, ".free-voice", "command_review.md")
+VOICE_QUIET_MODE = os.environ.get("VOICE_QUIET_MODE", "0").lower() in ("1", "true", "yes")
+
+
+def act_set_quiet_mode(quiet: bool) -> None:
+    global VOICE_QUIET_MODE
+    VOICE_QUIET_MODE = quiet
+    notify_hud("Silent Mode: ON (HUD only)" if quiet else "Voice Feedback: ON", "action")
+    if not quiet:
+        say("Voice feedback enabled")
+
+
+def record_attempt(utterance: str, status: str, tier: str = "", action: str = "", detail: str = "") -> None:
+    """Record an attempted voice command and update the markdown review log."""
+    if _IN_TESTS or not utterance:
+        return
+    try:
+        os.makedirs(os.path.dirname(_ATTEMPTS_FILE), exist_ok=True)
+        rec = {
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "utterance": utterance,
+            "status": status,
+            "tier": tier,
+            "action": action,
+            "detail": detail,
+        }
+        with open(_ATTEMPTS_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec) + "\n")
+        _update_review_markdown()
+    except Exception as e:
+        log(f"failed to record command attempt: {e}")
+
+
+def _update_review_markdown() -> None:
+    """Generate a clean, readable review summary of recent commands and failures."""
+    if not os.path.exists(_ATTEMPTS_FILE):
+        return
+    try:
+        entries = []
+        with open(_ATTEMPTS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        pass
+        if not entries:
+            return
+
+        fails = [e for e in entries if e.get("status") == "FAILED"]
+        rejected = [e for e in entries if e.get("status") == "REJECTED"]
+        successes = [e for e in entries if e.get("status") == "SUCCESS"]
+
+        lines = [
+            "# Free Mac Voice: Command Review Log",
+            f"*Last Updated: {time.strftime('%Y-%m-%d %H:%M:%S')}*",
+            "",
+            "## 🚨 Failed Commands (Ready to Fix / Review)",
+            "These are commands you attempted that did not match any action or failed to execute.",
+            "",
+        ]
+        if fails:
+            lines.extend([
+                "| Time | What You Spoke | Tier Attempted | Details |",
+                "|---|---|---|---|",
+            ])
+            for e in reversed(fails[-25:]):
+                lines.append(f"| {e.get('time', '')} | **`{e.get('utterance', '')}`** | {e.get('tier', '')} | {e.get('detail', '')} |")
+        else:
+            lines.append("*No failed commands recorded yet!* 🎉\n")
+
+        lines.extend([
+            "",
+            "## 🛑 Filtered / Rejected (Ambient Noise & Non-Commands)",
+            "Speech heard that was rejected as TV chatter or not directed at the Mac.",
+            "",
+        ])
+        if rejected:
+            lines.extend([
+                "| Time | Spoken Text | Filter Reason | Details |",
+                "|---|---|---|---|",
+            ])
+            for e in reversed(rejected[-15:]):
+                lines.append(f"| {e.get('time', '')} | `{e.get('utterance', '')}` | {e.get('tier', '')} | {e.get('detail', '')} |")
+        else:
+            lines.append("*No rejected speech entries.*\n")
+
+        lines.extend([
+            "",
+            "## ✅ Recent Successful Commands",
+            "",
+            "| Time | Command Spoken | Action Executed | Tier |",
+            "|---|---|---|---|",
+        ])
+        for e in reversed(successes[-20:]):
+            lines.append(f"| {e.get('time', '')} | `{e.get('utterance', '')}` | **`{e.get('action', '')}`** | {e.get('tier', '')} |")
+
+        with open(_REVIEW_MD_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except Exception as e:
+        log(f"failed to update review markdown: {e}")
+
+
+def act_show_review() -> None:
+    """Open the command review log markdown file in default viewer."""
+    _update_review_markdown()
+    if os.path.exists(_REVIEW_MD_FILE):
+        shell(["open", _REVIEW_MD_FILE])
+        say("Opening command review log")
+    else:
+        say("No command history yet")
+
+
 # ---------------------------------------------------------------- speech out
 
 _CONFIG_DIR = os.path.join(HOME, ".config", "free-voice")
@@ -518,7 +634,7 @@ def say(text: str, blocking: bool = False, voice: str | None = None) -> None:
     global _say_proc
     log(f"say: {text}")
     notify_hud(text, "action")
-    if DRY_RUN:
+    if DRY_RUN or VOICE_QUIET_MODE:
         return
     try:
         if _say_proc is not None and _say_proc.poll() is None:
@@ -1385,6 +1501,10 @@ def act_open_app(name: str) -> None:
         say(f"I couldn't find an app called {name}")
         return
     shell(["open", "-a", app])
+    try:
+        applescript(f'tell application "{esc(app)}" to reopen')
+    except Exception:
+        pass
     say(f"Opening {app}")
 
 
@@ -2742,23 +2862,37 @@ def _press_first(app_name: str, roles: list[str], name: str) -> None:
                 log(f"xa11y query failed ({aname} {role}): {e}")
                 continue
             if els:
+                el = els[0]
+                b = getattr(el, "bounds", None)
+                if getattr(el, "role", "") in ("table_cell", "cell", "row", "tab") and b and b.width > 0 and b.height > 0:
+                    if _click_xy(int(b.x + b.width / 2), int(b.y + b.height / 2), safe):
+                        return
                 try:
-                    els[0].press()
-                except Exception as e:  # noqa: BLE001
+                    el.press()
+                    say(f"Clicked {safe}")
+                    return
+                except Exception as e:
+                    if b and b.width > 0 and b.height > 0:
+                        if _click_xy(int(b.x + b.width / 2), int(b.y + b.height / 2), safe):
+                            return
                     say("Couldn't click that")
                     log(f"xa11y press failed: {e}")
                     return
-                say(f"Clicked {safe}")
-                return
         # If specific roles didn't match, try universal accessibility name match in this app
         try:
             univ_els = app.locator(f"[name*='{safe}']").elements()
             for u in univ_els:
-                if "press" in getattr(u, "actions", []):
-                    u.press()
-                    say(f"Clicked {safe}")
-                    return
                 b = getattr(u, "bounds", None)
+                if getattr(u, "role", "") in ("table_cell", "cell", "row", "tab") and b and b.width > 0 and b.height > 0:
+                    if _click_xy(int(b.x + b.width / 2), int(b.y + b.height / 2), safe):
+                        return
+                if "press" in getattr(u, "actions", []):
+                    try:
+                        u.press()
+                        say(f"Clicked {safe}")
+                        return
+                    except Exception:
+                        pass
                 if b and b.width > 0 and b.height > 0:
                     if _click_xy(int(b.x + b.width / 2), int(b.y + b.height / 2), safe):
                         return
@@ -4636,6 +4770,11 @@ _p(r"^remind me in (\d+) (seconds?|minutes?|hours?) to (.+)$", "reminder")
 _p(r"^read (my|the) screen( to me| aloud)?$", "read_screen", True)
 # --- music
 _p(r"^play some (.+)$", "play_genre", True)
+# --- silent mode & command review log
+_p(r"^(?:enable |turn on )?(?:silent|quiet)(?: mode)?$", "quiet_on", True)
+_p(r"^(?:disable |turn off )?(?:silent|quiet)(?: mode)?|voice (?:on|feedback)$", "quiet_off", True)
+_p(r"^(?:show|open|view|review)(?: the)? (?:failed |command )?(?:commands?|history|review)(?: log)?$", "show_review", True)
+_p(r"^(?:failed commands|command review|command history)$", "show_review", True)
 
 # --- user custom extensions (~/.config/free-voice/extensions.py)
 load_custom_extensions()
@@ -5212,6 +5351,12 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_read_screen()
         elif name == "play_genre":
             act_play_genre(m.group(1))
+        elif name == "quiet_on":
+            act_set_quiet_mode(True)
+        elif name == "quiet_off":
+            act_set_quiet_mode(False)
+        elif name == "show_review":
+            act_show_review()
         else:
             return  # unknown handler name: treat as unrouted
     except Exception as e:  # noqa: BLE001
@@ -6417,6 +6562,7 @@ def handle_command(text: str, confirm_audio_fn=None,
                 if not is_cmd:
                     log(f"wake window follow-up dropped by command gate: {t!r} (conf={gate_conf:.2f})")
                     notify_hud(f'Ignored: "{t}"', "rejected")
+                    record_attempt(t, "REJECTED", tier="Command Gate", detail=f"Filtered (conf={gate_conf:.2f})")
                     return False
             else:
                 log(f"ignored (no wake word {VOICE_WAKE_WORD!r}): {t!r}")
@@ -6439,6 +6585,7 @@ def handle_command(text: str, confirm_audio_fn=None,
     if r:
         name, m = r
         log(f"Tier 0 hit: {name}")
+        record_attempt(t, "SUCCESS", tier="Tier 0", action=name)
         execute_match(name, m, confirm_audio_fn, allow_destructive)
         return True
 
@@ -6448,6 +6595,7 @@ def handle_command(text: str, confirm_audio_fn=None,
     if run_macro(t, confirm_audio_fn=confirm_audio_fn,
                  allow_destructive=allow_destructive,
                  quiet_miss=quiet_miss):
+        record_attempt(t, "SUCCESS", tier="Macro", action=t)
         return True
 
     # Compound command chaining: if single Tier 0 missed, try chaining (e.g. "open notes and snap left" or "Open Safari, find Apple's latest 10-K, and snap it to the left half of my screen")
@@ -6471,6 +6619,7 @@ def handle_command(text: str, confirm_audio_fn=None,
 
             if all_resolved and len(plan) == len(parts):
                 log(f"Multi-action chain resolved ({len(plan)} actions): {parts}")
+                record_attempt(t, "SUCCESS", tier="Chain (Regex)", action="chained", detail=f"{len(plan)} actions")
                 for step in plan:
                     try:
                         if step[0] == "tier0":
@@ -6482,6 +6631,7 @@ def handle_command(text: str, confirm_audio_fn=None,
                         failed_name = step[1] if len(step) > 1 else "step"
                         log(f"Chain step '{failed_name}' failed: {e}. Aborting remaining actions for safety.")
                         say(f"Couldn't complete {failed_name}, stopping chain")
+                        record_attempt(t, "FAILED", tier="Chain (Regex)", action=failed_name, detail=f"Failed step: {e}")
                         break
                     time.sleep(0.35)
                 return True
@@ -6490,6 +6640,7 @@ def handle_command(text: str, confirm_audio_fn=None,
             llm_actions = ollama_multi_action_plan(t)
             if llm_actions:
                 log(f"Agentic multi-action chain ({len(llm_actions)} actions): {llm_actions}")
+                record_attempt(t, "SUCCESS", tier="Chain (LLM)", action="agentic_chain", detail=f"{len(llm_actions)} actions")
                 for act in llm_actions:
                     act_name = str(act.get("action", "")).strip().lower()
                     act_params = act.get("params", {}) or {}
@@ -6498,6 +6649,7 @@ def handle_command(text: str, confirm_audio_fn=None,
                     except Exception as e:
                         log(f"Agentic chain step '{act_name}' failed: {e}. Aborting remaining actions for safety.")
                         say(f"Couldn't complete {act_name}, stopping chain")
+                        record_attempt(t, "FAILED", tier="Chain (LLM)", action=act_name, detail=f"Failed step: {e}")
                         break
                     time.sleep(0.35)
                 return True
@@ -6512,12 +6664,15 @@ def handle_command(text: str, confirm_audio_fn=None,
             desc = describe_action_for_prompt(action, params)
             if not confirm_spoken(desc, confirm_audio_fn):
                 say("Action cancelled")
+                record_attempt(t, "CANCELLED", tier="Tier 0.5", action=action, detail="Cancelled confirmation")
                 return True
         try:
             dispatch_tier1(action, params, allow_destructive)
+            record_attempt(t, "SUCCESS", tier="Tier 0.5", action=action, detail=f"conf={conf:.2f}")
         except Exception as e:  # noqa: BLE001
             say("That didn't work")
             log(f"tier 0.5 action failed: {e}")
+            record_attempt(t, "FAILED", tier="Tier 0.5", action=action, detail=f"Execution error: {e}")
         return True
 
     # Tier 1: local vision-language model (only on Tier 0 & 0.5 miss)
@@ -6526,18 +6681,23 @@ def handle_command(text: str, confirm_audio_fn=None,
         action, params, conf = t1
         try:
             dispatch_tier1(action, params, allow_destructive)
+            record_attempt(t, "SUCCESS", tier="Tier 1", action=action, detail=f"conf={conf:.2f}")
         except Exception as e:  # noqa: BLE001
             say("That didn't work")
             log(f"tier 1 action failed: {e}")
+            record_attempt(t, "FAILED", tier="Tier 1", action=action, detail=f"Execution error: {e}")
         return True
 
     # Tier 2: Q&A (local Ollama by default, or Gemini if configured)
     if GEMINI_API_KEY:
         if gemini_answer(t):
+            record_attempt(t, "SUCCESS", tier="Tier 2 (Gemini)", action="gemini_answer")
             return True
     elif not quiet_miss:
         if ollama_answer(t):
+            record_attempt(t, "SUCCESS", tier="Tier 2 (Ollama)", action="ollama_answer")
             return True
+    record_attempt(t, "FAILED", tier="Unmatched", detail="No intent recognized across any tier")
     if quiet_miss:
         log("no tier matched; ignoring quietly (always-listening)")
     else:
@@ -6611,6 +6771,7 @@ def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = Fals
         if not is_user:
             log(f"Speaker mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD}) — dropped ambient/TV voice")
             notify_hud(f"Ignored: other voice ({sim:.2f})", "rejected")
+            record_attempt("(ambient voice)", "REJECTED", tier="Speaker ID", detail=f"Mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD})")
             return
     try:
         text = transcribe(audio)
@@ -6688,6 +6849,8 @@ def main() -> None:
     ap.add_argument("--once", type=float, metavar="SEC",
                     help="record SEC seconds once, no hotkey")
     ap.add_argument("--list", action="store_true", help="show commands")
+    ap.add_argument("--review", action="store_true",
+                    help="open command review log of recent successes and failures")
     ap.add_argument("--dry-run", action="store_true",
                     help="print actions instead of running them")
     ap.add_argument("--enroll-speaker", "--enroll", action="store_true",
@@ -6730,6 +6893,9 @@ def main() -> None:
         return
     if args.enroll_speaker:
         cmd_enroll_speaker()
+        return
+    if args.review:
+        act_show_review()
         return
 
     if args.list:
