@@ -854,7 +854,7 @@ class VoiceActivityDetector:
     """
 
     def __init__(self, sensitivity: float = 1.35, frame_ms: int = 30,
-                 start_ms: int = 90, end_ms: int = 900):
+                 start_ms: int = 90, end_ms: int = 550):
         self.sensitivity = sensitivity
         self.start_needed = max(1, start_ms // frame_ms)
         self.end_needed = max(1, end_ms // frame_ms)
@@ -889,7 +889,8 @@ class VoiceActivityDetector:
                 self._speech_frames = 0
             return "silence"
         # in speech: end only after sustained quiet (hysteresis)
-        if rms < max(self.floor, 60.0) * self.sensitivity * 0.6:
+        stop_threshold = max(self.floor * 1.15, self.floor + 50.0)
+        if rms < stop_threshold:
             self._silence_frames += 1
             if self._silence_frames >= self.end_needed:
                 self.in_speech = False

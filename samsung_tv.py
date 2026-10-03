@@ -198,6 +198,12 @@ def cmd_power(state: str) -> str:
                       "capability": "switch",
                       "command": state,
                       "arguments": []}]})
+    if state == "on" and os.environ.get("SAMSUNG_TV_STANDBY", "").lower() in ("ambient", "art"):
+        target_input = os.environ.get("SAMSUNG_INPUT_COMPUTER") or "HDMI4"
+        try:
+            cmd_set_input(target_input)
+        except Exception:
+            pass
     msg = f"TV power {state}"
     print(msg)
     return msg
