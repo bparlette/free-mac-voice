@@ -1977,6 +1977,47 @@ def act_key_code(code: int, using: str = "") -> None:
     applescript(f'tell application "System Events" to key code {code}{mod}')
 
 
+def act_new_tab() -> None:
+    app = frontmost_app()
+    if not DRY_RUN and app == "Safari":
+        try:
+            applescript('tell application "Safari" to if (count of windows) > 0 then tell front window to set current tab to (make new tab)')
+            say("New tab")
+            return
+        except Exception as e:
+            log(f"Safari new tab AppleScript error: {e}")
+    elif not DRY_RUN and app in ("Google Chrome", "Chrome", "Brave Browser", "Arc", "Microsoft Edge"):
+        try:
+            applescript(f'tell application "{app}" to if (count of windows) > 0 then tell front window to make new tab')
+            say("New tab")
+            return
+        except Exception as e:
+            log(f"{app} new tab AppleScript error: {e}")
+    act_keystroke("t", "command down")
+    say("New tab")
+
+
+def act_close_tab() -> None:
+    app = frontmost_app()
+    if not DRY_RUN and app == "Safari":
+        try:
+            applescript('tell application "Safari" to if (count of windows) > 0 then tell front window to close current tab')
+            say("Closed tab")
+            return
+        except Exception as e:
+            log(f"Safari close tab AppleScript error: {e}")
+    elif not DRY_RUN and app in ("Google Chrome", "Chrome", "Brave Browser", "Arc", "Microsoft Edge"):
+        try:
+            applescript(f'tell application "{app}" to if (count of windows) > 0 then tell active tab of front window to close')
+            say("Closed tab")
+            return
+        except Exception as e:
+            log(f"{app} close tab AppleScript error: {e}")
+    act_keystroke("w", "command down")
+    say("Closed tab")
+
+
+
 def act_type_text(text: str) -> None:
     if DRY_RUN:
         log(f"DRY-RUN type {len(text)} chars: {text!r}")
@@ -4749,9 +4790,9 @@ _p(r"^unmute( the)? tv$", "tv_unmute", True)
 _p(r"^(pause|play|stop)( the)? tv$", "tv_media", True)
 _p(r"^(?:tv |the tv )?(?:art mode|ambient mode|picture mode|screensaver)$", "tv_art", True)
 _p(r"^turn on (?:the )?(?:tv )?(?:art mode|ambient mode|screensaver)$", "tv_art", True)
-# --- apps & tabs (specific "open tab" / "open X settings" / "open trash" BEFORE generic open)
-_p(r"^(new|open)( a)? tab$", "new_tab", True)
-_p(r"^close( the)? tab$", "close_tab", True)
+_p(r"^(?:new|open|create|make)(?: a| an)?(?: new)? tab$", "new_tab", True)
+_p(r"^close (?:the |this |current )?tab$", "close_tab", True)
+_p(r"^close tab$", "close_tab", True)
 _p(r"^(reopen|undo close)( the)? tab$", "reopen_tab", True)
 _p(r"^(next tab|tab forward)$", "next_tab", True)
 _p(r"^(previous tab|prev tab|tab back)$", "prev_tab", True)
@@ -5217,9 +5258,9 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
         elif name == "hide_others":
             act_keystroke("h", "option down, command down"); say("Hiding others")
         elif name == "new_tab":
-            act_keystroke("t", "command down"); say("New tab")
+            act_new_tab()
         elif name == "close_tab":
-            act_keystroke("w", "command down"); say("Closed tab")
+            act_close_tab()
         elif name == "reopen_tab":
             act_keystroke("t", "shift down, command down"); say("Reopened tab")
         elif name == "next_tab":
@@ -6414,9 +6455,9 @@ def dispatch_tier1(action: str, params: dict, allow_destructive: bool = False) -
     elif action == "close_notifications":
         act_close_notifications()
     elif action == "new_tab":
-        act_keystroke("t", "command down"); say("New tab")
+        act_new_tab()
     elif action == "close_tab":
-        act_keystroke("w", "command down"); say("Closed tab")
+        act_close_tab()
     elif action == "reopen_tab":
         act_keystroke("t", "shift down, command down"); say("Reopened tab")
     elif action == "refresh_page":

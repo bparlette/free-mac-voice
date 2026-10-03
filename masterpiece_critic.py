@@ -50,6 +50,7 @@ KOKORO_VOICES = os.path.join(KOKORO_DIR, "voices-v1.0.bin")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
 OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "qwen2.5:1.5b")
+CRITIC_TEXT_MODEL = os.environ.get("CRITIC_TEXT_MODEL", OLLAMA_DECISION_MODEL if "tev1" not in OLLAMA_DECISION_MODEL.lower() else "qwen2.5:1.5b")
 
 THEMES = {
     "couch_duo": {
@@ -451,9 +452,11 @@ class CompanionVoiceListener:
 
 
 
-# --- Roast memory: rolling conversation buffer ---
+# --- Roast memory: rolling conversation buffer & anti-repetition ---
 _riff_history: list[dict] = []
-_RIFF_HISTORY_MAX = 5
+_RIFF_HISTORY_MAX = 8
+_recent_riffs: list[str] = []
+_fallback_decks: dict[str, list[str]] = {}
 
 
 def _describe_screen_visually(thumb_path: str) -> str:
@@ -524,10 +527,12 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_pa
             f"Return ONLY your spoken line without quotes or prefixes."
         )
 
+    import difflib
+
     # TASK 2: Prepend rolling banter history for conversational memory
     history_block = ""
     if _riff_history:
-        recent = _riff_history[-3:]
+        recent = _riff_history[-4:]
         lines = []
         for entry in recent:
             lines.append(f"{entry['char']}: {entry['riff']}")
@@ -538,6 +543,9 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_pa
             + "\n".join(lines)
             + "\n\n"
         )
+    if _recent_riffs:
+        avoid_lines = "\n".join(f"- {r}" for r in _recent_riffs[-5:])
+        history_block += f"DO NOT repeat or rephrase any of these recent comments:\n{avoid_lines}\n\n"
 
     prompt = (
         f"{char['system']}\n\n"
@@ -553,8 +561,8 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_pa
         riff_model = OLLAMA_MODEL
         riff_timeout = 12  # user is actively waiting, can afford more time
     else:
-        riff_model = OLLAMA_DECISION_MODEL
-        riff_timeout = 6
+        riff_model = OLLAMA_DECISION_MODEL if "tev1" not in OLLAMA_DECISION_MODEL.lower() else CRITIC_TEXT_MODEL
+        riff_timeout = 8
 
     body = {
         "model": riff_model,
@@ -577,13 +585,23 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_pa
             if riff.lower().startswith(prefix.lower()):
                 riff = riff[len(prefix):].strip()
             if riff:
-                # TASK 2: Save to rolling banter memory
-                _riff_history.append({"char": char["name"], "riff": riff, "user": user_speech})
-                if len(_riff_history) > _RIFF_HISTORY_MAX:
-                    _riff_history.pop(0)
-                return char, riff
-    except Exception:
-        pass
+                # Anti-repetition check against recent riffs
+                is_repeat = any(
+                    difflib.SequenceMatcher(None, riff.lower(), prev.lower()).ratio() > 0.65
+                    for prev in _recent_riffs[-15:]
+                )
+                if not is_repeat:
+                    _recent_riffs.append(riff)
+                    if len(_recent_riffs) > 30:
+                        _recent_riffs.pop(0)
+                    _riff_history.append({"char": char["name"], "riff": riff, "user": user_speech})
+                    if len(_riff_history) > _RIFF_HISTORY_MAX:
+                        _riff_history.pop(0)
+                    return char, riff
+                else:
+                    print(f"[Critic] Discarding repetitive generated riff: {riff!r}")
+    except Exception as e:
+        print(f"[Critic] Generation error ({e}), using non-repeating fallback deck")
 
     # High-quality fallback riffs per theme (expanded library)
     fallbacks = {
@@ -707,7 +725,22 @@ def generate_critic_riff(theme_key: str, app_name: str, win_title: str, thumb_pa
             "Those charts look like a rainbow! You made math pretty!"
         ]
     }
-    riff = random.choice(fallbacks.get(theme_key, fallbacks["couch_duo"]))
+    deck = _fallback_decks.get(theme_key)
+    if not deck:
+        theme_fallbacks = list(fallbacks.get(theme_key, fallbacks["couch_duo"]))
+        random.shuffle(theme_fallbacks)
+        deck = [f for f in theme_fallbacks if f not in _recent_riffs]
+        if not deck:
+            deck = theme_fallbacks
+        _fallback_decks[theme_key] = deck
+
+    riff = _fallback_decks[theme_key].pop()
+    _recent_riffs.append(riff)
+    if len(_recent_riffs) > 30:
+        _recent_riffs.pop(0)
+    _riff_history.append({"char": char["name"], "riff": riff, "user": user_speech})
+    if len(_riff_history) > _RIFF_HISTORY_MAX:
+        _riff_history.pop(0)
     return char, riff
 
 def run_on_main(fn):
