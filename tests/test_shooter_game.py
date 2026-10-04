@@ -15,7 +15,7 @@ if REPO_DIR not in sys.path:
     sys.path.insert(0, REPO_DIR)
 
 import free_voice
-from integrations.shooter_game.intents import map_voice_to_action
+from integrations.shooter_game.intents import map_voice_to_action, map_voice_to_actions
 from integrations.shooter_game.shooter_manager import GAME_HTML
 
 TEST_FLAG = "/tmp/test_shooter_game_active.flag"
@@ -45,6 +45,19 @@ class TestShooterIntents(unittest.TestCase):
         }
         for phrase, want in cases.items():
             self.assertEqual(map_voice_to_action(phrase), want, phrase)
+
+    def test_multi_actions(self):
+        multi_cases = [
+            ("kick kick kick", ["kick", "kick", "kick"]),
+            ("kick shoot kick", ["kick", "shoot", "kick"]),
+            ("vent one vent two", ["vent_1", "vent_2"]),
+            ("red shoot", ["red", "shoot"]),
+            ("pilot 3 deploy", ["select_2", "start"]),
+            ("kick and shoot", ["kick", "shoot"]),
+            ("kick, kick, kick", ["kick", "kick", "kick"]),
+        ]
+        for phrase, expected in multi_cases:
+            self.assertEqual(map_voice_to_actions(phrase), expected, phrase)
 
 
 class TestShooterRouting(unittest.TestCase):
@@ -100,7 +113,8 @@ class TestShooterRouting(unittest.TestCase):
 
 class TestShooterAssets(unittest.TestCase):
     def test_game_files_and_protocol(self):
-        html = open(GAME_HTML).read()
+        with open(GAME_HTML, "r", encoding="utf-8") as f:
+            html = f.read()
         self.assertIn("<title>Rogue Mech Protocol</title>", html)
         self.assertIn("ws://localhost:8765", html)
         for a in ["kick", "shoot", "vent_1", "vent_2", "vent_3", "red", "blue"]:

@@ -17,10 +17,11 @@ import time
 import websockets
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from intents import map_voice_to_action  # noqa: E402
+from intents import map_voice_to_actions, map_voice_to_action  # noqa: E402
 
 WS_HOST = os.getenv("WS_HOST", "localhost")
 WS_PORT = int(os.getenv("WS_PORT", "8765"))
+JEV_URL = os.getenv("JEV_URL", "http://localhost:8080/v1/systemone")
 FLAG_FILE = "/tmp/shooter_game_active.flag"
 VOICE_INPUT_FILE = "/tmp/shooter_voice_input.txt"
 
@@ -56,6 +57,41 @@ async def broadcast(payload: dict):
     await asyncio.gather(*(c.send(msg) for c in list(clients)), return_exceptions=True)
 
 
+async def query_jev_fallback(phrase: str) -> list[str]:
+    """Optional Jev System One categorical query if local rules didn't catch conversational phrasing."""
+    try:
+        import aiohttp
+        payload = {
+            "state": phrase,
+            "questions": {
+                "shooter_intent": {
+                    "type": "categorical",
+                    "options": [
+                        {"id": "kick", "description": "Kick, stomp, or smash the ground tank"},
+                        {"id": "shoot", "description": "Shoot, blast, launch rocket, or fire at the jet"},
+                        {"id": "vent_1", "description": "Vent, cool, or flush reactor core 1"},
+                        {"id": "vent_2", "description": "Vent, cool, or flush reactor core 2"},
+                        {"id": "vent_3", "description": "Vent, cool, or flush reactor core 3"},
+                        {"id": "red", "description": "Answer red color for the weapons puzzle"},
+                        {"id": "blue", "description": "Answer blue color for the weapons puzzle"},
+                        {"id": "start", "description": "Deploy, start mission, launch, or retry"},
+                        {"id": "none", "description": "Unrelated conversation or background noise"}
+                    ]
+                }
+            }
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(JEV_URL, json=payload, timeout=0.6) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    ans = data.get("answers", {}).get("shooter_intent", "none")
+                    if ans and ans != "none":
+                        return [ans]
+    except Exception:
+        pass
+    return []
+
+
 async def watch_voice_pipe():
     pos = os.path.getsize(VOICE_INPUT_FILE) if os.path.exists(VOICE_INPUT_FILE) else 0
     while True:
@@ -73,12 +109,16 @@ async def watch_voice_pipe():
                         raw_text = line.strip()
                         if not raw_text:
                             continue
-                        # Broadcast voice_heard so the UI dot can blink and display what was heard
+                        # Broadcast voice_heard so the UI dot blinks and displays the heard transcript
                         await broadcast({"event": "voice_heard", "text": raw_text})
-                        action = map_voice_to_action(raw_text)
-                        print(f"[voice] '{raw_text}' -> {action}", flush=True)
-                        if action:
-                            await broadcast({"action": action})
+                        actions = map_voice_to_actions(raw_text)
+                        if not actions:
+                            actions = await query_jev_fallback(raw_text)
+                        print(f"[voice] '{raw_text}' -> {actions}", flush=True)
+                        for act in actions:
+                            await broadcast({"action": act})
+                            if len(actions) > 1:
+                                await asyncio.sleep(0.09)
         except Exception as e:
             print(f"[!] pipe error: {e}", flush=True)
         await asyncio.sleep(0.04)

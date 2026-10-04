@@ -899,8 +899,33 @@ def _resolve_mlx_whisper_repo(model_name: str) -> str:
     return mapping.get(base_m, f"mlx-community/whisper-{base_m}-mlx")
 
 
+def is_any_game_active() -> bool:
+    """True if either the 3D Vector Runner or Rogue Mech Protocol shooter is actively running."""
+    try:
+        from integrations.runner_game.runner_manager import is_runner_active
+        if is_runner_active():
+            return True
+    except Exception:
+        pass
+    try:
+        from integrations.shooter_game.shooter_manager import is_shooter_active
+        if is_shooter_active():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _get_initial_prompt() -> str:
+    base = "Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume."
+    if is_any_game_active():
+        return base + " kick, shoot, fire, vent, red, blue, start, deploy, Cap, Blaze, Hook, Sarge, Patch, Sumo, Zen, Marshal, left, right, jump, faster, slower."
+    return base
+
+
 def transcribe(audio) -> str:
     global _whisper
+    prompt = _get_initial_prompt()
     if VOICE_STT_ENGINE == "phonon":
         phonon = _get_phonon_model()
         if phonon is not None:
@@ -917,7 +942,7 @@ def transcribe(audio) -> str:
             audio,
             beam_size=1,
             vad_filter=True,
-            initial_prompt="Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume.",
+            initial_prompt=prompt,
         )
         return " ".join(s.text for s in segments).strip()
 
@@ -930,7 +955,7 @@ def transcribe(audio) -> str:
             res = mlx_whisper.transcribe(
                 audio,
                 path_or_hf_repo=repo,
-                initial_prompt="Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume.",
+                initial_prompt=prompt,
             )
             return str(res.get("text", "")).strip()
         except Exception as e:
@@ -944,7 +969,7 @@ def transcribe(audio) -> str:
         audio,
         beam_size=1,
         vad_filter=True,
-        initial_prompt="Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume.",
+        initial_prompt=prompt,
     )
     text = " ".join(s.text for s in segments).strip()
     return text
@@ -1172,6 +1197,8 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.35, wake_word: str =
                             preroll.clear()
                             vad.reset()
                             continue
+                        game_mode = is_any_game_active()
+                        vad.end_needed = max(1, 200 // 30) if game_mode else max(1, 550 // 30)
                         state = vad.update(samples)
                         if state == "start":
                             capturing = list(preroll) + [samples.copy()]
@@ -1189,7 +1216,8 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.35, wake_word: str =
                             audio = (np.concatenate(capturing)
                                      .astype(np.float32) / 32768.0)
                             capturing = []
-                            if len(audio) > 16000 * 0.4:  # ignore blips < 0.4 s
+                            min_len = 16000 * 0.15 if game_mode else 16000 * 0.4
+                            if len(audio) > min_len:  # ignore blips
                                 log("transcribing...")
                                 try:
                                     on_utterance(audio)
@@ -1206,7 +1234,7 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.35, wake_word: str =
                                 pass
                             preroll.clear()
                             vad.reset()
-                            time.sleep(0.3)  # cooldown so one sentence = one command
+                            time.sleep(0.04 if game_mode else 0.3)  # fast turnaround in game mode
             except KeyboardInterrupt:
                 raise
             except Exception as e:
@@ -7083,7 +7111,8 @@ def demo_partials(text: str) -> None:
 
 
 def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = False) -> None:
-    if audio is not None and len(audio) > 16000 * 0.4:
+    game_mode = is_any_game_active()
+    if not game_mode and audio is not None and len(audio) > 16000 * 0.4:
         is_user, sim = verify_speaker(audio)
         if not is_user:
             log(f"Speaker mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD}) — dropped ambient/TV voice")
