@@ -70,8 +70,13 @@ async def watch_voice_pipe():
                         lines = f.readlines()
                         pos = f.tell()
                     for line in lines:
-                        action = map_voice_to_action(line)
-                        print(f"[voice] '{line.strip()}' -> {action}", flush=True)
+                        raw_text = line.strip()
+                        if not raw_text:
+                            continue
+                        # Broadcast voice_heard so the UI dot can blink and display what was heard
+                        await broadcast({"event": "voice_heard", "text": raw_text})
+                        action = map_voice_to_action(raw_text)
+                        print(f"[voice] '{raw_text}' -> {action}", flush=True)
                         if action:
                             await broadcast({"action": action})
         except Exception as e:

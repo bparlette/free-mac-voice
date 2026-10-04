@@ -16,16 +16,14 @@ if REPO_DIR not in sys.path:
 
 import free_voice
 from integrations.shooter_game.intents import map_voice_to_action
-from integrations.shooter_game.shooter_manager import (
-    FLAG_FILE,
-    VOICE_INPUT_FILE,
-    GAME_HTML,
-    is_shooter_active,
-)
+from integrations.shooter_game.shooter_manager import GAME_HTML
+
+TEST_FLAG = "/tmp/test_shooter_game_active.flag"
+TEST_VOICE_INPUT = "/tmp/test_shooter_voice_input.txt"
 
 
 def _clean():
-    for p in (FLAG_FILE, VOICE_INPUT_FILE):
+    for p in (TEST_FLAG, TEST_VOICE_INPUT):
         if os.path.exists(p):
             os.remove(p)
 
@@ -70,26 +68,31 @@ class TestShooterRouting(unittest.TestCase):
         for phrase in ["close game", "close shooter game", "quit the shooter game"]:
             self.assertEqual(free_voice.route(phrase)[0], "close_runner_game", phrase)
 
+    @patch("integrations.shooter_game.shooter_manager.FLAG_FILE", TEST_FLAG)
+    @patch("integrations.shooter_game.shooter_manager.VOICE_INPUT_FILE", TEST_VOICE_INPUT)
     def test_game_mode_captures_speech(self):
-        with open(FLAG_FILE, "w") as f:
+        with open(TEST_FLAG, "w") as f:
             json.dump({"pid": os.getpid(), "port": 8765}, f)
+        from integrations.shooter_game.shooter_manager import is_shooter_active
         self.assertTrue(is_shooter_active())
         cmds = ["kick", "shoot", "vent one", "red", "blue"]
         for c in cmds:
             self.assertTrue(free_voice.handle_command(c, quiet_miss=True, require_wake_word=True))
-        with open(VOICE_INPUT_FILE) as f:
+        with open(TEST_VOICE_INPUT) as f:
             self.assertEqual([l.strip() for l in f], cmds)
 
+    @patch("integrations.shooter_game.shooter_manager.FLAG_FILE", TEST_FLAG)
     @patch("free_voice.act_close_runner_game")
     def test_wake_word_close(self, mock_close):
-        with open(FLAG_FILE, "w") as f:
+        with open(TEST_FLAG, "w") as f:
             json.dump({"pid": os.getpid(), "port": 8765}, f)
         self.assertTrue(free_voice.handle_command("Mac, close game", quiet_miss=True, require_wake_word=True))
         mock_close.assert_called_once()
 
+    @patch("integrations.shooter_game.shooter_manager.FLAG_FILE", TEST_FLAG)
     @patch("free_voice.act_open_app")
     def test_wake_word_passthrough(self, mock_open):
-        with open(FLAG_FILE, "w") as f:
+        with open(TEST_FLAG, "w") as f:
             json.dump({"pid": os.getpid(), "port": 8765}, f)
         self.assertTrue(free_voice.handle_command("Mac, open notes", quiet_miss=True, require_wake_word=True))
         mock_open.assert_called_once_with("notes")

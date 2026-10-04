@@ -156,9 +156,10 @@
       gap: 6px;
       white-space: nowrap;
     }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: #777; box-shadow: 0 0 0 2px color-mix(in srgb, #777 20%, transparent); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #777; box-shadow: 0 0 0 2px color-mix(in srgb, #777 20%, transparent); transition: transform .15s ease, background-color .15s ease; }
     .dot.on { background: #36d98b; box-shadow: 0 0 8px #36d98b; }
     .dot.wait { background: #ffb92b; }
+    .dot.blink { background: #ff00ff; box-shadow: 0 0 16px #ff00ff, 0 0 30px #00ffff; transform: scale(2.4); }
     @media (max-width: 660px) {
       main { padding-inline: 6px; padding-top: 6px; }
       .cabinet { border-radius: 12px 12px 7px 7px; padding: 7px; }
@@ -277,6 +278,17 @@
   function noiseBurst() { beep(70,.12,"sawtooth",.035); setTimeout(function(){beep(45,.16,"square",.018);},35); }
   function hitSound() { beep(180,.07,"square",.035); setTimeout(function(){beep(85,.12,"sawtooth",.025);},38); }
 
+  var blinkTimer = null;
+  function triggerVoiceBlink(text) {
+    voiceDot.className = "dot blink";
+    if (text) voiceText.textContent = "🎙️ Heard: \"" + text + "\"";
+    clearTimeout(blinkTimer);
+    blinkTimer = setTimeout(function() {
+      voiceDot.className = "dot on";
+      voiceText.textContent = "Voice bridge connected";
+    }, 600);
+  }
+
   function voiceOff() { voiceDot.className="dot";voiceText.textContent="Keyboard + touch ready"; }
   function connectVoice() {
     if (voiceConnecting || (ws && ws.readyState <= 1)) return;
@@ -287,7 +299,15 @@
       ws = new WebSocket("ws://localhost:8765");
       ws.onopen = function(){voiceConnecting=false;voiceDot.className="dot on";voiceText.textContent="Voice bridge connected";};
       ws.onmessage = function(ev){
-        try { var msg=JSON.parse(ev.data); if (msg && typeof msg.action==="string") handleAction(msg.action); } catch(e) {}
+        try {
+          var msg=JSON.parse(ev.data);
+          if (msg) {
+            if (msg.event === "voice_heard" || msg.action) {
+              triggerVoiceBlink(msg.text || msg.action);
+            }
+            if (typeof msg.action === "string") handleAction(msg.action);
+          }
+        } catch(e) {}
       };
       ws.onerror = function(){voiceConnecting=false;voiceOff();};
       ws.onclose = function(){voiceConnecting=false;voiceOff();setTimeout(connectVoice,2000);};
