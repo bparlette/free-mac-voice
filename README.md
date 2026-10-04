@@ -174,6 +174,21 @@ Free Mac Voice features a built-in 3D endless vector runner powered by WebGL (Th
 | `“Mac, close game”` / `“Hey Mac, quit game”` | Terminates runner orchestrator, closes Safari window, restores standard desktop voice control |
 | `“Mac, <any macOS command>”` | Wake-word override: controls your Mac mid-game without interference (e.g. *"Mac, open notes"*) |
 
+### 🤖 Rogue Mech Protocol — the Shooter Game (16-Bit Arcade)
+A single-file 320×240 pixel-art cockpit game (`integrations/shooter_game/`) with three simultaneous loops: kill tanks and jets through the windshield, keep three reactor cores from staying red for 3 seconds, and beat the Stroop-effect weapons lock. Pick one of the 8 Sticker Kart pilots; your pilot turns to look back at the screen on every kill. Bundled sticker art in `assets/` (falls back to the Sticker Kart CDN, then to procedural pixel heads).
+
+| Voice Command | Action |
+|---|---|
+| `“Mac, start shooter game”` / `“play shooter”` / `“play rogue mech protocol”` | Starts the voice bridge and opens the game in Safari (stops the runner if running; both share `ws://localhost:8765`) |
+| `“kick”` | Destroys the closest ground tank (big explosion + screen shake) |
+| `“shoot”` / `“fire”` | Destroys the closest jet (needs unlocked weapons, else red error flash) |
+| `“red”` / `“blue”` | Answer the **painted** color of the word, not the word itself. Right unlocks weapons for 3 s; wrong overheats a random core |
+| `“vent one”` / `“vent two”` / `“vent three”` | Instantly cools reactor core 1 / 2 / 3 |
+| `“start”` / `“retry”` | Deploy from the pilot select or Game Over screen |
+| `“Mac, close game”` | Shuts down the bridge and closes the window |
+
+Keyboard fallback: `A`/`D` = red/blue, `K` kick, `S` shoot, `1`/`2`/`3` vent. Same Zero-Interference Game Mode as the runner: in-game words never trigger macOS actions; saying **"Mac"** hands control back instantly.
+
 > [!NOTE]
 > **Zero-Interference Game Mode**: While the runner is active, in-game speech (`left`, `jump`, `faster`, `shoot`, `change world...`) is captured exclusively by the game engine in `<1ms`. `free-mac-voice` will **never** trigger macOS accessibility clicks, window movements, or system actions on game words. Saying **"Mac"** or **"Hey Mac"** instantly handshakes back to macOS.
 

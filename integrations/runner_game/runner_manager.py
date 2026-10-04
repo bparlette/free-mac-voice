@@ -65,7 +65,14 @@ def start_runner_game(say_fn=None) -> bool:
         subprocess.run(["open", "-a", "Safari", GAME_HTML])
         return True
 
-    # 1. Ensure Ollama is ready
+    # 1. Ensure Ollama is ready (and free the shared ws port if the shooter is running)
+    try:
+        from integrations.shooter_game.shooter_manager import is_shooter_active, close_shooter_game
+        if is_shooter_active():
+            close_shooter_game(say_fn=lambda *_: None)
+            time.sleep(0.4)
+    except Exception:
+        pass
     ensure_ollama_running()
 
     # 2. Pick Python binary (prefer venv)

@@ -4642,13 +4642,27 @@ def act_start_runner_game() -> None:
 
 
 def act_close_runner_game() -> None:
-    """'close game' — cleanly terminate the Vector Runner and close window."""
+    """'close game' — cleanly terminate whichever voice game is running (runner or shooter)."""
     try:
-        from integrations.runner_game.runner_manager import close_runner_game
-        close_runner_game(say_fn=say)
+        from integrations.runner_game.runner_manager import is_runner_active, close_runner_game
+        from integrations.shooter_game.shooter_manager import is_shooter_active, close_shooter_game
+        if is_shooter_active() and not is_runner_active():
+            close_shooter_game(say_fn=say)
+        else:
+            close_runner_game(say_fn=say)
     except Exception as e:
         log(f"close_runner_game failed: {e}")
-        say("I couldn't close the runner game")
+        say("I couldn't close the game")
+
+
+def act_start_shooter_game() -> None:
+    """'start shooter game' — launch Rogue Mech Protocol + its voice bridge."""
+    try:
+        from integrations.shooter_game.shooter_manager import start_shooter_game
+        start_shooter_game(say_fn=say)
+    except Exception as e:
+        log(f"start_shooter_game failed: {e}")
+        say("I couldn't start the shooter game")
 
 
 # --- Samsung TV control (SmartThings cloud API) ---------------------------
@@ -4829,7 +4843,8 @@ _p(r"^(?:open|launch) (youtube|netflix|hulu|disney(?: plus)?|max|hbo|prime(?: vi
 _p(r"^(?:search|find on) youtube (?:for )?(.+)$", "search_youtube")
 # --- 3D Voice-Reactive Vector Runner Game
 _p(r"^(?:play|start|launch|open)\s+(?:the\s+)?(?:voice\s+)?(?:vector\s+)?runner(?:\s+game)?$", "start_runner_game", True)
-_p(r"^(?:close|quit|stop|exit)\s+(?:the\s+)?(?:runner\s+)?game$", "close_runner_game", True)
+_p(r"^(?:play|start|launch|open)\s+(?:the\s+)?(?:rogue\s+mech(?:\s+protocol)?|mech\s+game|shooter(?:\s+game)?)$", "start_shooter_game", True)
+_p(r"^(?:close|quit|stop|exit)\s+(?:the\s+)?(?:(?:runner|shooter)\s+)?game$", "close_runner_game", True)
 _p(r"^(open|opens|launch|start) the (.+?) (app|application)$", "open_app", True)
 _p(r"^(open|opens|launch|start) (.+)$", "open_app", True)
 _p(r"^(next app|app forward)$", "next_app", True)
@@ -5628,6 +5643,8 @@ def execute_match(name: str, m: re.Match, confirm_audio_fn=None,
             act_set_quiet_mode(False)
         elif name == "start_runner_game":
             act_start_runner_game()
+        elif name == "start_shooter_game":
+            act_start_shooter_game()
         elif name == "close_runner_game":
             act_close_runner_game()
         elif name == "show_review":
@@ -6802,26 +6819,32 @@ def handle_command(text: str, confirm_audio_fn=None,
     if not t:
         return False
 
-    # 3D Vector Runner Game Mode Interception
+    # Game Mode Interception (Vector Runner + Rogue Mech shooter)
     try:
         from integrations.runner_game.runner_manager import is_runner_active, pipe_voice_to_runner
+        from integrations.shooter_game.shooter_manager import is_shooter_active, pipe_voice_to_shooter
+        _pipe = None
         if is_runner_active():
+            _pipe = pipe_voice_to_runner
+        elif is_shooter_active():
+            _pipe = pipe_voice_to_shooter
+        if _pipe is not None:
             is_wake, stripped = parse_wake_word(t, VOICE_WAKE_WORD or "mac")
             if is_wake:
-                if re.match(r"^(?:close|quit|stop|exit)\s+(?:the\s+)?(?:runner\s+)?game$", stripped, re.I):
+                if re.match(r"^(?:close|quit|stop|exit)\s+(?:the\s+)?(?:(?:runner|shooter)\s+)?game$", stripped, re.I):
                     act_close_runner_game()
                     return True
                 # User specifically addressed "Mac" / "Hey Mac": continue to execute on Mac
                 require_wake_word = False
                 t = stripped
             else:
-                # In-game command without wake word: route exclusively to runner, bypass macOS actions
-                pipe_voice_to_runner(t)
-                log(f"[Game Mode] routed '{t}' exclusively to runner (macOS ignored)")
+                # In-game command without wake word: route exclusively to the game, bypass macOS actions
+                _pipe(t)
+                log(f"[Game Mode] routed '{t}' exclusively to game (macOS ignored)")
                 notify_hud(f"🎮 {t}", "transcribed")
                 return True
     except Exception as e:
-        log(f"runner mode check error: {e}")
+        log(f"game mode check error: {e}")
 
     if VOICE_WAKE_WORD:
         is_wake, cmd = parse_wake_word(t, VOICE_WAKE_WORD)
