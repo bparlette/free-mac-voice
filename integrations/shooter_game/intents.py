@@ -17,16 +17,32 @@ _NUM = {
     "3": 3, "three": 3, "tree": 3,
 }
 
-# (regex, action-or-callable). The EARLIEST match in the phrase wins so
-# "red no blue" resolves to the first thing said.
+_PILOT_MAP = {
+    "cap": 0, "captain": 0,
+    "blaze": 1,
+    "hook": 2,
+    "sarge": 3, "sergeant": 3,
+    "patch": 4, "patches": 4,
+    "sumo": 5,
+    "zen": 6,
+    "marshal": 7, "marshall": 7,
+}
+
+# (regex, action-or-callable). The EARLIEST match in the phrase wins.
 _PATTERNS = [
     (re.compile(r"\b(?:vent|cool|core|reactor)\s*(?:number\s*)?(1|one|won|2|two|to|too|3|three|tree)\b"),
      lambda m: f"vent_{_NUM[m.group(1)]}"),
+    (re.compile(r"\b(?:select|choose|pick|pilot)\s+(cap|captain|blaze|hook|sarge|sergeant|patch|patches|sumo|zen|marshal|marshall)\b"),
+     lambda m: f"select_{_PILOT_MAP[m.group(1)]}"),
+    (re.compile(r"\b(cap|captain|blaze|hook|sarge|sergeant|patch|patches|sumo|zen|marshal|marshall)\b"),
+     lambda m: f"select_{_PILOT_MAP[m.group(1)]}"),
+    (re.compile(r"\b(?:select|choose|pick|pilot)\s*(?:number\s*)?([1-8])\b"),
+     lambda m: f"select_{int(m.group(1)) - 1}"),
     (re.compile(r"\bred\b"), lambda m: "red"),
     (re.compile(r"\bblue\b"), lambda m: "blue"),
     (re.compile(r"\b(?:kick|stomp|tank)\b"), lambda m: "kick"),
     (re.compile(r"\b(?:shoot|fire|blast|jet)\b"), lambda m: "shoot"),
-    (re.compile(r"\b(?:start|deploy|restart|retry|again)\b"), lambda m: "start"),
+    (re.compile(r"\b(?:deploy|start|launch|restart|retry|again|play)\b"), lambda m: "start"),
 ]
 
 

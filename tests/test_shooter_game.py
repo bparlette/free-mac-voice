@@ -39,7 +39,10 @@ class TestShooterIntents(unittest.TestCase):
             "vent to": "vent_2", "cool core 3": "vent_3",
             "red": "red", "Blue!": "blue", "it's red": "red",
             "red no blue": "red",
-            "start": "start", "try again": "start",
+            "start": "start", "try again": "start", "deploy": "start",
+            "cap": "select_0", "choose blaze": "select_1", "pick hook": "select_2",
+            "pilot sarge": "select_3", "patch": "select_4", "sumo": "select_5",
+            "zen": "select_6", "select marshal": "select_7", "pilot 1": "select_0",
             "what's the weather": None, "": None,
         }
         for phrase, want in cases.items():

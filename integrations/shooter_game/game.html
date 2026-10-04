@@ -345,7 +345,14 @@
     else {var idx=Math.floor(Math.random()*3);cores[idx].heat=Math.min(1,cores[idx].heat+.42);cores[idx].pulse=.5;errorFlash=.24;nextPuzzle();beep(105,.16,"sawtooth",.04);}
   }
   function handleAction(action) {
-    if(action==="start"||action==="restart"){if(state==="select"||state==="over")reset();return;}
+    if(/^select_[0-7]$/.test(action)) {
+      var idx=parseInt(action.slice(-1),10);
+      selected=idx;
+      primary.textContent=(state==="play"?"RESUME WITH ":"DEPLOY ")+names[selected];
+      beep(260+idx*30,.05,"square",.012);
+      return;
+    }
+    if(action==="start"||action==="restart"||action==="deploy"){if(state==="select"||state==="over")reset();else if(pause){pause=false;primary.textContent="PAUSE MISSION";}return;}
     if(action==="red"||action==="blue")return answer(action);
     if(state!=="play"||pause)return;
     if(action==="kick") {
