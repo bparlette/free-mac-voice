@@ -1,0 +1,643 @@
+[
+ {
+  "name": "current: n-gram hash",
+  "top1": 0.6363636363636364,
+  "p50_ms": 0.010916031897068024,
+  "thr": {
+   "0 neg accepted": {
+    "t": 0.503,
+    "hit": 0.36363636363636365,
+    "misroute": 0.12987012987012986,
+    "neg_fa": 0,
+    "destr_caught": 2,
+    "destr_misrouted": [
+     "turn the computer off",
+     "nuke safari"
+    ]
+   },
+   "<=2 neg accepted": {
+    "t": 0.478,
+    "hit": 0.38961038961038963,
+    "misroute": 0.14285714285714285,
+    "neg_fa": 2,
+    "destr_caught": 3,
+    "destr_misrouted": [
+     "turn the computer off",
+     "nuke safari"
+    ]
+   },
+   "prod 0.75": {
+    "t": 0.75,
+    "hit": 0.05194805194805195,
+    "misroute": 0.012987012987012988,
+    "neg_fa": 0,
+    "destr_caught": 0,
+    "destr_misrouted": []
+   }
+  },
+  "top1_by_source": {
+   "log": "4/8",
+   "para": "35/59",
+   "asr": "10/10"
+  },
+  "pos_misses": [
+   [
+    "quit safari",
+    "quit_app",
+    "open_app"
+   ],
+   [
+    "close console",
+    "quit_app",
+    "close_all_windows"
+   ],
+   [
+    "close tab",
+    "close_tab",
+    "reopen_tab"
+   ],
+   [
+    "Closed 10",
+    "close_window",
+    "reopen_tab"
+   ],
+   [
+    "move the window left",
+    "snap_left",
+    "close_window"
+   ],
+   [
+    "get me chrome",
+    "open_app",
+    "switch_app"
+   ],
+   [
+    "can you open the calculator app",
+    "open_app",
+    "help"
+   ],
+   [
+    "go over to mail",
+    "switch_app",
+    "tv_input"
+   ],
+   [
+    "jump to my chrome window",
+    "switch_app",
+    "hide"
+   ],
+   [
+    "get out of spotify",
+    "quit_app",
+    "open_app"
+   ],
+   [
+    "put this window on the left half",
+    "snap_left",
+    "close_window"
+   ],
+   [
+    "make it big",
+    "maximize_window",
+    "set_volume"
+   ],
+   [
+    "put it in the middle",
+    "center_window",
+    "tv_power"
+   ],
+   [
+    "shrink this to the dock",
+    "minimize",
+    "lock"
+   ],
+   [
+    "scroll to the top",
+    "scroll_up",
+    "snap_top"
+   ],
+   [
+    "google the weather in boston",
+    "web_search",
+    "tv_mute"
+   ],
+   [
+    "crank it up",
+    "set_volume",
+    "switch_app"
+   ],
+   [
+    "bring the sound down",
+    "set_volume",
+    "mute_toggle"
+   ],
+   [
+    "silence",
+    "mute_toggle",
+    "set_volume"
+   ],
+   [
+    "resume the song",
+    "media",
+    "tv_mute"
+   ],
+   [
+    "go back thirty seconds",
+    "media_seek",
+    "nav_back"
+   ],
+   [
+    "switch to the dark theme",
+    "dark_mode",
+    "tv_input"
+   ],
+   [
+    "turn off the internet",
+    "wifi",
+    "tv_power"
+   ],
+   [
+    "grab a picture of the screen",
+    "screenshot",
+    "lock"
+   ],
+   [
+    "snap the screen",
+    "screenshot",
+    "lock"
+   ],
+   [
+    "forget it",
+    "dismiss",
+    "set_volume"
+   ],
+   [
+    "put the tv on the mac",
+    "tv_input",
+    "tv_power"
+   ],
+   [
+    "louder on the tv",
+    "tv_volume",
+    "tv_power"
+   ]
+  ],
+  "wall_s": 0.0
+ },
+ {
+  "name": "nomic-embed-text (raw)",
+  "top1": 0.7792207792207793,
+  "p50_ms": 9.60429199039936,
+  "thr": {
+   "0 neg accepted": {
+    "t": 0.768,
+    "hit": 0.4155844155844156,
+    "misroute": 0.03896103896103896,
+    "neg_fa": 0,
+    "destr_caught": 5,
+    "destr_misrouted": []
+   },
+   "<=2 neg accepted": {
+    "t": 0.611,
+    "hit": 0.7012987012987013,
+    "misroute": 0.18181818181818182,
+    "neg_fa": 2,
+    "destr_caught": 7,
+    "destr_misrouted": [
+     "force close chrome",
+     "nuke safari"
+    ]
+   }
+  },
+  "top1_by_source": {
+   "log": "4/8",
+   "para": "50/59",
+   "asr": "6/10"
+  },
+  "pos_misses": [
+   [
+    "quit safari",
+    "quit_app",
+    "switch_app"
+   ],
+   [
+    "close console",
+    "quit_app",
+    "close_all_windows"
+   ],
+   [
+    "close tab",
+    "close_tab",
+    "reopen_tab"
+   ],
+   [
+    "Closed 10",
+    "close_window",
+    "reopen_tab"
+   ],
+   [
+    "get me chrome",
+    "open_app",
+    "switch_app"
+   ],
+   [
+    "go over to mail",
+    "switch_app",
+    "nav_forward"
+   ],
+   [
+    "get out of spotify",
+    "quit_app",
+    "open_app"
+   ],
+   [
+    "make it big",
+    "maximize_window",
+    "set_volume"
+   ],
+   [
+    "shrink this to the dock",
+    "minimize",
+    "help"
+   ],
+   [
+    "scroll to the top",
+    "scroll_up",
+    "scroll_down"
+   ],
+   [
+    "turn off the internet",
+    "wifi",
+    "tv_power"
+   ],
+   [
+    "snap the screen",
+    "screenshot",
+    "lock"
+   ],
+   [
+    "put the tv on the mac",
+    "tv_input",
+    "tv_power"
+   ],
+   [
+    "clothes the window",
+    "close_window",
+    "hide"
+   ],
+   [
+    "mute the tee vee",
+    "tv_mute",
+    "mute_toggle"
+   ],
+   [
+    "terror volume up",
+    "set_volume",
+    "tv_volume"
+   ],
+   [
+    "scroll dawn",
+    "scroll_down",
+    "scroll_up"
+   ]
+  ],
+  "wall_s": 2.7
+ },
+ {
+  "name": "nomic-embed-text (classification:)",
+  "top1": 0.7792207792207793,
+  "p50_ms": 11.056249961256981,
+  "thr": {
+   "0 neg accepted": {
+    "t": 0.857,
+    "hit": 0.4805194805194805,
+    "misroute": 0.03896103896103896,
+    "neg_fa": 0,
+    "destr_caught": 5,
+    "destr_misrouted": []
+   },
+   "<=2 neg accepted": {
+    "t": 0.766,
+    "hit": 0.7012987012987013,
+    "misroute": 0.19480519480519481,
+    "neg_fa": 2,
+    "destr_caught": 5,
+    "destr_misrouted": [
+     "power everything down",
+     "force close chrome",
+     "nuke safari"
+    ]
+   }
+  },
+  "top1_by_source": {
+   "log": "4/8",
+   "para": "50/59",
+   "asr": "6/10"
+  },
+  "pos_misses": [
+   [
+    "quit safari",
+    "quit_app",
+    "switch_app"
+   ],
+   [
+    "close console",
+    "quit_app",
+    "close_window"
+   ],
+   [
+    "close tab",
+    "close_tab",
+    "reopen_tab"
+   ],
+   [
+    "Closed 10",
+    "close_window",
+    "close_all_windows"
+   ],
+   [
+    "get me chrome",
+    "open_app",
+    "switch_app"
+   ],
+   [
+    "go over to mail",
+    "switch_app",
+    "nav_forward"
+   ],
+   [
+    "get out of spotify",
+    "quit_app",
+    "open_app"
+   ],
+   [
+    "make it big",
+    "maximize_window",
+    "set_volume"
+   ],
+   [
+    "shrink this to the dock",
+    "minimize",
+    "close_window"
+   ],
+   [
+    "back a page",
+    "nav_back",
+    "scroll_down"
+   ],
+   [
+    "go down a bit",
+    "scroll_down",
+    "nav_forward"
+   ],
+   [
+    "snap the screen",
+    "screenshot",
+    "snap_right"
+   ],
+   [
+    "put the tv on the mac",
+    "tv_input",
+    "tv_power"
+   ],
+   [
+    "clothes the window",
+    "close_window",
+    "hide"
+   ],
+   [
+    "mute the tee vee",
+    "tv_mute",
+    "mute_toggle"
+   ],
+   [
+    "terror volume up",
+    "set_volume",
+    "tv_volume"
+   ],
+   [
+    "scroll dawn",
+    "scroll_down",
+    "scroll_up"
+   ]
+  ],
+  "wall_s": 2.2
+ },
+ {
+  "name": "embeddinggemma v1 (raw)",
+  "top1": 0.8311688311688312,
+  "p50_ms": 10.081291082315147,
+  "thr": {
+   "0 neg accepted": {
+    "t": 0.733,
+    "hit": 0.6363636363636364,
+    "misroute": 0.07792207792207792,
+    "neg_fa": 0,
+    "destr_caught": 6,
+    "destr_misrouted": [
+     "force close chrome"
+    ]
+   },
+   "<=2 neg accepted": {
+    "t": 0.659,
+    "hit": 0.7532467532467533,
+    "misroute": 0.11688311688311688,
+    "neg_fa": 2,
+    "destr_caught": 6,
+    "destr_misrouted": [
+     "sign me out",
+     "force close chrome",
+     "nuke safari"
+    ]
+   }
+  },
+  "top1_by_source": {
+   "log": "6/8",
+   "para": "50/59",
+   "asr": "8/10"
+  },
+  "pos_misses": [
+   [
+    "close console",
+    "quit_app",
+    "close_window"
+   ],
+   [
+    "Closed 10",
+    "close_window",
+    "close_all_windows"
+   ],
+   [
+    "get me chrome",
+    "open_app",
+    "switch_app"
+   ],
+   [
+    "can you open the calculator app",
+    "open_app",
+    "calculate"
+   ],
+   [
+    "go over to mail",
+    "switch_app",
+    "open_url"
+   ],
+   [
+    "jump to my chrome window",
+    "switch_app",
+    "open_app"
+   ],
+   [
+    "get out of spotify",
+    "quit_app",
+    "open_app"
+   ],
+   [
+    "make it big",
+    "maximize_window",
+    "help"
+   ],
+   [
+    "crank it up",
+    "set_volume",
+    "scroll_up"
+   ],
+   [
+    "turn off the internet",
+    "wifi",
+    "tv_power"
+   ],
+   [
+    "you there",
+    "status",
+    "help"
+   ],
+   [
+    "clothes the window",
+    "close_window",
+    "snap_right"
+   ],
+   [
+    "mute the tee vee",
+    "tv_mute",
+    "mute_toggle"
+   ]
+  ],
+  "wall_s": 11.3
+ },
+ {
+  "name": "embeddinggemma v1 (task prompt)",
+  "top1": 0.8311688311688312,
+  "p50_ms": 11.922125006094575,
+  "thr": {
+   "0 neg accepted": {
+    "t": 0.764,
+    "hit": 0.6883116883116883,
+    "misroute": 0.07792207792207792,
+    "neg_fa": 0,
+    "destr_caught": 7,
+    "destr_misrouted": [
+     "force close chrome"
+    ]
+   },
+   "<=2 neg accepted": {
+    "t": 0.757,
+    "hit": 0.6883116883116883,
+    "misroute": 0.07792207792207792,
+    "neg_fa": 2,
+    "destr_caught": 7,
+    "destr_misrouted": [
+     "force close chrome"
+    ]
+   }
+  },
+  "top1_by_source": {
+   "log": "6/8",
+   "para": "50/59",
+   "asr": "8/10"
+  },
+  "pos_misses": [
+   [
+    "close console",
+    "quit_app",
+    "close_window"
+   ],
+   [
+    "Closed 10",
+    "close_window",
+    "close_all_windows"
+   ],
+   [
+    "can you open the calculator app",
+    "open_app",
+    "calculate"
+   ],
+   [
+    "go over to mail",
+    "switch_app",
+    "open_url"
+   ],
+   [
+    "get out of spotify",
+    "quit_app",
+    "dismiss"
+   ],
+   [
+    "put this window on the left half",
+    "snap_left",
+    "center_window"
+   ],
+   [
+    "make it big",
+    "maximize_window",
+    "help"
+   ],
+   [
+    "shrink this to the dock",
+    "minimize",
+    "snap_bottom"
+   ],
+   [
+    "back a page",
+    "nav_back",
+    "scroll_down"
+   ],
+   [
+    "go down a bit",
+    "scroll_down",
+    "set_volume"
+   ],
+   [
+    "you there",
+    "status",
+    "help"
+   ],
+   [
+    "clothes the window",
+    "close_window",
+    "snap_bottom"
+   ],
+   [
+    "mute the tee vee",
+    "tv_mute",
+    "mute_toggle"
+   ]
+  ],
+  "wall_s": 2.9
+ },
+ {
+  "name": "embeddinggemma-2 MPS (raw)",
+  "error": "ImportError: EmbeddingGemma2Processor requires the PIL library but it was not found in your environment. You can install it with pip:\n`pip install pillow`. Please note that you may need to restart your runtime after installation.\n\nTo install the required dependencies, run:\npip install -U \"sentence-t",
+  "wall_s": 86.7
+ },
+ {
+  "name": "embeddinggemma-2 MPS (task prompt)",
+  "error": "ImportError: EmbeddingGemma2Processor requires the PIL library but it was not found in your environment. You can install it with pip:\n`pip install pillow`. Please note that you may need to restart your runtime after installation.\n\nTo install the required dependencies, run:\npip install -U \"sentence-t",
+  "wall_s": 1.1
+ },
+ {
+  "name": "embeddinggemma-2 CPU (task prompt)",
+  "error": "ImportError: EmbeddingGemma2Processor requires the PIL library but it was not found in your environment. You can install it with pip:\n`pip install pillow`. Please note that you may need to restart your runtime after installation.\n\nTo install the required dependencies, run:\npip install -U \"sentence-t",
+  "wall_s": 1.1
+ }
+]

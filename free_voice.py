@@ -127,6 +127,11 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
 # Local fast decision model for sub-100ms intent classification (tev1:0.8b by default, or qwen2.5:1.5b)
 OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "tev1:0.8b").strip()
+# Tier 0.5a embedding model served by Ollama. Empty string = legacy n-gram hashing only.
+OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "embeddinggemma").strip()
+# Calibrated on benchmarks/embed_bakeoff (0 of 30 non-commands accepted at 0.764).
+TIER05_EMBED_THRESHOLD = float(os.environ.get("TIER05_EMBED_THRESHOLD", "0.78"))
+_EMBED_PREFIX = "task: classification | query: "
 # Confidence threshold for decision routing: 0.7 for tev1:0.8b, 0.5 for qwen2.5:1.5b
 DECISION_MIN_CONFIDENCE = float(os.environ.get("DECISION_MIN_CONFIDENCE", "0.7" if "tev1" in OLLAMA_DECISION_MODEL.lower() else "0.5"))
 # Model for multi-action sequential planning in JSON chat mode (generative model required)
@@ -6024,10 +6029,32 @@ def embed_utterance(text: str, dim: int = 1024):
 
 _PRECOMPUTED_INTENTS: list[tuple[str, str]] = []
 _PRECOMPUTED_MATRIX = None
+_EMBED_NEURAL = False  # True when the matrix was built with OLLAMA_EMBED_MODEL
+
+
+def _ollama_embed(texts: list[str]):
+    """Batch-embed via Ollama /api/embed. Returns L2-normalised float32 matrix, or None on any failure."""
+    import numpy as np
+    if not OLLAMA_EMBED_MODEL:
+        return None
+    try:
+        req = urllib.request.Request(
+            f"{OLLAMA_HOST}/api/embed",
+            data=json.dumps({"model": OLLAMA_EMBED_MODEL, "keep_alive": "60m",
+                             "input": [_EMBED_PREFIX + t for t in texts]}).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            m = np.asarray(json.load(r)["embeddings"], dtype=np.float32)
+        if m.ndim != 2 or m.shape[0] != len(texts):
+            return None
+        return m / np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-9)
+    except Exception as e:  # model not pulled, Ollama down, bad payload -> hashing fallback
+        log(f"Tier 0.5a neural embeddings unavailable ({OLLAMA_EMBED_MODEL}): {e}")
+        return None
 
 
 def _init_intent_embeddings() -> None:
-    global _PRECOMPUTED_INTENTS, _PRECOMPUTED_MATRIX
+    global _PRECOMPUTED_INTENTS, _PRECOMPUTED_MATRIX, _EMBED_NEURAL
     if _PRECOMPUTED_MATRIX is not None:
         return
     import numpy as np
@@ -6037,6 +6064,10 @@ def _init_intent_embeddings() -> None:
         for ex in examples:
             rows.append(embed_utterance(ex))
             intents.append((action, ex))
+    neural = _ollama_embed([ex for _, ex in intents])
+    if neural is not None:
+        rows, _EMBED_NEURAL = neural, True
+        log(f"Tier 0.5a using {OLLAMA_EMBED_MODEL} ({len(intents)} examples, dim={neural.shape[1]})")
     _PRECOMPUTED_INTENTS = intents
     _PRECOMPUTED_MATRIX = np.array(rows, dtype=np.float32)
 
@@ -6123,14 +6154,26 @@ def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, f
     _init_intent_embeddings()
     if _PRECOMPUTED_MATRIX is None or len(_PRECOMPUTED_INTENTS) == 0:
         return None
-    qv = embed_utterance(text)
+    qv = None
+    if _EMBED_NEURAL:
+        q = _ollama_embed([text])
+        if q is not None:
+            qv, threshold = q[0], TIER05_EMBED_THRESHOLD
+    if qv is None:
+        if _EMBED_NEURAL:  # Ollama hiccup mid-session: skip 0.5a rather than compare mismatched spaces
+            return None
+        qv = embed_utterance(text)
     sims = np.dot(_PRECOMPUTED_MATRIX, qv)
     best_idx = int(np.argmax(sims))
     best_sim = float(sims[best_idx])
     if best_sim >= threshold:
         action, _ = _PRECOMPUTED_INTENTS[best_idx]
         params = _extract_intent_params(action, text)
+        if action in ("open_app", "switch_app", "quit_app", "kill_app", "minimize", "hide") and not params.get("app"):
+            log(f"Tier 0.5a skip: {action} matched {text!r} but no app resolved (sim={best_sim:.2f})")
+            return None
         return action, params, best_sim
+    log(f"Tier 0.5a miss: {text!r} best={_PRECOMPUTED_INTENTS[best_idx][0]} sim={best_sim:.2f} < {threshold:.2f}")
     return None
 
 
