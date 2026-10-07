@@ -78,6 +78,8 @@ try:
         get_profile_path,
         get_model_path,
         ensure_model,
+        get_threshold,
+        active_backend,
         SPEAKER_THRESHOLD,
     )
 except ImportError:
@@ -88,6 +90,8 @@ except ImportError:
     get_profile_path = lambda: ""
     get_model_path = lambda: ""
     ensure_model = lambda **kw: ""
+    get_threshold = lambda backend=None: 0.17
+    active_backend = lambda: "pyannote"
     SPEAKER_THRESHOLD = 0.17
 
 # ---------------------------------------------------------------- env
@@ -129,8 +133,9 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b")
 OLLAMA_DECISION_MODEL = os.environ.get("OLLAMA_DECISION_MODEL", "tev1:0.8b").strip()
 # Tier 0.5a embedding model served by Ollama. Empty string = legacy n-gram hashing only.
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "embeddinggemma").strip()
-# Calibrated on benchmarks/embed_bakeoff (0 of 30 non-commands accepted at 0.764).
-TIER05_EMBED_THRESHOLD = float(os.environ.get("TIER05_EMBED_THRESHOLD", "0.78"))
+# 0.82 from benchmarks/intent_eval (400 adversarial non-commands, leak-free): beats the old 0.78 on
+# both recall (77.5% vs 72.6%) and false accepts (6.5% vs 9.0%) with the expanded example set.
+TIER05_EMBED_THRESHOLD = float(os.environ.get("TIER05_EMBED_THRESHOLD", "0.82"))
 _EMBED_PREFIX = "task: classification | query: "
 # Confidence threshold for decision routing: 0.7 for tev1:0.8b, 0.5 for qwen2.5:1.5b
 DECISION_MIN_CONFIDENCE = float(os.environ.get("DECISION_MIN_CONFIDENCE", "0.7" if "tev1" in OLLAMA_DECISION_MODEL.lower() else "0.5"))
@@ -6111,6 +6116,66 @@ _INTENT_EXAMPLES: dict[str, list[str]] = {
     ],
 }
 
+# More phrasings for intents that had only 2-6 examples (found by benchmarks/intent_eval:
+# switch/snap/maximize recall was 54-65%). Merged in, not edited into the dict above.
+_INTENT_EXAMPLES_EXTRA: dict[str, list[str]] = {
+    "switch_app": [
+        "go to spotify", "jump to messages", "take me back to the browser",
+        "switch over to mail", "flip to the music app", "go back to zoom",
+        "swap to the calendar", "change to photos", "show me the terminal",
+        "bring the finder to the front", "can you switch me to notes",
+    ],
+    "snap_left": [
+        "put this window on the left half", "move the window to the left",
+        "left half of the screen", "shove it to the left side", "split screen left",
+        "dock this window on the left", "put safari on the left",
+    ],
+    "snap_right": [
+        "put this window on the right half", "move the window to the right",
+        "right half of the screen", "shove it to the right side", "split screen right",
+        "dock this window on the right", "put notes on the right",
+    ],
+    "maximize_window": [
+        "maximize", "make this window bigger", "fill the screen", "go full screen",
+        "make it fill the whole screen", "expand this window", "enlarge the window",
+    ],
+    "minimize": [
+        "hide this window", "put it in the dock", "get this window out of the way",
+        "minimize everything", "tuck this away", "show the desktop",
+    ],
+    "set_volume": [
+        "volume up", "volume down", "volume to thirty percent", "set volume to fifty",
+        "half volume", "turn it up a little", "turn it way down", "louder please",
+        "a bit quieter", "crank it up", "volume twenty",
+    ],
+    "timer": [
+        "set a twenty minute timer", "timer for thirty seconds", "remind me in fifteen minutes",
+        "cancel the timer", "stop the timer", "how long is left on the timer",
+        "add five minutes to the timer", "start a pasta timer for nine minutes",
+    ],
+    "media": [
+        "pause", "resume", "unpause", "keep playing", "hit play", "press play",
+        "pause it", "play it again", "stop the music", "resume playback", "skip this one",
+        "next song", "skip ahead to the next track",
+    ],
+    "open_app": [
+        "open up the music app", "fire up photos", "pull up the calendar app",
+        "could you open netflix", "open the weather app for me", "open system settings",
+        "start up zoom", "open the mail app",
+    ],
+    "quit_app": [
+        "quit safari", "close spotify", "exit out of apple tv", "get rid of zoom",
+        "can you quit the music app", "shut down netflix", "force quit chrome",
+    ],
+    "web_search": [
+        "google banana bread recipe", "can you look up the bus times", "search for pizza near me",
+        "look up showtimes tonight", "search the web for cheap flights",
+    ],
+}
+for _intent, _examples in _INTENT_EXAMPLES_EXTRA.items():
+    _INTENT_EXAMPLES.setdefault(_intent, []).extend(
+        e for e in _examples if e not in _INTENT_EXAMPLES[_intent])
+
 
 def embed_utterance(text: str, dim: int = 1024):
     """Fast, in-process, deterministic feature hashing embedding (~18us)."""
@@ -7288,11 +7353,12 @@ def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = Fals
     if not game_mode and audio is not None and len(audio) > 16000 * 0.4:
         is_user, sim = verify_speaker(audio)
         if not is_user:
-            log(f"Speaker mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD}) — dropped ambient/TV voice")
-            record_attempt("(ambient voice)", "REJECTED", tier="Speaker ID", detail=f"Mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD})")
+            thr = get_threshold()
+            log(f"Speaker mismatch (sim={sim:.2f} < {thr}) — dropped ambient/TV voice")
+            record_attempt("(ambient voice)", "REJECTED", tier="Speaker ID", detail=f"Mismatch (sim={sim:.2f} < {thr})")
             return
         if sim < 1.0:  # 1.0 = verification off / not enrolled
-            log(f"speaker ok (sim={sim:.2f} >= {SPEAKER_THRESHOLD})")  # calibration data for the threshold
+            log(f"speaker ok (sim={sim:.2f} >= {get_threshold()})")  # calibration data for the threshold
     try:
         text = transcribe(audio)
     except Exception as e:  # noqa: BLE001
@@ -7317,8 +7383,10 @@ def cmd_speaker_status() -> None:
     print(f"    Microphone:   {describe_input_device()}")
     print(f"    Enrolled:     {'YES' if enrolled else 'NO'}")
     print(f"    Profile path: {get_profile_path()}")
+    print(f"    Backend:      {active_backend()}"
+          + ("" if active_backend() == "campplus" else "  (re-run --enroll to upgrade to CAM++)"))
     print(f"    Model path:   {get_model_path()}")
-    print(f"    Threshold:    {SPEAKER_THRESHOLD}")
+    print(f"    Threshold:    {get_threshold()}")
     if not enrolled:
         print("    Tip: Run './.venv/bin/python free_voice.py --enroll' to register your voice.")
 
@@ -7330,33 +7398,46 @@ def cmd_reset_speaker() -> None:
         print("==> No enrolled voice profile found.")
 
 
+_ENROLL_PHRASES = [
+    "Hey Mac, set volume to 50 and open Safari",
+    "The quick brown fox jumps over the lazy dog",
+    "Mac, snap left, then maximize, then play some music",
+    "What's the weather like today, and set a timer for ten minutes",
+    "Search for a good pasta recipe, and turn the volume down a little",
+    "Mac, switch to Chrome, close this tab, and take a screenshot",
+]
+
+
 def cmd_enroll_speaker() -> None:
     print("==> Speaker Voice Profile Enrollment")
     print(f"    Active Microphone: {describe_input_device()}")
-    print("    Note: Please speak from your normal commanding position and distance.")
-    print("    This records 2 short phrases to calibrate your voiceprint.")
+    print("    Sit or stand where you normally give commands, at your normal distance and volume.")
+    print(f"    This records {len(_ENROLL_PHRASES)} short phrases (~5 s each). For the most robust profile, run it")
+    print("    again later with the TV on at a normal level — each run replaces the profile.")
     print()
     usable, _ = _usable_input()
     if not usable:
         _notice_no_mic()
         return
 
-    ensure_model()
+    try:
+        ensure_model(backend="campplus")
+    except Exception as e:
+        print(f"    (CAM++ model unavailable: {e}; using the legacy model)")
+    ensure_model(backend="pyannote")  # legacy profile is always written too
 
-    input("Press [Enter] and speak phrase 1: 'Hey Mac, set volume to 50 and open Safari' ... ")
-    print("Recording 4 seconds...")
-    audio1 = record_fixed(4.0)
-    print("Sample 1 captured!\n")
-
-    input("Press [Enter] and speak phrase 2: 'The quick brown fox jumps over the lazy dog' ... ")
-    print("Recording 4 seconds...")
-    audio2 = record_fixed(4.0)
-    print("Sample 2 captured!\n")
+    clips = []
+    for i, phrase in enumerate(_ENROLL_PHRASES, 1):
+        input(f"[{i}/{len(_ENROLL_PHRASES)}] Press [Enter], then say: '{phrase}' ... ")
+        print("Recording 5 seconds...")
+        clips.append(record_fixed(5.0))
+    print("All samples captured!\n")
 
     try:
-        consistency = enroll_speaker([audio1, audio2])
+        consistency = enroll_speaker(clips)
         print(f"==> Voice profile enrolled successfully! Consistency score: {consistency:.2f}")
         print(f"    Saved to: {get_profile_path()}")
+        print(f"    Backend: {active_backend()}, threshold {get_threshold()}")
         print(f"    Active Microphone: {describe_input_device()}")
         print("    Speaker verification is now ACTIVE. Background TV and podcast speech will be rejected.")
     except Exception as e:

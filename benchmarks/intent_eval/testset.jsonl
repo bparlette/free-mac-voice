@@ -1,0 +1,800 @@
+{"text": "open safari", "intent": "open_app", "is_command": true}
+{"text": "uh, open safire", "intent": "open_app", "is_command": true}
+{"text": "can you open spotify for me", "intent": "open_app", "is_command": true}
+{"text": "open up the music app", "intent": "open_app", "is_command": true}
+{"text": "launch chrome please", "intent": "open_app", "is_command": true}
+{"text": "hey could you open netflix", "intent": "open_app", "is_command": true}
+{"text": "open finder", "intent": "open_app", "is_command": true}
+{"text": "um, open, uh, notes", "intent": "open_app", "is_command": true}
+{"text": "start up zoom", "intent": "open_app", "is_command": true}
+{"text": "fire up photos", "intent": "open_app", "is_command": true}
+{"text": "open messages", "intent": "open_app", "is_command": true}
+{"text": "can you pull up the calendar app", "intent": "open_app", "is_command": true}
+{"text": "open sys prefs", "intent": "open_app", "is_command": true}
+{"text": "open system settings", "intent": "open_app", "is_command": true}
+{"text": "open face time", "intent": "open_app", "is_command": true}
+{"text": "open the mail app", "intent": "open_app", "is_command": true}
+{"text": "open you tube", "intent": "open_app", "is_command": true}
+{"text": "launch vlc", "intent": "open_app", "is_command": true}
+{"text": "open xcode", "intent": "open_app", "is_command": true}
+{"text": "would you open the weather app for me", "intent": "open_app", "is_command": true}
+{"text": "open terminal", "intent": "open_app", "is_command": true}
+{"text": "open apple tv", "intent": "open_app", "is_command": true}
+{"text": "open preview", "intent": "open_app", "is_command": true}
+{"text": "could you open safari for me please mate", "intent": "open_app", "is_command": true}
+{"text": "switch to chrome", "intent": "switch_app", "is_command": true}
+{"text": "go to spotify", "intent": "switch_app", "is_command": true}
+{"text": "switch over to safari", "intent": "switch_app", "is_command": true}
+{"text": "jump to messages", "intent": "switch_app", "is_command": true}
+{"text": "take me back to netflix", "intent": "switch_app", "is_command": true}
+{"text": "switch to the finder window", "intent": "switch_app", "is_command": true}
+{"text": "go back to zoom", "intent": "switch_app", "is_command": true}
+{"text": "flip to the music app", "intent": "switch_app", "is_command": true}
+{"text": "switch to notes", "intent": "switch_app", "is_command": true}
+{"text": "can you switch me over to mail", "intent": "switch_app", "is_command": true}
+{"text": "bring up chrome again", "intent": "switch_app", "is_command": true}
+{"text": "go to the other app", "intent": "switch_app", "is_command": true}
+{"text": "switch back to the last app", "intent": "switch_app", "is_command": true}
+{"text": "uh, switch to, uh, face time", "intent": "switch_app", "is_command": true}
+{"text": "change to photos", "intent": "switch_app", "is_command": true}
+{"text": "show me spotify", "intent": "switch_app", "is_command": true}
+{"text": "switch to you tube", "intent": "switch_app", "is_command": true}
+{"text": "back to terminal", "intent": "switch_app", "is_command": true}
+{"text": "swap to the calendar", "intent": "switch_app", "is_command": true}
+{"text": "go over to apple tv", "intent": "switch_app", "is_command": true}
+{"text": "bring safire to the front", "intent": "switch_app", "is_command": true}
+{"text": "switch apps", "intent": "switch_app", "is_command": true}
+{"text": "go to messages please", "intent": "switch_app", "is_command": true}
+{"text": "can we go back to netflix", "intent": "switch_app", "is_command": true}
+{"text": "quit safari", "intent": "quit_app", "is_command": true}
+{"text": "close spotify", "intent": "quit_app", "is_command": true}
+{"text": "quit chrome", "intent": "quit_app", "is_command": true}
+{"text": "kill zoom", "intent": "quit_app", "is_command": true}
+{"text": "shut down netflix", "intent": "quit_app", "is_command": true}
+{"text": "can you quit the music app", "intent": "quit_app", "is_command": true}
+{"text": "quit messages", "intent": "quit_app", "is_command": true}
+{"text": "force quit chrome", "intent": "quit_app", "is_command": true}
+{"text": "close out of photos", "intent": "quit_app", "is_command": true}
+{"text": "exit face time", "intent": "quit_app", "is_command": true}
+{"text": "quit everything except finder", "intent": "quit_app", "is_command": true}
+{"text": "close the mail app", "intent": "quit_app", "is_command": true}
+{"text": "get rid of zoom", "intent": "quit_app", "is_command": true}
+{"text": "quit you tube", "intent": "quit_app", "is_command": true}
+{"text": "shut spotify", "intent": "quit_app", "is_command": true}
+{"text": "close down xcode", "intent": "quit_app", "is_command": true}
+{"text": "quit that app", "intent": "quit_app", "is_command": true}
+{"text": "uh, quit, um, notes", "intent": "quit_app", "is_command": true}
+{"text": "kill the app", "intent": "quit_app", "is_command": true}
+{"text": "quit terminal please", "intent": "quit_app", "is_command": true}
+{"text": "can you close safire", "intent": "quit_app", "is_command": true}
+{"text": "exit out of apple tv", "intent": "quit_app", "is_command": true}
+{"text": "quit vlc", "intent": "quit_app", "is_command": true}
+{"text": "quit spotify mate", "intent": "quit_app", "is_command": true}
+{"text": "turn it up", "intent": "set_volume", "is_command": true}
+{"text": "volume up", "intent": "set_volume", "is_command": true}
+{"text": "turn the volume down", "intent": "set_volume", "is_command": true}
+{"text": "louder please", "intent": "set_volume", "is_command": true}
+{"text": "a bit quieter", "intent": "set_volume", "is_command": true}
+{"text": "set volume to 50", "intent": "set_volume", "is_command": true}
+{"text": "volume to thirty percent", "intent": "set_volume", "is_command": true}
+{"text": "turn it down a little", "intent": "set_volume", "is_command": true}
+{"text": "can you make it louder", "intent": "set_volume", "is_command": true}
+{"text": "crank it up", "intent": "set_volume", "is_command": true}
+{"text": "turn it way down", "intent": "set_volume", "is_command": true}
+{"text": "volume 7", "intent": "set_volume", "is_command": true}
+{"text": "set the volume to max", "intent": "set_volume", "is_command": true}
+{"text": "bit louder mate", "intent": "set_volume", "is_command": true}
+{"text": "turn the sound up", "intent": "set_volume", "is_command": true}
+{"text": "lower the volume", "intent": "set_volume", "is_command": true}
+{"text": "uh, volume down a couple", "intent": "set_volume", "is_command": true}
+{"text": "half volume", "intent": "set_volume", "is_command": true}
+{"text": "volume twenty", "intent": "set_volume", "is_command": true}
+{"text": "make it quieter please", "intent": "set_volume", "is_command": true}
+{"text": "turn it up two notches", "intent": "set_volume", "is_command": true}
+{"text": "it's too loud, turn it down", "intent": "set_volume", "is_command": true}
+{"text": "volume at 80", "intent": "set_volume", "is_command": true}
+{"text": "turn it up a smidge", "intent": "set_volume", "is_command": true}
+{"text": "mute", "intent": "mute", "is_command": true}
+{"text": "mute it", "intent": "mute", "is_command": true}
+{"text": "mute the sound", "intent": "mute", "is_command": true}
+{"text": "can you mute please", "intent": "mute", "is_command": true}
+{"text": "unmute", "intent": "mute", "is_command": true}
+{"text": "silence", "intent": "mute", "is_command": true}
+{"text": "mute the tv", "intent": "mute", "is_command": true}
+{"text": "shh, mute", "intent": "mute", "is_command": true}
+{"text": "turn the sound off", "intent": "mute", "is_command": true}
+{"text": "kill the sound", "intent": "mute", "is_command": true}
+{"text": "unmute the sound", "intent": "mute", "is_command": true}
+{"text": "mute audio", "intent": "mute", "is_command": true}
+{"text": "quiet, mute it", "intent": "mute", "is_command": true}
+{"text": "sound off", "intent": "mute", "is_command": true}
+{"text": "can you unmute it", "intent": "mute", "is_command": true}
+{"text": "mute everything", "intent": "mute", "is_command": true}
+{"text": "uh, mute", "intent": "mute", "is_command": true}
+{"text": "toggle mute", "intent": "mute", "is_command": true}
+{"text": "mute the mac", "intent": "mute", "is_command": true}
+{"text": "turn sound back on", "intent": "mute", "is_command": true}
+{"text": "mute for a sec", "intent": "mute", "is_command": true}
+{"text": "mute it please", "intent": "mute", "is_command": true}
+{"text": "unmute please", "intent": "mute", "is_command": true}
+{"text": "can you mute the telly", "intent": "mute", "is_command": true}
+{"text": "pause", "intent": "media_play_pause", "is_command": true}
+{"text": "play", "intent": "media_play_pause", "is_command": true}
+{"text": "pause it", "intent": "media_play_pause", "is_command": true}
+{"text": "hit play", "intent": "media_play_pause", "is_command": true}
+{"text": "resume", "intent": "media_play_pause", "is_command": true}
+{"text": "pause the music", "intent": "media_play_pause", "is_command": true}
+{"text": "play the video", "intent": "media_play_pause", "is_command": true}
+{"text": "can you pause that", "intent": "media_play_pause", "is_command": true}
+{"text": "stop the music", "intent": "media_play_pause", "is_command": true}
+{"text": "keep playing", "intent": "media_play_pause", "is_command": true}
+{"text": "unpause", "intent": "media_play_pause", "is_command": true}
+{"text": "pause for a sec", "intent": "media_play_pause", "is_command": true}
+{"text": "start playing again", "intent": "media_play_pause", "is_command": true}
+{"text": "play music", "intent": "media_play_pause", "is_command": true}
+{"text": "pause netflix", "intent": "media_play_pause", "is_command": true}
+{"text": "uh, pause", "intent": "media_play_pause", "is_command": true}
+{"text": "carry on playing", "intent": "media_play_pause", "is_command": true}
+{"text": "press play", "intent": "media_play_pause", "is_command": true}
+{"text": "hold it, pause", "intent": "media_play_pause", "is_command": true}
+{"text": "stop playing", "intent": "media_play_pause", "is_command": true}
+{"text": "resume playback", "intent": "media_play_pause", "is_command": true}
+{"text": "pause the show", "intent": "media_play_pause", "is_command": true}
+{"text": "play it again", "intent": "media_play_pause", "is_command": true}
+{"text": "pause it a sec would you", "intent": "media_play_pause", "is_command": true}
+{"text": "next song", "intent": "next_track", "is_command": true}
+{"text": "skip", "intent": "next_track", "is_command": true}
+{"text": "skip this", "intent": "next_track", "is_command": true}
+{"text": "next track", "intent": "next_track", "is_command": true}
+{"text": "skip this song", "intent": "next_track", "is_command": true}
+{"text": "next please", "intent": "next_track", "is_command": true}
+{"text": "play the next one", "intent": "next_track", "is_command": true}
+{"text": "can you skip it", "intent": "next_track", "is_command": true}
+{"text": "skip ahead to the next track", "intent": "next_track", "is_command": true}
+{"text": "next episode", "intent": "next_track", "is_command": true}
+{"text": "i hate this song, skip", "intent": "next_track", "is_command": true}
+{"text": "next", "intent": "next_track", "is_command": true}
+{"text": "uh, next song", "intent": "next_track", "is_command": true}
+{"text": "skip track", "intent": "next_track", "is_command": true}
+{"text": "move on to the next song", "intent": "next_track", "is_command": true}
+{"text": "skip to the next one", "intent": "next_track", "is_command": true}
+{"text": "go to the next track", "intent": "next_track", "is_command": true}
+{"text": "skip this one please", "intent": "next_track", "is_command": true}
+{"text": "next tune", "intent": "next_track", "is_command": true}
+{"text": "play next", "intent": "next_track", "is_command": true}
+{"text": "skip it mate", "intent": "next_track", "is_command": true}
+{"text": "next video", "intent": "next_track", "is_command": true}
+{"text": "another song", "intent": "next_track", "is_command": true}
+{"text": "skip forward a song", "intent": "next_track", "is_command": true}
+{"text": "set a timer for 10 minutes", "intent": "timer", "is_command": true}
+{"text": "timer five minutes", "intent": "timer", "is_command": true}
+{"text": "set a 20 minute timer", "intent": "timer", "is_command": true}
+{"text": "start a timer for an hour", "intent": "timer", "is_command": true}
+{"text": "timer for thirty seconds", "intent": "timer", "is_command": true}
+{"text": "can you set a timer for 12 minutes", "intent": "timer", "is_command": true}
+{"text": "set a pasta timer for nine minutes", "intent": "timer", "is_command": true}
+{"text": "remind me in 15 minutes", "intent": "timer", "is_command": true}
+{"text": "uh, timer, three minutes", "intent": "timer", "is_command": true}
+{"text": "set timer 45 minutes", "intent": "timer", "is_command": true}
+{"text": "cancel the timer", "intent": "timer", "is_command": true}
+{"text": "how long's left on the timer", "intent": "timer", "is_command": true}
+{"text": "set a timer for half an hour", "intent": "timer", "is_command": true}
+{"text": "timer for 2 minutes please", "intent": "timer", "is_command": true}
+{"text": "stop the timer", "intent": "timer", "is_command": true}
+{"text": "start a five minute timer", "intent": "timer", "is_command": true}
+{"text": "set a timer for one minute", "intent": "timer", "is_command": true}
+{"text": "timer 90 seconds", "intent": "timer", "is_command": true}
+{"text": "set a timer for an hour and a half", "intent": "timer", "is_command": true}
+{"text": "put a timer on for eight minutes", "intent": "timer", "is_command": true}
+{"text": "set a tea timer for four minutes", "intent": "timer", "is_command": true}
+{"text": "add five minutes to the timer", "intent": "timer", "is_command": true}
+{"text": "timer for 25 minutes", "intent": "timer", "is_command": true}
+{"text": "set a timer for seven minutes", "intent": "timer", "is_command": true}
+{"text": "search for pizza near me", "intent": "web_search", "is_command": true}
+{"text": "google how tall is mount everest", "intent": "web_search", "is_command": true}
+{"text": "search weather tomorrow", "intent": "web_search", "is_command": true}
+{"text": "look up the arsenal score", "intent": "web_search", "is_command": true}
+{"text": "search the web for cheap flights to dublin", "intent": "web_search", "is_command": true}
+{"text": "can you google banana bread recipe", "intent": "web_search", "is_command": true}
+{"text": "look up what time target closes", "intent": "web_search", "is_command": true}
+{"text": "search for knicks tickets", "intent": "web_search", "is_command": true}
+{"text": "google that", "intent": "web_search", "is_command": true}
+{"text": "uh, search, um, sourdough starter", "intent": "web_search", "is_command": true}
+{"text": "search for the new apple tv shows", "intent": "web_search", "is_command": true}
+{"text": "look up how to unclog a drain", "intent": "web_search", "is_command": true}
+{"text": "search youtube for lofi beats", "intent": "web_search", "is_command": true}
+{"text": "search for flights to orlando", "intent": "web_search", "is_command": true}
+{"text": "can you look up the bus times", "intent": "web_search", "is_command": true}
+{"text": "google the premier league table", "intent": "web_search", "is_command": true}
+{"text": "search how many ounces in a cup", "intent": "web_search", "is_command": true}
+{"text": "look up the cast of that show", "intent": "web_search", "is_command": true}
+{"text": "search for mac mini m4 price", "intent": "web_search", "is_command": true}
+{"text": "look up showtimes tonight", "intent": "web_search", "is_command": true}
+{"text": "google brisket recipes", "intent": "web_search", "is_command": true}
+{"text": "search for jacket potatoes in the oven how long", "intent": "web_search", "is_command": true}
+{"text": "look up the euro to dollar rate", "intent": "web_search", "is_command": true}
+{"text": "search reddit for best usb mic", "intent": "web_search", "is_command": true}
+{"text": "snap left", "intent": "snap_left", "is_command": true}
+{"text": "move this window to the left", "intent": "snap_left", "is_command": true}
+{"text": "put it on the left half", "intent": "snap_left", "is_command": true}
+{"text": "snap the window left", "intent": "snap_left", "is_command": true}
+{"text": "tile left", "intent": "snap_left", "is_command": true}
+{"text": "window to the left side", "intent": "snap_left", "is_command": true}
+{"text": "left half", "intent": "snap_left", "is_command": true}
+{"text": "can you snap that to the left", "intent": "snap_left", "is_command": true}
+{"text": "shove it to the left", "intent": "snap_left", "is_command": true}
+{"text": "uh, snap left please", "intent": "snap_left", "is_command": true}
+{"text": "put safari on the left", "intent": "snap_left", "is_command": true}
+{"text": "split screen left", "intent": "snap_left", "is_command": true}
+{"text": "move chrome left half", "intent": "snap_left", "is_command": true}
+{"text": "left side please", "intent": "snap_left", "is_command": true}
+{"text": "dock this window left", "intent": "snap_left", "is_command": true}
+{"text": "snap to left", "intent": "snap_left", "is_command": true}
+{"text": "put this on the left of the screen", "intent": "snap_left", "is_command": true}
+{"text": "make this window take the left side", "intent": "snap_left", "is_command": true}
+{"text": "snap it left mate", "intent": "snap_left", "is_command": true}
+{"text": "move window left", "intent": "snap_left", "is_command": true}
+{"text": "left half of the screen", "intent": "snap_left", "is_command": true}
+{"text": "tile this to the left", "intent": "snap_left", "is_command": true}
+{"text": "pin it left", "intent": "snap_left", "is_command": true}
+{"text": "snap right", "intent": "snap_right", "is_command": true}
+{"text": "move this window to the right", "intent": "snap_right", "is_command": true}
+{"text": "put it on the right half", "intent": "snap_right", "is_command": true}
+{"text": "snap the window right", "intent": "snap_right", "is_command": true}
+{"text": "tile right", "intent": "snap_right", "is_command": true}
+{"text": "window to the right side", "intent": "snap_right", "is_command": true}
+{"text": "right half", "intent": "snap_right", "is_command": true}
+{"text": "can you snap that to the right", "intent": "snap_right", "is_command": true}
+{"text": "shove it over to the right", "intent": "snap_right", "is_command": true}
+{"text": "uh, snap right please", "intent": "snap_right", "is_command": true}
+{"text": "put notes on the right", "intent": "snap_right", "is_command": true}
+{"text": "split screen right", "intent": "snap_right", "is_command": true}
+{"text": "move spotify right half", "intent": "snap_right", "is_command": true}
+{"text": "right side please", "intent": "snap_right", "is_command": true}
+{"text": "dock this window right", "intent": "snap_right", "is_command": true}
+{"text": "snap to right", "intent": "snap_right", "is_command": true}
+{"text": "put this on the right of the screen", "intent": "snap_right", "is_command": true}
+{"text": "make this window take the right side", "intent": "snap_right", "is_command": true}
+{"text": "snap it right mate", "intent": "snap_right", "is_command": true}
+{"text": "move window right", "intent": "snap_right", "is_command": true}
+{"text": "right half of the screen", "intent": "snap_right", "is_command": true}
+{"text": "tile this to the right", "intent": "snap_right", "is_command": true}
+{"text": "pin it right", "intent": "snap_right", "is_command": true}
+{"text": "maximize", "intent": "maximize", "is_command": true}
+{"text": "maximise the window", "intent": "maximize", "is_command": true}
+{"text": "make it full screen", "intent": "maximize", "is_command": true}
+{"text": "full screen", "intent": "maximize", "is_command": true}
+{"text": "make this bigger", "intent": "maximize", "is_command": true}
+{"text": "maximize safari", "intent": "maximize", "is_command": true}
+{"text": "fill the screen", "intent": "maximize", "is_command": true}
+{"text": "go full screen", "intent": "maximize", "is_command": true}
+{"text": "blow it up full screen", "intent": "maximize", "is_command": true}
+{"text": "make the window big", "intent": "maximize", "is_command": true}
+{"text": "can you maximise that", "intent": "maximize", "is_command": true}
+{"text": "full screen the video", "intent": "maximize", "is_command": true}
+{"text": "uh, maximize", "intent": "maximize", "is_command": true}
+{"text": "enlarge the window", "intent": "maximize", "is_command": true}
+{"text": "make it fill the whole screen", "intent": "maximize", "is_command": true}
+{"text": "expand this window", "intent": "maximize", "is_command": true}
+{"text": "full screen please", "intent": "maximize", "is_command": true}
+{"text": "zoom the window", "intent": "maximize", "is_command": true}
+{"text": "maximize chrome", "intent": "maximize", "is_command": true}
+{"text": "make netflix full screen", "intent": "maximize", "is_command": true}
+{"text": "window full size", "intent": "maximize", "is_command": true}
+{"text": "maximise it mate", "intent": "maximize", "is_command": true}
+{"text": "max it", "intent": "maximize", "is_command": true}
+{"text": "minimize", "intent": "minimize", "is_command": true}
+{"text": "minimise the window", "intent": "minimize", "is_command": true}
+{"text": "hide this window", "intent": "minimize", "is_command": true}
+{"text": "minimize safari", "intent": "minimize", "is_command": true}
+{"text": "put it in the dock", "intent": "minimize", "is_command": true}
+{"text": "shrink this window", "intent": "minimize", "is_command": true}
+{"text": "minimize everything", "intent": "minimize", "is_command": true}
+{"text": "hide it", "intent": "minimize", "is_command": true}
+{"text": "uh, minimise that", "intent": "minimize", "is_command": true}
+{"text": "get this window out of the way", "intent": "minimize", "is_command": true}
+{"text": "minimize chrome", "intent": "minimize", "is_command": true}
+{"text": "minimise all windows", "intent": "minimize", "is_command": true}
+{"text": "hide the app", "intent": "minimize", "is_command": true}
+{"text": "send it to the dock", "intent": "minimize", "is_command": true}
+{"text": "can you minimize this", "intent": "minimize", "is_command": true}
+{"text": "hide spotify", "intent": "minimize", "is_command": true}
+{"text": "minimise it please", "intent": "minimize", "is_command": true}
+{"text": "make it go away for now", "intent": "minimize", "is_command": true}
+{"text": "minimize the window please", "intent": "minimize", "is_command": true}
+{"text": "hide finder", "intent": "minimize", "is_command": true}
+{"text": "show the desktop", "intent": "minimize", "is_command": true}
+{"text": "minimise", "intent": "minimize", "is_command": true}
+{"text": "tuck this away", "intent": "minimize", "is_command": true}
+{"text": "close this window", "intent": "close_window", "is_command": true}
+{"text": "close the window", "intent": "close_window", "is_command": true}
+{"text": "close tab", "intent": "close_window", "is_command": true}
+{"text": "close this tab", "intent": "close_window", "is_command": true}
+{"text": "shut this window", "intent": "close_window", "is_command": true}
+{"text": "close it", "intent": "close_window", "is_command": true}
+{"text": "close the finder window", "intent": "close_window", "is_command": true}
+{"text": "can you close that window", "intent": "close_window", "is_command": true}
+{"text": "get rid of this window", "intent": "close_window", "is_command": true}
+{"text": "close all windows", "intent": "close_window", "is_command": true}
+{"text": "uh, close window", "intent": "close_window", "is_command": true}
+{"text": "close the popup", "intent": "close_window", "is_command": true}
+{"text": "close safari window", "intent": "close_window", "is_command": true}
+{"text": "close the current tab", "intent": "close_window", "is_command": true}
+{"text": "shut the window please", "intent": "close_window", "is_command": true}
+{"text": "close that tab mate", "intent": "close_window", "is_command": true}
+{"text": "close the front window", "intent": "close_window", "is_command": true}
+{"text": "x out of this", "intent": "close_window", "is_command": true}
+{"text": "close the other window", "intent": "close_window", "is_command": true}
+{"text": "close this one", "intent": "close_window", "is_command": true}
+{"text": "close window please", "intent": "close_window", "is_command": true}
+{"text": "close all the tabs", "intent": "close_window", "is_command": true}
+{"text": "close the dialog", "intent": "close_window", "is_command": true}
+{"text": "take a screenshot", "intent": "screenshot", "is_command": true}
+{"text": "screenshot", "intent": "screenshot", "is_command": true}
+{"text": "grab a screenshot", "intent": "screenshot", "is_command": true}
+{"text": "take a screen shot of this", "intent": "screenshot", "is_command": true}
+{"text": "screenshot the window", "intent": "screenshot", "is_command": true}
+{"text": "capture the screen", "intent": "screenshot", "is_command": true}
+{"text": "snap a picture of the screen", "intent": "screenshot", "is_command": true}
+{"text": "screen grab", "intent": "screenshot", "is_command": true}
+{"text": "can you take a screenshot", "intent": "screenshot", "is_command": true}
+{"text": "uh, screenshot please", "intent": "screenshot", "is_command": true}
+{"text": "screenshot that", "intent": "screenshot", "is_command": true}
+{"text": "take a picture of my screen", "intent": "screenshot", "is_command": true}
+{"text": "save a screenshot", "intent": "screenshot", "is_command": true}
+{"text": "screenshot this window", "intent": "screenshot", "is_command": true}
+{"text": "screen cap", "intent": "screenshot", "is_command": true}
+{"text": "grab the screen", "intent": "screenshot", "is_command": true}
+{"text": "screenshot the whole screen", "intent": "screenshot", "is_command": true}
+{"text": "take a screenshot of safari", "intent": "screenshot", "is_command": true}
+{"text": "capture this window", "intent": "screenshot", "is_command": true}
+{"text": "print screen", "intent": "screenshot", "is_command": true}
+{"text": "screenie please", "intent": "screenshot", "is_command": true}
+{"text": "quick screenshot", "intent": "screenshot", "is_command": true}
+{"text": "take a screenshot and save it to the desktop", "intent": "screenshot", "is_command": true}
+{"text": "lock the screen", "intent": "lock_screen", "is_command": true}
+{"text": "lock screen", "intent": "lock_screen", "is_command": true}
+{"text": "lock the mac", "intent": "lock_screen", "is_command": true}
+{"text": "lock it", "intent": "lock_screen", "is_command": true}
+{"text": "lock my computer", "intent": "lock_screen", "is_command": true}
+{"text": "lock up", "intent": "lock_screen", "is_command": true}
+{"text": "can you lock the screen", "intent": "lock_screen", "is_command": true}
+{"text": "uh, lock screen please", "intent": "lock_screen", "is_command": true}
+{"text": "lock the computer now", "intent": "lock_screen", "is_command": true}
+{"text": "put it to sleep", "intent": "lock_screen", "is_command": true}
+{"text": "lock this mac", "intent": "lock_screen", "is_command": true}
+{"text": "lock the display", "intent": "lock_screen", "is_command": true}
+{"text": "screen lock", "intent": "lock_screen", "is_command": true}
+{"text": "lock it up mate", "intent": "lock_screen", "is_command": true}
+{"text": "sleep the display", "intent": "lock_screen", "is_command": true}
+{"text": "go to sleep", "intent": "lock_screen", "is_command": true}
+{"text": "lock everything", "intent": "lock_screen", "is_command": true}
+{"text": "lock my mac please", "intent": "lock_screen", "is_command": true}
+{"text": "lock", "intent": "lock_screen", "is_command": true}
+{"text": "turn the screen off and lock it", "intent": "lock_screen", "is_command": true}
+{"text": "lock the screen please", "intent": "lock_screen", "is_command": true}
+{"text": "put the mac to sleep", "intent": "lock_screen", "is_command": true}
+{"text": "lock the mac mini", "intent": "lock_screen", "is_command": true}
+{"text": "turn off the tv", "intent": "tv_power", "is_command": true}
+{"text": "turn on the telly", "intent": "tv_power", "is_command": true}
+{"text": "tv off", "intent": "tv_power", "is_command": true}
+{"text": "tv on", "intent": "tv_power", "is_command": true}
+{"text": "switch the tv off", "intent": "tv_power", "is_command": true}
+{"text": "switch on the tv", "intent": "tv_power", "is_command": true}
+{"text": "power off the television", "intent": "tv_power", "is_command": true}
+{"text": "can you turn the tv on", "intent": "tv_power", "is_command": true}
+{"text": "shut the tv off", "intent": "tv_power", "is_command": true}
+{"text": "kill the tv", "intent": "tv_power", "is_command": true}
+{"text": "turn the telly off please", "intent": "tv_power", "is_command": true}
+{"text": "uh, tv off", "intent": "tv_power", "is_command": true}
+{"text": "power on the tv", "intent": "tv_power", "is_command": true}
+{"text": "turn the television on", "intent": "tv_power", "is_command": true}
+{"text": "tv power", "intent": "tv_power", "is_command": true}
+{"text": "turn off the tele", "intent": "tv_power", "is_command": true}
+{"text": "switch the telly on mate", "intent": "tv_power", "is_command": true}
+{"text": "turn the tv back on", "intent": "tv_power", "is_command": true}
+{"text": "tv off please", "intent": "tv_power", "is_command": true}
+{"text": "turn off the screen on the tv", "intent": "tv_power", "is_command": true}
+{"text": "put the tv on", "intent": "tv_power", "is_command": true}
+{"text": "turn the box off", "intent": "tv_power", "is_command": true}
+{"text": "turn the tv off for the night", "intent": "tv_power", "is_command": true}
+{"text": "they opened the window and left", "intent": "none", "is_command": false}
+{"text": "she opened safari's door and stepped out into the rain", "intent": "none", "is_command": false}
+{"text": "he quit the band in nineteen ninety eight", "intent": "none", "is_command": false}
+{"text": "I quit, I'm done with this place", "intent": "none", "is_command": false}
+{"text": "don't you dare close that window on me", "intent": "none", "is_command": false}
+{"text": "open the door, it's me", "intent": "none", "is_command": false}
+{"text": "close the curtains, the neighbours are watching", "intent": "none", "is_command": false}
+{"text": "lock the door behind you", "intent": "none", "is_command": false}
+{"text": "she locked the screen door and never came back", "intent": "none", "is_command": false}
+{"text": "he switched to decaf after the heart attack", "intent": "none", "is_command": false}
+{"text": "we switched apps for the group chat last year", "intent": "none", "is_command": false}
+{"text": "pause for a moment and think about what you've done", "intent": "none", "is_command": false}
+{"text": "skip the small talk, where's the money", "intent": "none", "is_command": false}
+{"text": "next time you do that I'm calling the police", "intent": "none", "is_command": false}
+{"text": "play it cool, they don't know anything", "intent": "none", "is_command": false}
+{"text": "mute your mic Gary, we can hear your dog", "intent": "none", "is_command": false}
+{"text": "turn it up a notch, the critics said", "intent": "none", "is_command": false}
+{"text": "turn the volume of your life up, that's what grandma said", "intent": "none", "is_command": false}
+{"text": "I'll take a screenshot of the text and send it to mum", "intent": "none", "is_command": false}
+{"text": "he took a screenshot of the receipt as proof", "intent": "none", "is_command": false}
+{"text": "she maximized her savings with a high yield account", "intent": "none", "is_command": false}
+{"text": "minimize your losses and get out", "intent": "none", "is_command": false}
+{"text": "the doctor wants to minimise the scarring", "intent": "none", "is_command": false}
+{"text": "snap out of it, Kevin", "intent": "none", "is_command": false}
+{"text": "he snapped left at the last second and scored", "intent": "none", "is_command": false}
+{"text": "the wind snapped right through the old oak", "intent": "none", "is_command": false}
+{"text": "they locked down the city for two weeks", "intent": "none", "is_command": false}
+{"text": "just quit while you're ahead", "intent": "none", "is_command": false}
+{"text": "close the deal before Friday or we lose them", "intent": "none", "is_command": false}
+{"text": "open your heart to the possibility", "intent": "none", "is_command": false}
+{"text": "the window closes at midnight for applications", "intent": "none", "is_command": false}
+{"text": "the timer on the bomb read four minutes", "intent": "none", "is_command": false}
+{"text": "we set a timer and the cake still burned", "intent": "none", "is_command": false}
+{"text": "keep playing, the director yelled", "intent": "none", "is_command": false}
+{"text": "cut, reset, and play it again from the top", "intent": "none", "is_command": false}
+{"text": "search the house, he can't have gone far", "intent": "none", "is_command": false}
+{"text": "they searched for the missing hikers overnight", "intent": "none", "is_command": false}
+{"text": "look it up yourself, I'm not your encyclopaedia", "intent": "none", "is_command": false}
+{"text": "switch off, you're working too hard", "intent": "none", "is_command": false}
+{"text": "the tv was off all weekend and honestly it was lovely", "intent": "none", "is_command": false}
+{"text": "open the box! open the box!", "intent": "none", "is_command": false}
+{"text": "contestant number three, would you like to switch doors", "intent": "none", "is_command": false}
+{"text": "lock it in, final answer?", "intent": "none", "is_command": false}
+{"text": "I'll lock that in, Chris", "intent": "none", "is_command": false}
+{"text": "and the clock starts... now", "intent": "none", "is_command": false}
+{"text": "you have sixty seconds on the timer, go", "intent": "none", "is_command": false}
+{"text": "pause the clock, we need a ruling", "intent": "none", "is_command": false}
+{"text": "next contestant, come on down", "intent": "none", "is_command": false}
+{"text": "skip, skip, pass, next question", "intent": "none", "is_command": false}
+{"text": "turn over the next card", "intent": "none", "is_command": false}
+{"text": "is that your final answer, open or switch", "intent": "none", "is_command": false}
+{"text": "spin the wheel and let's see where it lands", "intent": "none", "is_command": false}
+{"text": "the volume of that applause, wow", "intent": "none", "is_command": false}
+{"text": "maximum points if you can name all five", "intent": "none", "is_command": false}
+{"text": "minimum bid is fifty dollars", "intent": "none", "is_command": false}
+{"text": "close but no cigar", "intent": "none", "is_command": false}
+{"text": "open sesame, said the magician", "intent": "none", "is_command": false}
+{"text": "the screen is going dark in three, two, one", "intent": "none", "is_command": false}
+{"text": "time's up, put your pens down", "intent": "none", "is_command": false}
+{"text": "survey says... safari!", "intent": "none", "is_command": false}
+{"text": "name an app on your phone, top answer, music", "intent": "none", "is_command": false}
+{"text": "we asked a hundred people, name something you open in the morning", "intent": "none", "is_command": false}
+{"text": "players, lock your answers now", "intent": "none", "is_command": false}
+{"text": "buzz in if you know it", "intent": "none", "is_command": false}
+{"text": "let's play the music round", "intent": "none", "is_command": false}
+{"text": "that's the end of round two, next up the lightning round", "intent": "none", "is_command": false}
+{"text": "for the bonus, play or pass?", "intent": "none", "is_command": false}
+{"text": "contestants, snap to it, ten seconds left", "intent": "none", "is_command": false}
+{"text": "turn the board, Vanna", "intent": "none", "is_command": false}
+{"text": "open category, history for five hundred", "intent": "none", "is_command": false}
+{"text": "the dow closed down three hundred points", "intent": "none", "is_command": false}
+{"text": "shares of apple rose two percent in early trading", "intent": "none", "is_command": false}
+{"text": "volume on the nasdaq was thirty percent above average", "intent": "none", "is_command": false}
+{"text": "the timer is set for the launch at six fourteen eastern", "intent": "none", "is_command": false}
+{"text": "temperatures up to eighty five today", "intent": "none", "is_command": false}
+{"text": "turnout was up fifty percent from the last election", "intent": "none", "is_command": false}
+{"text": "the fed held rates at four point two five", "intent": "none", "is_command": false}
+{"text": "markets paused ahead of the jobs report", "intent": "none", "is_command": false}
+{"text": "the senate voted fifty one to forty nine", "intent": "none", "is_command": false}
+{"text": "we're tracking a storm moving to the right side of your screen", "intent": "none", "is_command": false}
+{"text": "if you look at the left half of the map, that's where the snow will be", "intent": "none", "is_command": false}
+{"text": "the lottery jackpot is up to four hundred million", "intent": "none", "is_command": false}
+{"text": "police locked down the campus for two hours", "intent": "none", "is_command": false}
+{"text": "the company announced it will close two hundred stores", "intent": "none", "is_command": false}
+{"text": "netflix shares jumped after the earnings call", "intent": "none", "is_command": false}
+{"text": "spotify added ten million subscribers last quarter", "intent": "none", "is_command": false}
+{"text": "the mac mini is now available in stores", "intent": "none", "is_command": false}
+{"text": "safari park officials said the lion had been found", "intent": "none", "is_command": false}
+{"text": "the volume of traffic on the beltway is heavy this morning", "intent": "none", "is_command": false}
+{"text": "inflation came in at two point nine percent", "intent": "none", "is_command": false}
+{"text": "next up, sports with Diane", "intent": "none", "is_command": false}
+{"text": "after the break, we'll switch to our correspondent in London", "intent": "none", "is_command": false}
+{"text": "turn to channel seven for live coverage", "intent": "none", "is_command": false}
+{"text": "the minister quit amid the scandal", "intent": "none", "is_command": false}
+{"text": "chrome prices have doubled in the auto sector", "intent": "none", "is_command": false}
+{"text": "the tv network is shutting off its cable channel", "intent": "none", "is_command": false}
+{"text": "up next, how to lock in a lower mortgage rate", "intent": "none", "is_command": false}
+{"text": "ten minutes past the hour, here's your weather", "intent": "none", "is_command": false}
+{"text": "the countdown clock reads twelve days", "intent": "none", "is_command": false}
+{"text": "scores at the half, forty two to thirty eight", "intent": "none", "is_command": false}
+{"text": "search for best deals now at walmart dot com", "intent": "none", "is_command": false}
+{"text": "just google 'free trial' and get started", "intent": "none", "is_command": false}
+{"text": "download the app today", "intent": "none", "is_command": false}
+{"text": "open an account in minutes", "intent": "none", "is_command": false}
+{"text": "switch to geico and save fifteen percent", "intent": "none", "is_command": false}
+{"text": "switch and save, call now", "intent": "none", "is_command": false}
+{"text": "don't wait, turn your old car into cash", "intent": "none", "is_command": false}
+{"text": "maximize your rewards with the new card", "intent": "none", "is_command": false}
+{"text": "lock in this low price today", "intent": "none", "is_command": false}
+{"text": "stream it now on netflix", "intent": "none", "is_command": false}
+{"text": "now playing only in theatres", "intent": "none", "is_command": false}
+{"text": "search 'cheap flights' on kayak", "intent": "none", "is_command": false}
+{"text": "visit apple dot com slash mac", "intent": "none", "is_command": false}
+{"text": "open happiness", "intent": "none", "is_command": false}
+{"text": "just do it", "intent": "none", "is_command": false}
+{"text": "hit play on summer with spotify premium", "intent": "none", "is_command": false}
+{"text": "skip the line, order ahead on the app", "intent": "none", "is_command": false}
+{"text": "say hey google to get started", "intent": "none", "is_command": false}
+{"text": "ask alexa to reorder", "intent": "none", "is_command": false}
+{"text": "screen time is family time, says the new ad", "intent": "none", "is_command": false}
+{"text": "look up our store hours online", "intent": "none", "is_command": false}
+{"text": "for a limited time, volume discounts on all orders", "intent": "none", "is_command": false}
+{"text": "mute the noise with our new headphones", "intent": "none", "is_command": false}
+{"text": "turn up the fun this weekend at six flags", "intent": "none", "is_command": false}
+{"text": "close more deals with salesforce", "intent": "none", "is_command": false}
+{"text": "take a screenshot of this offer and show it at the counter", "intent": "none", "is_command": false}
+{"text": "set your timer, the sale ends at midnight", "intent": "none", "is_command": false}
+{"text": "power up with the all new electric suv", "intent": "none", "is_command": false}
+{"text": "turn on your tv to channel four for the big game", "intent": "none", "is_command": false}
+{"text": "lock screen widgets available now on iphone", "intent": "none", "is_command": false}
+{"text": "minimize wrinkles in just two weeks", "intent": "none", "is_command": false}
+{"text": "go full screen with the new ipad", "intent": "none", "is_command": false}
+{"text": "next day delivery on all orders", "intent": "none", "is_command": false}
+{"text": "quit smoking with the help of our patch", "intent": "none", "is_command": false}
+{"text": "open twenty four hours a day", "intent": "none", "is_command": false}
+{"text": "try safari on your mac today", "intent": "none", "is_command": false}
+{"text": "chrome, the browser built by google", "intent": "none", "is_command": false}
+{"text": "zoom, one platform to connect", "intent": "none", "is_command": false}
+{"text": "messages from our sponsors after the break", "intent": "none", "is_command": false}
+{"text": "search no further, the perfect mattress is here", "intent": "none", "is_command": false}
+{"text": "mac and cheese for dinner", "intent": "none", "is_command": false}
+{"text": "can you open the jar for me", "intent": "none", "is_command": false}
+{"text": "open the wine, it needs to breathe", "intent": "none", "is_command": false}
+{"text": "close the fridge, you're letting the cold out", "intent": "none", "is_command": false}
+{"text": "set the oven to two hundred", "intent": "none", "is_command": false}
+{"text": "the timer went off ten minutes ago", "intent": "none", "is_command": false}
+{"text": "put the kettle on", "intent": "none", "is_command": false}
+{"text": "turn the heat up under the pasta", "intent": "none", "is_command": false}
+{"text": "turn the oven down a bit", "intent": "none", "is_command": false}
+{"text": "turn the hob off", "intent": "none", "is_command": false}
+{"text": "the tv's too loud, said nobody ever in this house", "intent": "none", "is_command": false}
+{"text": "turn it down, the baby's asleep, she whispered on the show", "intent": "none", "is_command": false}
+{"text": "mute button's broken on the remote again", "intent": "none", "is_command": false}
+{"text": "where's the remote", "intent": "none", "is_command": false}
+{"text": "the telly's been on all day", "intent": "none", "is_command": false}
+{"text": "switch the lights off when you leave", "intent": "none", "is_command": false}
+{"text": "turn the lamp on would you", "intent": "none", "is_command": false}
+{"text": "can you open the window, it's stuffy", "intent": "none", "is_command": false}
+{"text": "close the blinds please", "intent": "none", "is_command": false}
+{"text": "lock the back door before bed", "intent": "none", "is_command": false}
+{"text": "the dog won't stop barking at the tv", "intent": "none", "is_command": false}
+{"text": "pause, let me get a snack", "intent": "none", "is_command": false}
+{"text": "wait, don't skip it, I like this bit", "intent": "none", "is_command": false}
+{"text": "I'm going to switch to tea", "intent": "none", "is_command": false}
+{"text": "he always has to take a screenshot of everything", "intent": "none", "is_command": false}
+{"text": "honey, can you look up the recipe on your phone", "intent": "none", "is_command": false}
+{"text": "google says it takes forty minutes", "intent": "none", "is_command": false}
+{"text": "did you set a timer for the rice", "intent": "none", "is_command": false}
+{"text": "minimize the mess, use a tray", "intent": "none", "is_command": false}
+{"text": "keep it on the left side of the fridge", "intent": "none", "is_command": false}
+{"text": "put it on the right side of the shelf", "intent": "none", "is_command": false}
+{"text": "max out the credit card why don't you", "intent": "none", "is_command": false}
+{"text": "I'll quit eating sugar on Monday", "intent": "none", "is_command": false}
+{"text": "next weekend we're going to grandma's", "intent": "none", "is_command": false}
+{"text": "skip dessert, we're late", "intent": "none", "is_command": false}
+{"text": "open house is on Sunday", "intent": "none", "is_command": false}
+{"text": "the window guy is coming Thursday", "intent": "none", "is_command": false}
+{"text": "our tv is a fifty five inch", "intent": "none", "is_command": false}
+{"text": "I left my mac at the office", "intent": "none", "is_command": false}
+{"text": "my safari hat is in the closet", "intent": "none", "is_command": false}
+{"text": "he told the computer to open safari and it opened chrome", "intent": "none", "is_command": false}
+{"text": "I said turn it off, not up", "intent": "none", "is_command": false}
+{"text": "don't turn off the tv yet", "intent": "none", "is_command": false}
+{"text": "do not open that email, it's a scam", "intent": "none", "is_command": false}
+{"text": "never close a window without saving", "intent": "none", "is_command": false}
+{"text": "if you say pause it'll pause, that's the joke", "intent": "none", "is_command": false}
+{"text": "my mum keeps telling siri to set a timer", "intent": "none", "is_command": false}
+{"text": "she yelled 'volume down' at the speaker", "intent": "none", "is_command": false}
+{"text": "remember when we used to say 'next slide please'", "intent": "none", "is_command": false}
+{"text": "you're not supposed to quit the app, just minimize it", "intent": "none", "is_command": false}
+{"text": "the trick is to snap the window to the left with a shortcut", "intent": "none", "is_command": false}
+{"text": "how do you take a screenshot on a mac anyway", "intent": "none", "is_command": false}
+{"text": "how do I lock the screen on this thing", "intent": "none", "is_command": false}
+{"text": "what's the shortcut to maximize a window", "intent": "none", "is_command": false}
+{"text": "why does safari keep crashing", "intent": "none", "is_command": false}
+{"text": "why did spotify skip that song", "intent": "none", "is_command": false}
+{"text": "who turned the tv on", "intent": "none", "is_command": false}
+{"text": "who muted the tv", "intent": "none", "is_command": false}
+{"text": "did you pause it or did it buffer", "intent": "none", "is_command": false}
+{"text": "is the timer still going", "intent": "none", "is_command": false}
+{"text": "should we switch to the other show", "intent": "none", "is_command": false}
+{"text": "we could open a bakery someday", "intent": "none", "is_command": false}
+{"text": "you could just search for it", "intent": "none", "is_command": false}
+{"text": "I would quit if I were you", "intent": "none", "is_command": false}
+{"text": "maybe turn it up a little, maybe not", "intent": "none", "is_command": false}
+{"text": "I wanted to close the window but it was stuck", "intent": "none", "is_command": false}
+{"text": "she tried to lock the screen but the cat walked on the keyboard", "intent": "none", "is_command": false}
+{"text": "the robot in the movie said 'opening pod bay doors'", "intent": "none", "is_command": false}
+{"text": "the hacker typed 'open terminal' and the screen went green", "intent": "none", "is_command": false}
+{"text": "in the game you have to snap left to dodge", "intent": "none", "is_command": false}
+{"text": "the instructions say press play then wait", "intent": "none", "is_command": false}
+{"text": "he joked, 'computer, maximize'", "intent": "none", "is_command": false}
+{"text": "the captain shouted 'full screen ahead'", "intent": "none", "is_command": false}
+{"text": "the teacher said close your laptops", "intent": "none", "is_command": false}
+{"text": "she said 'next track' and the whole party groaned", "intent": "none", "is_command": false}
+{"text": "if the timer beeps, ignore it", "intent": "none", "is_command": false}
+{"text": "I never mute anyone on zoom", "intent": "none", "is_command": false}
+{"text": "that app wants to lock my screen every five minutes", "intent": "none", "is_command": false}
+{"text": "apparently you can say 'take a screenshot' to your phone", "intent": "none", "is_command": false}
+{"text": "the guy on the podcast said 'just google it' like ten times", "intent": "none", "is_command": false}
+{"text": "so I open safari, right, and the whole thing freezes", "intent": "none", "is_command": false}
+{"text": "then you switch to chrome and it's fine", "intent": "none", "is_command": false}
+{"text": "I quit using spotify when they raised the price", "intent": "none", "is_command": false}
+{"text": "the volume rocker on this phone feels cheap", "intent": "none", "is_command": false}
+{"text": "the mute switch is gone on the new iphone", "intent": "none", "is_command": false}
+{"text": "the play pause button is on the left earbud", "intent": "none", "is_command": false}
+{"text": "you can skip tracks by double tapping", "intent": "none", "is_command": false}
+{"text": "set the timer on the camera for ten seconds", "intent": "none", "is_command": false}
+{"text": "I literally searched for 'best mac apps' and got ads", "intent": "none", "is_command": false}
+{"text": "snap layouts on windows are better than anything on mac", "intent": "none", "is_command": false}
+{"text": "maximizing a window on macos is weirdly hard", "intent": "none", "is_command": false}
+{"text": "minimize to dock is the default, which I hate", "intent": "none", "is_command": false}
+{"text": "closing the lid doesn't close the window", "intent": "none", "is_command": false}
+{"text": "screenshot tools on mac have gotten really good", "intent": "none", "is_command": false}
+{"text": "lock screen customisation is the headline feature", "intent": "none", "is_command": false}
+{"text": "the tv's power draw is around a hundred watts", "intent": "none", "is_command": false}
+{"text": "open source is the future", "intent": "none", "is_command": false}
+{"text": "open ai released a new model today", "intent": "none", "is_command": false}
+{"text": "switch two sales numbers are huge", "intent": "none", "is_command": false}
+{"text": "apple tv plus has a new show every week", "intent": "none", "is_command": false}
+{"text": "netflix, hulu, disney plus, max, peacock", "intent": "none", "is_command": false}
+{"text": "chrome, safari, firefox, arc, edge", "intent": "none", "is_command": false}
+{"text": "spotify, apple music, tidal, youtube music", "intent": "none", "is_command": false}
+{"text": "zoom, teams, slack, discord", "intent": "none", "is_command": false}
+{"text": "finder, terminal, xcode, preview", "intent": "none", "is_command": false}
+{"text": "notes, reminders, calendar, mail", "intent": "none", "is_command": false}
+{"text": "photoshop, lightroom, premiere", "intent": "none", "is_command": false}
+{"text": "the mac studio, the mac mini, the macbook air", "intent": "none", "is_command": false}
+{"text": "youtube is basically tv now", "intent": "none", "is_command": false}
+{"text": "pausing in the middle of a sentence is a podcast skill", "intent": "none", "is_command": false}
+{"text": "next week we're talking about home automation", "intent": "none", "is_command": false}
+{"text": "skip ahead to minute forty if you only want the review", "intent": "none", "is_command": false}
+{"text": "if you want to search the archive, it's on our website", "intent": "none", "is_command": false}
+{"text": "hit subscribe, it really helps the show", "intent": "none", "is_command": false}
+{"text": "the full episode is on youtube", "intent": "none", "is_command": false}
+{"text": "turn on notifications so you don't miss an episode", "intent": "none", "is_command": false}
+{"text": "lock in, this next part is important", "intent": "none", "is_command": false}
+{"text": "volume levels on this episode are a bit off, sorry", "intent": "none", "is_command": false}
+{"text": "we muted the guest's audio by accident", "intent": "none", "is_command": false}
+{"text": "maximum effort, minimal results, that's my workout", "intent": "none", "is_command": false}
+{"text": "he's switched to the left foot", "intent": "none", "is_command": false}
+{"text": "snaps it right to the tight end", "intent": "none", "is_command": false}
+{"text": "the quarterback took the snap and went left", "intent": "none", "is_command": false}
+{"text": "the timer on the shot clock is winding down", "intent": "none", "is_command": false}
+{"text": "they closed the gap to three points", "intent": "none", "is_command": false}
+{"text": "open man in the corner, shoots, scores", "intent": "none", "is_command": false}
+{"text": "he quit on that play, you can see it", "intent": "none", "is_command": false}
+{"text": "they've maximized their cap space", "intent": "none", "is_command": false}
+{"text": "they need to minimise mistakes in the second half", "intent": "none", "is_command": false}
+{"text": "volume of shots is way up this season", "intent": "none", "is_command": false}
+{"text": "the crowd went silent", "intent": "none", "is_command": false}
+{"text": "pause for the review", "intent": "none", "is_command": false}
+{"text": "next up is the hundred metre final", "intent": "none", "is_command": false}
+{"text": "skip pass to the far side", "intent": "none", "is_command": false}
+{"text": "lock down defense from the home team", "intent": "none", "is_command": false}
+{"text": "the screen was set perfectly", "intent": "none", "is_command": false}
+{"text": "screen pass to the right side", "intent": "none", "is_command": false}
+{"text": "the window for a comeback is closing", "intent": "none", "is_command": false}
+{"text": "full screen replay coming up", "intent": "none", "is_command": false}
+{"text": "turnover, and they're running the other way", "intent": "none", "is_command": false}
+{"text": "power play for the visitors", "intent": "none", "is_command": false}
+{"text": "the tv timeout comes at the eight minute mark", "intent": "none", "is_command": false}
+{"text": "time out on the field", "intent": "none", "is_command": false}
+{"text": "he's playing out of his mind tonight", "intent": "none", "is_command": false}
+{"text": "final score, three to one", "intent": "none", "is_command": false}
+{"text": "turn up the music, let's dance, sang the chorus", "intent": "none", "is_command": false}
+{"text": "play that funky music white boy, an old hit", "intent": "none", "is_command": false}
+{"text": "next to you is where I want to be", "intent": "none", "is_command": false}
+{"text": "skip to my lou, my darling", "intent": "none", "is_command": false}
+{"text": "the volume knob goes to eleven", "intent": "none", "is_command": false}
+{"text": "stop, hammer time", "intent": "none", "is_command": false}
+{"text": "open the gates, the king is coming", "intent": "none", "is_command": false}
+{"text": "lock and load", "intent": "none", "is_command": false}
+{"text": "switch it up, switch it up", "intent": "none", "is_command": false}
+{"text": "pause and rewind, the rap goes", "intent": "none", "is_command": false}
+{"text": "maximum overdrive is a terrible movie", "intent": "none", "is_command": false}
+{"text": "close encounters of the third kind", "intent": "none", "is_command": false}
+{"text": "windows, doors, and everything in between", "intent": "none", "is_command": false}
+{"text": "full screen ahead, cap'n", "intent": "none", "is_command": false}
+{"text": "peppa, turn off the telly, said daddy pig", "intent": "none", "is_command": false}
+{"text": "bluey, can you pause the game", "intent": "none", "is_command": false}
+{"text": "mum, he won't let me switch the channel", "intent": "none", "is_command": false}
+{"text": "it's my turn to choose the show", "intent": "none", "is_command": false}
+{"text": "one more episode and then bed", "intent": "none", "is_command": false}
+{"text": "the screen goes black and the credits roll", "intent": "none", "is_command": false}
+{"text": "next on bbc one, the six o'clock news", "intent": "none", "is_command": false}
+{"text": "coming up, the weather for the weekend", "intent": "none", "is_command": false}
+{"text": "previously on", "intent": "none", "is_command": false}
+{"text": "stay tuned", "intent": "none", "is_command": false}
+{"text": "we'll be right back after these messages", "intent": "none", "is_command": false}
+{"text": "safari so goody", "intent": "none", "is_command": false}
+{"text": "a safari in kenya is on my list", "intent": "none", "is_command": false}
+{"text": "i'm sorry, safari's closed today", "intent": "none", "is_command": false}
+{"text": "she's off on safari next week", "intent": "none", "is_command": false}
+{"text": "spot a fly", "intent": "none", "is_command": false}
+{"text": "crow me", "intent": "none", "is_command": false}
+{"text": "fine dinner at eight", "intent": "none", "is_command": false}
+{"text": "notes from the meeting are attached", "intent": "none", "is_command": false}
+{"text": "a timer, a timer, my kingdom for a timer", "intent": "none", "is_command": false}
+{"text": "lock smith's on the way", "intent": "none", "is_command": false}
+{"text": "max and minnie are the dog's names", "intent": "none", "is_command": false}
+{"text": "maxim is a magazine", "intent": "none", "is_command": false}
+{"text": "snap is my favorite card game", "intent": "none", "is_command": false}
+{"text": "right half of the pizza has olives", "intent": "none", "is_command": false}
+{"text": "the left half's mine", "intent": "none", "is_command": false}
+{"text": "full screen door", "intent": "none", "is_command": false}
+{"text": "screen print t shirts", "intent": "none", "is_command": false}
+{"text": "volume two of the encyclopedia", "intent": "none", "is_command": false}
+{"text": "mute swans are bigger than you think", "intent": "none", "is_command": false}
+{"text": "next of kin", "intent": "none", "is_command": false}
+{"text": "skip is my uncle's nickname", "intent": "none", "is_command": false}
+{"text": "pause, the cat, is called pause", "intent": "none", "is_command": false}
+{"text": "playstation five", "intent": "none", "is_command": false}
+{"text": "close friends only", "intent": "none", "is_command": false}
+{"text": "open mic night on friday", "intent": "none", "is_command": false}
+{"text": "switch board operator", "intent": "none", "is_command": false}
+{"text": "quitting time", "intent": "none", "is_command": false}
+{"text": "screen shot, the movie, opens friday", "intent": "none", "is_command": false}
+{"text": "tv dinners in the freezer", "intent": "none", "is_command": false}
+{"text": "mac and cheese and mac and cheese again", "intent": "none", "is_command": false}
+{"text": "zoom zoom, said the car ad", "intent": "none", "is_command": false}
+{"text": "chrome wheels on the truck", "intent": "none", "is_command": false}
+{"text": "facetime later?", "intent": "none", "is_command": false}
+{"text": "netflix and chill, ha", "intent": "none", "is_command": false}
+{"text": "finder's keepers", "intent": "none", "is_command": false}
+{"text": "the terminal at heathrow is packed", "intent": "none", "is_command": false}
+{"text": "preview night for members", "intent": "none", "is_command": false}
+{"text": "mail came early today", "intent": "none", "is_command": false}
+{"text": "photos from the wedding finally arrived", "intent": "none", "is_command": false}
+{"text": "messages from the school about the trip", "intent": "none", "is_command": false}
+{"text": "Dave, open the door", "intent": "none", "is_command": false}
+{"text": "Siri, what's the weather", "intent": "none", "is_command": false}
+{"text": "alexa, play jazz", "intent": "none", "is_command": false}
+{"text": "hey google, turn on the lights", "intent": "none", "is_command": false}
+{"text": "mum, can you turn it up", "intent": "none", "is_command": false}
+{"text": "kids, turn that down", "intent": "none", "is_command": false}
+{"text": "babe, pause it, I need the loo", "intent": "none", "is_command": false}
+{"text": "Tom, skip this bit", "intent": "none", "is_command": false}
+{"text": "Sarah, set a timer for the eggs", "intent": "none", "is_command": false}
+{"text": "Jake, look it up on your phone", "intent": "none", "is_command": false}
+{"text": "dad, switch it to the football", "intent": "none", "is_command": false}
+{"text": "grandpa, the tv's on mute", "intent": "none", "is_command": false}
+{"text": "honey, lock the car", "intent": "none", "is_command": false}
+{"text": "can someone close the back door", "intent": "none", "is_command": false}
+{"text": "who wants to search the attic", "intent": "none", "is_command": false}
+{"text": "Emma, take a screenshot of that for me", "intent": "none", "is_command": false}
+{"text": "Mike, maximise the trailer on your laptop", "intent": "none", "is_command": false}
+{"text": "Mia, quit it", "intent": "none", "is_command": false}
+{"text": "Sam, next round's on you", "intent": "none", "is_command": false}
+{"text": "Ollie, snap out of it", "intent": "none", "is_command": false}
+{"text": "open safari, the documentary, premieres tonight at nine", "intent": "none", "is_command": false}
+{"text": "and now, turn to page forty two in your hymnals", "intent": "none", "is_command": false}
+{"text": "set volume aside, the real story is the price", "intent": "none", "is_command": false}
+{"text": "mute point, actually it's moot point", "intent": "none", "is_command": false}
+{"text": "pause button parenting is a whole trend", "intent": "none", "is_command": false}
+{"text": "skip day was cancelled at the high school", "intent": "none", "is_command": false}
+{"text": "next track meet is in Dover", "intent": "none", "is_command": false}
+{"text": "timer cards are due on Friday", "intent": "none", "is_command": false}
+{"text": "search warrant was executed at the property", "intent": "none", "is_command": false}
+{"text": "snap election called for November", "intent": "none", "is_command": false}
+{"text": "right half of the bracket is stacked", "intent": "none", "is_command": false}
+{"text": "maximize shareholder value, the ceo said again", "intent": "none", "is_command": false}
+{"text": "minimise the risk of fire by unplugging chargers", "intent": "none", "is_command": false}
+{"text": "close window on the investigation, sources say", "intent": "none", "is_command": false}
+{"text": "screenshot evidence was shown to the jury", "intent": "none", "is_command": false}
+{"text": "lock screen photos of the suspect leaked online", "intent": "none", "is_command": false}
+{"text": "tv power ratings show a big drop for cable", "intent": "none", "is_command": false}
+{"text": "he's going to open for the stones next summer", "intent": "none", "is_command": false}
+{"text": "she switched teams after one season", "intent": "none", "is_command": false}
+{"text": "the app quit working after the update, users report", "intent": "none", "is_command": false}
+{"text": "the timer's set, the bomb squad is moving in", "intent": "none", "is_command": false}
+{"text": "volume one sold out in a week", "intent": "none", "is_command": false}
+{"text": "uh, open, like, open-ended questions are better", "intent": "none", "is_command": false}
+{"text": "um, so, turn it up, he kept saying, but nobody did", "intent": "none", "is_command": false}
+{"text": "can you believe they quit the show", "intent": "none", "is_command": false}
+{"text": "could you imagine if the tv turned itself off", "intent": "none", "is_command": false}
+{"text": "would you open a restaurant with me", "intent": "none", "is_command": false}
+{"text": "can you, like, pause your life for a minute", "intent": "none", "is_command": false}
+{"text": "play next to the river, kids, not in it", "intent": "none", "is_command": false}
+{"text": "close the window on the left and open the one on the right, the architect said", "intent": "none", "is_command": false}

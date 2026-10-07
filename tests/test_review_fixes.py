@@ -123,3 +123,95 @@ class TestEmbedRobustness(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSpeakerBackends(unittest.TestCase):
+    """CAM++ / legacy backend selection, enrollment and verification (no real models)."""
+
+    def setUp(self):
+        import tempfile
+        import speaker_id as sid
+        self.sid = sid
+        self.tmp = tempfile.mkdtemp()
+        self.patches = [
+            mock.patch.object(sid, "CAMPLUS_PROFILE_PATH", os.path.join(self.tmp, "campplus.npy")),
+            mock.patch.object(sid, "DEFAULT_PROFILE_PATH", os.path.join(self.tmp, "legacy.npy")),
+            mock.patch.object(sid, "SPEAKER_BACKEND", "auto"),
+            mock.patch.object(sid, "_have_fbank", return_value=True),
+        ]
+        for p in self.patches:
+            p.start()
+            self.addCleanup(p.stop)
+        sid._profile_cache.clear()
+
+    def _fake_embed(self, vec):
+        return mock.patch.object(self.sid, "extract_embedding",
+                                 side_effect=lambda a, **kw: np.asarray(vec, dtype=np.float32))
+
+    def test_legacy_until_campplus_profile_exists(self):
+        self.assertEqual(self.sid.active_backend(), "pyannote")
+        np.save(self.sid.CAMPLUS_PROFILE_PATH, np.ones(512, dtype=np.float32))
+        self.assertEqual(self.sid.active_backend(), "campplus")
+        self.assertEqual(self.sid.get_threshold(), self.sid.CAMPLUS_THRESHOLD)
+
+    def test_no_fbank_stays_legacy(self):
+        np.save(self.sid.CAMPLUS_PROFILE_PATH, np.ones(512, dtype=np.float32))
+        with mock.patch.object(self.sid, "_have_fbank", return_value=False):
+            self.assertEqual(self.sid.active_backend(), "pyannote")
+
+    def test_enroll_writes_both_profiles_and_switches(self):
+        audio = [np.random.RandomState(0).randn(16000 * 5).astype(np.float32) * 0.1]
+        with self._fake_embed(np.eye(512)[0]):
+            c = self.sid.enroll_speaker(audio)
+        self.assertAlmostEqual(c, 1.0, places=3)
+        self.assertTrue(os.path.isfile(self.sid.CAMPLUS_PROFILE_PATH))
+        self.assertTrue(os.path.isfile(self.sid.DEFAULT_PROFILE_PATH))
+        self.assertEqual(self.sid.active_backend(), "campplus")
+
+    def test_verify_accepts_and_rejects_by_threshold(self):
+        np.save(self.sid.CAMPLUS_PROFILE_PATH, np.eye(512, dtype=np.float32)[0])
+        v = np.zeros(512, dtype=np.float32)
+        v[0], v[1] = 0.8, 0.6
+        with self._fake_embed(v):
+            ok, sim = self.sid.verify_speaker(np.zeros(16000, dtype=np.float32))
+        self.assertTrue(ok)
+        self.assertAlmostEqual(sim, 0.8, places=3)
+        w = np.zeros(512, dtype=np.float32)
+        w[0], w[1] = 0.1, 0.99
+        with self._fake_embed(w):
+            ok, sim = self.sid.verify_speaker(np.zeros(16000, dtype=np.float32))
+        self.assertFalse(ok)
+
+    def test_mismatched_profile_dim_fails_open_not_crash(self):
+        np.save(self.sid.CAMPLUS_PROFILE_PATH, np.ones(64, dtype=np.float32))
+        with self._fake_embed(np.ones(512)):
+            self.assertEqual(self.sid.verify_speaker(np.zeros(16000, dtype=np.float32)), (True, 1.0))
+
+    def test_reset_removes_both(self):
+        np.save(self.sid.CAMPLUS_PROFILE_PATH, np.ones(512, dtype=np.float32))
+        np.save(self.sid.DEFAULT_PROFILE_PATH, np.ones(512, dtype=np.float32))
+        self.assertTrue(self.sid.reset_speaker())
+        self.assertFalse(os.path.exists(self.sid.CAMPLUS_PROFILE_PATH))
+        self.assertFalse(os.path.exists(self.sid.DEFAULT_PROFILE_PATH))
+
+
+class TestCampplusRealModel(unittest.TestCase):
+    """Runs only where the CAM++ model is already downloaded (e.g. the live Mac)."""
+
+    def test_same_speaker_scores_above_different(self):
+        import speaker_id as sid
+        if not (os.path.isfile(sid.CAMPLUS_MODEL_PATH) and sid._have_fbank()):
+            self.skipTest("CAM++ model / kaldi-native-fbank not installed")
+        import soundfile as sf
+        import scipy.signal as ss
+        root = os.path.join(os.path.dirname(__file__), "..", "docs", "audio_samples")
+
+        def emb(name, part):
+            a, sr = sf.read(os.path.join(root, f"{name}_sample.wav"), dtype="float32")
+            a = a if a.ndim == 1 else a.mean(1)
+            a = ss.resample_poly(a, 16000, sr).astype(np.float32) if sr != 16000 else a
+            h = len(a) // 2
+            return sid.extract_embedding(a[:h] if part == 0 else a[h:], backend="campplus")
+
+        n0, n1, m0 = emb("nicole", 0), emb("nicole", 1), emb("michael", 0)
+        self.assertGreater(float(n0 @ n1), float(n0 @ m0) + 0.15)
