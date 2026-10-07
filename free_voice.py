@@ -806,6 +806,88 @@ def wait_for_input_device(poll_s: float = 3.0, fallback_after_s: float = 6.0):
         time.sleep(poll_s)
 
 
+VOICE_MIC_OPEN_TIMEOUT = float(os.environ.get("VOICE_MIC_OPEN_TIMEOUT", "8"))
+_MIC_PROBE_SRC = (
+    "import sys, sounddevice as sd\n"
+    "idx = None if sys.argv[1] == '' else int(sys.argv[1])\n"
+    "with sd.RawInputStream(samplerate=16000, channels=1, dtype='int16',"
+    " blocksize=480, device=idx) as s:\n"
+    "    s.read(480)\n"
+)
+_last_mic_stuck_say = 0.0
+
+
+def _probe_input(idx, timeout: float | None = None) -> bool:
+    """True if input `idx` opens and delivers audio within `timeout` seconds.
+
+    A wedged USB mic / usbaudiod makes PortAudio's open block ~8 minutes
+    inside CoreAudio and then fail, forever. Probing in a throwaway
+    subprocess lets us kill the hung open and tell the user, instead of
+    silently going deaf.
+    """
+    try:
+        r = subprocess.run(
+            [sys.executable, "-c", _MIC_PROBE_SRC, "" if idx is None else str(idx)],
+            timeout=timeout or VOICE_MIC_OPEN_TIMEOUT, capture_output=True)
+        return r.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception:
+        return True  # can't probe at all: let the real open decide
+
+
+def _input_name(idx) -> str:
+    try:
+        import sounddevice as sd
+        dev = sd.query_devices(idx) if idx is not None else sd.query_devices(kind="input")
+        return str(dev.get("name", "?"))
+    except Exception:
+        return "?"
+
+
+def _other_inputs(idx) -> list[int]:
+    """Indexes of every other input device, for falling back off a hung mic."""
+    try:
+        import sounddevice as sd
+        cur = idx if idx is not None else sd.default.device[0]
+        return [i for i, d in enumerate(sd.query_devices())
+                if d.get("max_input_channels", 0) > 0 and i != cur]
+    except Exception:
+        return []
+
+
+def ensure_responsive_input(idx, wake_word: str = "", retry_s: float = 15.0):
+    """Return `idx` once it actually opens, or another input that does.
+
+    While every input is hung, warns once (log, HUD, menu bar, spoken at most
+    every 10 minutes) and keeps retrying, so replugging the mic recovers
+    without a restart.
+    """
+    global _last_mic_stuck_say
+    warned = False
+    while True:
+        if _probe_input(idx):
+            if warned:
+                log(f"microphone {_input_name(idx)!r} is responding again")
+            return idx
+        name = _input_name(idx)
+        update_state("mic_stuck", msg=f"{name} not responding — replug it",
+                     wake_word=wake_word)
+        if not warned:
+            warned = True
+            log(f"microphone {name!r} is not responding (audio driver hung) — "
+                "unplug and replug it; trying other inputs…")
+            notify_hud(f"🎙️ {name} not responding — replug it", "action")
+            if time.monotonic() - _last_mic_stuck_say > 600:
+                _last_mic_stuck_say = time.monotonic()
+                say("My microphone stopped responding. Please unplug it and plug it back in.")
+        for alt in _other_inputs(idx):
+            if _probe_input(alt):
+                log(f"falling back to microphone {_input_name(alt)!r}")
+                return alt
+        time.sleep(retry_s)
+
+
 _last_no_mic_say = 0.0
 
 
@@ -921,11 +1003,31 @@ def is_any_game_active() -> bool:
     return False
 
 
+_BASE_WHISPER_PROMPT = "Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume."
+
+
 def _get_initial_prompt() -> str:
-    base = "Mac, Safari, Chrome, Finder, Terminal, Notes, System Settings, snap left, snap right, maximize, volume."
+    base = _BASE_WHISPER_PROMPT
     if is_any_game_active():
         return base + " kick, shoot, fire, vent, red, blue, start, deploy, Cap, Blaze, Hook, Sarge, Patch, Sumo, Zen, Marshal, left, right, jump, faster, slower."
     return base
+
+
+_PROMPT_ECHO_ITEMS = [w for w in (re.sub(r"[^a-z0-9 ]+", " ", p.lower()).strip()
+                                  for p in re.split(r"[,.]", _BASE_WHISPER_PROMPT)) if w]
+
+
+def is_prompt_echo(text: str) -> bool:
+    """True if Whisper parroted its initial_prompt instead of hearing speech.
+
+    On near-silence Whisper often emits the prompt itself ("Mac, Safari,
+    Chrome, Finder, ..."), which carries the wake word and ran as a 7-app
+    chain. Three consecutive prompt items in prompt order never happen in
+    real speech.
+    """
+    norm = " " + " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split()) + " "
+    items = _PROMPT_ECHO_ITEMS
+    return any(f" {' '.join(items[i:i + 3])} " in norm for i in range(len(items) - 2))
 
 
 def transcribe(audio) -> str:
@@ -1147,18 +1249,21 @@ def always_listen_loop(on_utterance, sensitivity: float = 1.35, wake_word: str =
     try:
         while True:  # outer: re-acquire the mic if it vanishes
             idx = wait_for_input_device()
+            if not _IN_TESTS:
+                idx = ensure_responsive_input(idx, wake_word)
             vad = VoiceActivityDetector(sensitivity=sensitivity)
             capturing: list[np.ndarray] = []
             # Pre-roll: keep ~750ms of audio before speech onset to prevent
             # clipping soft consonants and the wake word (e.g. "Mac").
             preroll: deque = deque(maxlen=max(25, vad.start_needed + 15))
-            log(f"microphone: {describe_input_device()} — listening")
-            update_state("listening", wake_word=wake_word)
-            play_chime("Tink.aiff")
             try:
                 with sd.RawInputStream(samplerate=16000, channels=1, dtype="int16",
                                        blocksize=frame_len,
                                        device=idx) as stream:
+                    # Announce only once the stream is really open
+                    log(f"microphone: {_input_name(idx) if idx is not None else describe_input_device()} — listening")
+                    update_state("listening", wake_word=wake_word)
+                    play_chime("Tink.aiff")
                     # Drain startup frames (chime echo / stream stabilization) and calibrate initial noise floor
                     startup_rms = []
                     for _ in range(16):
@@ -6030,9 +6135,13 @@ def embed_utterance(text: str, dim: int = 1024):
 _PRECOMPUTED_INTENTS: list[tuple[str, str]] = []
 _PRECOMPUTED_MATRIX = None
 _EMBED_NEURAL = False  # True when the matrix was built with OLLAMA_EMBED_MODEL
+_EMBED_LOCK = threading.Lock()
+_EMBED_RETRY_SEC = 300.0  # re-try the neural model this often if Ollama was down at startup
+_EMBED_QUERY_TIMEOUT = float(os.environ.get("TIER05_EMBED_TIMEOUT", "2"))
+_embed_last_try = 0.0
 
 
-def _ollama_embed(texts: list[str]):
+def _ollama_embed(texts: list[str], timeout: float = 30.0):
     """Batch-embed via Ollama /api/embed. Returns L2-normalised float32 matrix, or None on any failure."""
     import numpy as np
     if not OLLAMA_EMBED_MODEL:
@@ -6043,7 +6152,7 @@ def _ollama_embed(texts: list[str]):
             data=json.dumps({"model": OLLAMA_EMBED_MODEL, "keep_alive": "60m",
                              "input": [_EMBED_PREFIX + t for t in texts]}).encode(),
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             m = np.asarray(json.load(r)["embeddings"], dtype=np.float32)
         if m.ndim != 2 or m.shape[0] != len(texts):
             return None
@@ -6054,22 +6163,32 @@ def _ollama_embed(texts: list[str]):
 
 
 def _init_intent_embeddings() -> None:
-    global _PRECOMPUTED_INTENTS, _PRECOMPUTED_MATRIX, _EMBED_NEURAL
-    if _PRECOMPUTED_MATRIX is not None:
+    """Build the intent matrix (hashing first, upgraded to neural when Ollama
+    answers). If Ollama was down at startup, retry every _EMBED_RETRY_SEC
+    instead of staying on hashing for the whole session."""
+    global _PRECOMPUTED_INTENTS, _PRECOMPUTED_MATRIX, _EMBED_NEURAL, _embed_last_try
+    if _PRECOMPUTED_MATRIX is not None and (
+            _EMBED_NEURAL or not OLLAMA_EMBED_MODEL or not _embed_last_try
+            or time.monotonic() - _embed_last_try < _EMBED_RETRY_SEC):
         return
     import numpy as np
-    rows = []
-    intents = []
-    for action, examples in _INTENT_EXAMPLES.items():
-        for ex in examples:
-            rows.append(embed_utterance(ex))
-            intents.append((action, ex))
-    neural = _ollama_embed([ex for _, ex in intents])
-    if neural is not None:
-        rows, _EMBED_NEURAL = neural, True
-        log(f"Tier 0.5a using {OLLAMA_EMBED_MODEL} ({len(intents)} examples, dim={neural.shape[1]})")
-    _PRECOMPUTED_INTENTS = intents
-    _PRECOMPUTED_MATRIX = np.array(rows, dtype=np.float32)
+    with _EMBED_LOCK:
+        if _PRECOMPUTED_MATRIX is None:
+            rows = []
+            intents = []
+            for action, examples in _INTENT_EXAMPLES.items():
+                for ex in examples:
+                    rows.append(embed_utterance(ex))
+                    intents.append((action, ex))
+            _PRECOMPUTED_INTENTS = intents
+            _PRECOMPUTED_MATRIX = np.array(rows, dtype=np.float32)
+        elif _EMBED_NEURAL or time.monotonic() - _embed_last_try < _EMBED_RETRY_SEC:
+            return  # another thread finished first
+        _embed_last_try = time.monotonic()
+        neural = _ollama_embed([ex for _, ex in _PRECOMPUTED_INTENTS])
+        if neural is not None:
+            _PRECOMPUTED_MATRIX, _EMBED_NEURAL = neural, True
+            log(f"Tier 0.5a using {OLLAMA_EMBED_MODEL} ({len(_PRECOMPUTED_INTENTS)} examples, dim={neural.shape[1]})")
 
 
 def _extract_intent_params(intent: str, text: str) -> dict:
@@ -6154,16 +6273,19 @@ def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, f
     _init_intent_embeddings()
     if _PRECOMPUTED_MATRIX is None or len(_PRECOMPUTED_INTENTS) == 0:
         return None
+    matrix = _PRECOMPUTED_MATRIX
     qv = None
     if _EMBED_NEURAL:
-        q = _ollama_embed([text])
+        q = _ollama_embed([text], timeout=_EMBED_QUERY_TIMEOUT)
         if q is not None:
             qv, threshold = q[0], TIER05_EMBED_THRESHOLD
     if qv is None:
         if _EMBED_NEURAL:  # Ollama hiccup mid-session: skip 0.5a rather than compare mismatched spaces
             return None
         qv = embed_utterance(text)
-    sims = np.dot(_PRECOMPUTED_MATRIX, qv)
+    if qv.shape[0] != matrix.shape[1]:  # matrix upgraded to neural mid-call
+        return None
+    sims = np.dot(matrix, qv)
     best_idx = int(np.argmax(sims))
     best_sim = float(sims[best_idx])
     if best_sim >= threshold:
@@ -6809,6 +6931,10 @@ def prewarm_speech() -> None:
         except Exception:
             pass
         try:
+            _init_intent_embeddings()  # embed intent examples now, not on the first command
+        except Exception:
+            pass
+        try:
             _get_kokoro()
         except Exception:
             pass
@@ -7024,8 +7150,12 @@ def handle_command(text: str, confirm_audio_fn=None,
                     time.sleep(0.35)
                 return True
 
-            # If rule/regex chaining didn't resolve all parts, fall back to agentic multi-action LLM planner
-            llm_actions = ollama_multi_action_plan(t)
+            # If rule/regex chaining didn't resolve all parts, fall back to agentic multi-action LLM planner,
+            # but only for speech the command gate accepts: a comma list of TV chatter must not run N actions.
+            is_cmd, gate_conf = is_voice_command(t)
+            if not is_cmd:
+                log(f"agentic chain skipped by command gate: {t!r} (conf={gate_conf:.2f})")
+            llm_actions = ollama_multi_action_plan(t) if is_cmd else None
             if llm_actions:
                 log(f"Agentic multi-action chain ({len(llm_actions)} actions): {llm_actions}")
                 record_attempt(t, "SUCCESS", tier="Chain (LLM)", action="agentic_chain", detail=f"{len(llm_actions)} actions")
@@ -7161,6 +7291,8 @@ def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = Fals
             log(f"Speaker mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD}) — dropped ambient/TV voice")
             record_attempt("(ambient voice)", "REJECTED", tier="Speaker ID", detail=f"Mismatch (sim={sim:.2f} < {SPEAKER_THRESHOLD})")
             return
+        if sim < 1.0:  # 1.0 = verification off / not enrolled
+            log(f"speaker ok (sim={sim:.2f} >= {SPEAKER_THRESHOLD})")  # calibration data for the threshold
     try:
         text = transcribe(audio)
     except Exception as e:  # noqa: BLE001
@@ -7170,6 +7302,10 @@ def on_utterance(audio, quiet_miss: bool = False, require_wake_word: bool = Fals
         return
     if not text:
         log("empty transcript")
+        return
+    if is_prompt_echo(text):
+        log(f"dropped Whisper prompt echo (hallucination): {text!r}")
+        record_attempt(text, "REJECTED", tier="Hallucination", detail="Whisper repeated its initial prompt")
         return
     handle_command(text, confirm_audio_fn=record_fixed, quiet_miss=quiet_miss,
                    require_wake_word=require_wake_word)

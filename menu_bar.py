@@ -165,6 +165,9 @@ def run_menu_bar() -> None:
             elif state == "processing":
                 button.setTitle_("⚙️ Mac")
                 item_status.setTitle_("Status: Processing Command")
+            elif state == "mic_stuck":
+                button.setTitle_("⚠️ Mic")
+                item_status.setTitle_(f"Status: {st.get('msg') or 'Microphone not responding'}")
             elif state == "listening":
                 wake = st.get("wake_word", "mac")
                 title = f"🎙️ {wake.title()}" if wake else "🎙️ Open"

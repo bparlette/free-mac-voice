@@ -20,6 +20,7 @@ SPEAKER_THRESHOLD = float(os.environ.get("VOICE_SPEAKER_THRESHOLD", "0.17"))
 SPEAKER_VERIFICATION_ENABLED = os.environ.get("VOICE_SPEAKER_VERIFICATION", "1").lower() in ("1", "true", "yes")
 
 _session = None
+_profile_cache: dict[str, tuple[float, np.ndarray]] = {}
 
 
 def get_model_path() -> str:
@@ -93,13 +94,19 @@ def is_speaker_enrolled(profile_path: str | None = None) -> bool:
 def load_speaker_profile(profile_path: str | None = None) -> np.ndarray | None:
     """Load the enrolled speaker profile vector, or None if not enrolled."""
     path = profile_path or get_profile_path()
-    if not os.path.isfile(path):
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
         return None
+    cached = _profile_cache.get(path)
+    if cached and cached[0] == mtime:  # verify_speaker runs per utterance: skip the disk read
+        return cached[1]
     try:
         prof = np.load(path)
         norm = np.linalg.norm(prof)
         if norm > 1e-10:
             prof = prof / norm
+        _profile_cache[path] = (mtime, prof)
         return prof
     except Exception:
         return None
