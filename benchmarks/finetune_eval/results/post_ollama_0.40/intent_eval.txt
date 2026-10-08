@@ -1,0 +1,21 @@
+Tier 0.5a mode: neural ONNX EmbeddingGemma; 800 phrases
+Tier 0 regex          : commands matched 144/400 ( 36.0%)   non-commands matched  43/400 ( 10.8%)
+ 0.78   374/400  93.5%             55/400  13.8%
+ 0.82   362/400  90.5%             26/400   6.5%
+ 0.86   342/400  85.5%              9/400   2.2%
+  0.94 timer          'is the timer still going'
+  0.89 timer          'set your timer, the sale ends at midnight'
+  0.88 web_search     "search 'cheap flights' on kayak"
+  0.88 lock           'how do I lock the screen on this thing'
+  0.87 tv_power       'turn on your tv to channel four for the big game'
+  0.87 timer          'the timer went off ten minutes ago'
+  0.87 set_volume     'mum, can you turn it up'
+  0.87 open_app       'zoom, one platform to connect'
+  0.87 media          "let's play the music round"
+  0.85 set_volume     'maybe turn it up a little, maybe not'
+  0.85 timer          'set the timer on the camera for ten seconds'
+  0.85 mute_toggle    'mute the noise with our new headphones'
+  0.85 screenshot     "apparently you can say 'take a screenshot' to your phone"
+  0.84 open_app       "ten minutes past the hour, here's your weather"
+  0.84 media          'alexa, play jazz'
+Non-commands wrongly matched by Tier 0 regex: 43
