@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import collections
 import hashlib
 import html
 import json
@@ -137,6 +138,10 @@ OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "embeddinggemma").stri
 # both recall (77.5% vs 72.6%) and false accepts (6.5% vs 9.0%) with the expanded example set.
 TIER05_EMBED_THRESHOLD = float(os.environ.get("TIER05_EMBED_THRESHOLD", "0.82"))
 _EMBED_PREFIX = "task: classification | query: "
+# Tier 0.5a embedding backend: "ollama" (default), "onnx" (in-process 4-bit EmbeddingGemma via onnxruntime, no Ollama;
+# fetch it with scripts/fetch_onnx_embedder.py), or "compare" (act on Ollama, also run ONNX and log where they differ:
+# grep "Tier 0.5a compare" in daemon.log). Missing ONNX files fall back to Ollama. See benchmarks/finetune_eval/.
+TIER05_EMBED_BACKEND = os.environ.get("TIER05_EMBED_BACKEND", "ollama").strip().lower()
 # Confidence threshold for decision routing: 0.7 for tev1:0.8b, 0.5 for qwen2.5:1.5b
 DECISION_MIN_CONFIDENCE = float(os.environ.get("DECISION_MIN_CONFIDENCE", "0.7" if "tev1" in OLLAMA_DECISION_MODEL.lower() else "0.5"))
 # Model for multi-action sequential planning in JSON chat mode (generative model required)
@@ -6227,13 +6232,48 @@ def _ollama_embed(texts: list[str], timeout: float = 30.0):
         return None
 
 
+_warned_onnx_missing = False
+
+
+def _use_onnx() -> bool:
+    """True when the in-process ONNX embedder is the active Tier 0.5a backend and its files exist."""
+    global _warned_onnx_missing
+    if TIER05_EMBED_BACKEND != "onnx":
+        return False
+    try:
+        import onnx_embed
+        if onnx_embed.available():
+            return True
+    except Exception:
+        pass
+    if not _warned_onnx_missing:
+        _warned_onnx_missing = True
+        log("Tier 0.5a: TIER05_EMBED_BACKEND=onnx but the model is missing; using Ollama "
+            "(run scripts/fetch_onnx_embedder.py)")
+    return False
+
+
+def _onnx_embed(texts: list[str]):
+    """Same contract as _ollama_embed (normalised float32 matrix, or None) computed in-process with onnxruntime."""
+    try:
+        import onnx_embed
+        emb = onnx_embed.get_embedder()
+        if emb is None:
+            return None
+        m = emb.embed([_EMBED_PREFIX + t for t in texts])
+        return m if m.ndim == 2 and m.shape[0] == len(texts) else None
+    except Exception as e:
+        log(f"Tier 0.5a ONNX embeddings failed: {e}")
+        return None
+
+
 def _init_intent_embeddings() -> None:
     """Build the intent matrix (hashing first, upgraded to neural when Ollama
     answers). If Ollama was down at startup, retry every _EMBED_RETRY_SEC
     instead of staying on hashing for the whole session."""
     global _PRECOMPUTED_INTENTS, _PRECOMPUTED_MATRIX, _EMBED_NEURAL, _embed_last_try
     if _PRECOMPUTED_MATRIX is not None and (
-            _EMBED_NEURAL or not OLLAMA_EMBED_MODEL or not _embed_last_try
+            _EMBED_NEURAL or not (OLLAMA_EMBED_MODEL or _use_onnx()) or not _embed_last_try
             or time.monotonic() - _embed_last_try < _EMBED_RETRY_SEC):
         return
     import numpy as np
@@ -6250,10 +6290,12 @@ def _init_intent_embeddings() -> None:
         elif _EMBED_NEURAL or time.monotonic() - _embed_last_try < _EMBED_RETRY_SEC:
             return  # another thread finished first
         _embed_last_try = time.monotonic()
-        neural = _ollama_embed([ex for _, ex in _PRECOMPUTED_INTENTS])
+        examples = [ex for _, ex in _PRECOMPUTED_INTENTS]
+        neural = _onnx_embed(examples) if _use_onnx() else _ollama_embed(examples)
         if neural is not None:
             _PRECOMPUTED_MATRIX, _EMBED_NEURAL = neural, True
-            log(f"Tier 0.5a using {OLLAMA_EMBED_MODEL} ({len(_PRECOMPUTED_INTENTS)} examples, dim={neural.shape[1]})")
+            name = "ONNX EmbeddingGemma (in-process)" if _use_onnx() else OLLAMA_EMBED_MODEL
+            log(f"Tier 0.5a using {name} ({len(_PRECOMPUTED_INTENTS)} examples, dim={neural.shape[1]})")
 
 
 def _extract_intent_params(intent: str, text: str) -> dict:
@@ -6332,16 +6374,21 @@ def _extract_intent_params(intent: str, text: str) -> dict:
     return params
 
 
-def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, float] | None:
+_t05_last = None  # (best action, best cosine) of the latest neural query, read by the compare-mode shadow run
+
+
+def _tier05_embed_match_primary(text: str, threshold: float = 0.75) -> tuple[str, dict, float] | None:
     """Step (a): In-process embedding cosine-match against example utterances (~1ms budget)."""
     import numpy as np
+    global _t05_last
+    _t05_last = None
     _init_intent_embeddings()
     if _PRECOMPUTED_MATRIX is None or len(_PRECOMPUTED_INTENTS) == 0:
         return None
     matrix = _PRECOMPUTED_MATRIX
     qv = None
     if _EMBED_NEURAL:
-        q = _ollama_embed([text], timeout=_EMBED_QUERY_TIMEOUT)
+        q = _onnx_embed([text]) if _use_onnx() else _ollama_embed([text], timeout=_EMBED_QUERY_TIMEOUT)
         if q is not None:
             qv, threshold = q[0], TIER05_EMBED_THRESHOLD
     if qv is None:
@@ -6353,6 +6400,8 @@ def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, f
     sims = np.dot(matrix, qv)
     best_idx = int(np.argmax(sims))
     best_sim = float(sims[best_idx])
+    if _EMBED_NEURAL:
+        _t05_last = (_PRECOMPUTED_INTENTS[best_idx][0], best_sim)
     if best_sim >= threshold:
         action, _ = _PRECOMPUTED_INTENTS[best_idx]
         params = _extract_intent_params(action, text)
@@ -6362,6 +6411,73 @@ def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, f
         return action, params, best_sim
     log(f"Tier 0.5a miss: {text!r} best={_PRECOMPUTED_INTENTS[best_idx][0]} sim={best_sim:.2f} < {threshold:.2f}")
     return None
+
+
+_SHADOW_MATRIX = None
+_SHADOW_LOCK = threading.Lock()
+_COMPARE_SUMMARY_EVERY = 20
+_COMPARE_STATS = {"n": 0, "agree": 0, "ollama_only": 0, "onnx_only": 0,
+                  "ollama_ms": collections.deque(maxlen=200), "onnx_ms": collections.deque(maxlen=200)}
+
+
+def embed_compare_stats() -> dict:
+    """Running totals of the TIER05_EMBED_BACKEND=compare shadow run (for tests and ad-hoc inspection)."""
+    st = _COMPARE_STATS
+    med = lambda d: round(1000 * sorted(d)[len(d) // 2]) if d else None
+    return {"n": st["n"], "agree": st["agree"], "ollama_only_hits": st["ollama_only"], "onnx_only_hits": st["onnx_only"],
+            "ollama_median_ms": med(st["ollama_ms"]), "onnx_median_ms": med(st["onnx_ms"])}
+
+
+def _compare_shadow(text: str, primary_last, primary_secs: float) -> None:
+    """Compare mode: run the ONNX embedder on the same utterance and log how it would have routed. Never changes routing."""
+    import numpy as np
+    global _SHADOW_MATRIX
+    if primary_last is None:  # the primary (Ollama) query produced no vector: nothing to compare against
+        return
+    with _SHADOW_LOCK:
+        if _SHADOW_MATRIX is None:
+            m = _onnx_embed([ex for _, ex in _PRECOMPUTED_INTENTS])
+            if m is None:
+                return
+            _SHADOW_MATRIX = m
+    t = time.perf_counter()
+    q = _onnx_embed([text])
+    onnx_secs = time.perf_counter() - t
+    if q is None or q.shape[1] != _SHADOW_MATRIX.shape[1]:
+        return
+    sims = np.dot(_SHADOW_MATRIX, q[0])
+    j = int(np.argmax(sims))
+    o_action, o_sim = _PRECOMPUTED_INTENTS[j][0], float(sims[j])
+    p_action, p_sim = primary_last
+    p_hit, o_hit = p_sim >= TIER05_EMBED_THRESHOLD, o_sim >= TIER05_EMBED_THRESHOLD
+    agree = p_hit == o_hit and (not p_hit or p_action == o_action)
+    st = _COMPARE_STATS
+    st["n"] += 1
+    st["agree"] += agree
+    st["ollama_only"] += p_hit and not o_hit
+    st["onnx_only"] += o_hit and not p_hit
+    st["ollama_ms"].append(primary_secs)
+    st["onnx_ms"].append(onnx_secs)
+    fmt = lambda a, s_, hit: f"{a} {s_:.2f}" + ("" if hit else " (miss)")
+    log(f"Tier 0.5a compare: {text!r} ollama={fmt(p_action, p_sim, p_hit)} ({1000 * primary_secs:.0f} ms) | "
+        f"onnx={fmt(o_action, o_sim, o_hit)} ({1000 * onnx_secs:.0f} ms) | {'AGREE' if agree else 'DIFFER'}")
+    if st["n"] % _COMPARE_SUMMARY_EVERY == 0:
+        s_ = embed_compare_stats()
+        log(f"Tier 0.5a compare summary: n={s_['n']} agree={100 * s_['agree'] / s_['n']:.0f}% "
+            f"ollama-only hits={s_['ollama_only_hits']} onnx-only hits={s_['onnx_only_hits']} "
+            f"median embed ollama={s_['ollama_median_ms']} ms onnx={s_['onnx_median_ms']} ms")
+
+
+def tier05_embed_match(text: str, threshold: float = 0.75) -> tuple[str, dict, float] | None:
+    """Tier 0.5a entry point. With TIER05_EMBED_BACKEND=compare it also shadow-runs the ONNX embedder and logs the comparison."""
+    t = time.perf_counter()
+    result = _tier05_embed_match_primary(text, threshold)
+    if TIER05_EMBED_BACKEND == "compare" and _EMBED_NEURAL:
+        try:
+            _compare_shadow(text, _t05_last, time.perf_counter() - t)
+        except Exception as e:  # shadow problems must never affect routing
+            log(f"Tier 0.5a compare failed: {e}")
+    return result
 
 
 _TIER05_DECISION_SYSTEM = (

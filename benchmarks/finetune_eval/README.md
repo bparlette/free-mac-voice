@@ -81,7 +81,7 @@ Harness: `bench_engines.py`.
 
 | Model | Engine | Correct @ FA<=16% | Single query | Batch | Loaded size |
 |---|---|---|---|---|---|
-| embeddinggemma (current) | old 0.35.0 | 61.8% | 16 ms | 69 texts/s | 648 MB |
+| embeddinggemma (current; benchmarked without the task prefix the live router adds) | old 0.35.0 | 61.8% | 16 ms | 69 texts/s | 648 MB |
 | embeddinggemma (current) | **new 0.40.0** | 61.8% | **10 ms** | **107 texts/s** | 648 MB |
 | embeddinggemma-2:270m | new 0.40.0 (old cannot load it) | 54.9% (52.0% with task prefix) | 15 ms | 91 texts/s | **330 MB** |
 | qwen2.5:1.5b generation | old / new | 61 / 61 tokens/s | | | |
@@ -116,6 +116,33 @@ Harness: `bench_engines.py`.
   produces unusable embeddings for most variants.
 - Not done: wiring this into `free_voice.py`. The speed and memory figures were measured in a benchmark process, not under
   the live daemon.
+
+## Live comparison in the running assistant (ONNX vs Ollama)
+
+`free_voice.py` has a switch, `TIER05_EMBED_BACKEND`:
+
+| Value | Behaviour |
+|---|---|
+| `ollama` (default) | Unchanged: embeddings from Ollama |
+| `onnx` | In-process 4-bit EmbeddingGemma via onnxruntime; no Ollama call for Tier 0.5a. Falls back to Ollama (with one log line) if the model files are missing |
+| `compare` | Routes exactly as `ollama`, but also runs ONNX on every utterance and logs where they differ |
+
+Setup:
+
+```bash
+./.venv/bin/python scripts/fetch_onnx_embedder.py        # one-time, ~220 MB into ~/.cache/free-voice/embeddinggemma-onnx
+echo 'TIER05_EMBED_BACKEND=compare' >> ~/.free-voice/.env   # then restart the daemon (e.g. ./service.sh restart)
+grep "Tier 0.5a compare" ~/.free-voice/daemon.log
+```
+
+Each utterance logs one line, for example
+`Tier 0.5a compare: 'open safari' ollama=open_app 0.94 (13 ms) | onnx=open_app 0.93 (7 ms) | AGREE`
+and every 20 utterances a summary (agreement rate, hits only one backend would have taken, median embed time). When the
+two disagree, look at who was right: the log shows both actions and cosines. To switch for real, set `TIER05_EMBED_BACKEND=onnx`.
+The ONNX path uses the same task prefix, the same threshold (`TIER05_EMBED_THRESHOLD`, 0.82) and the same example set.
+
+A first smoke test with real Ollama and the real ONNX model on 10 phrases: 9 agreed; they differed on "can you launch
+chrome please" (Ollama: `switch_app`, ONNX: `open_app`). Ten phrases prove nothing statistically; the live log is the real test.
 
 ## Process (to reproduce)
 
