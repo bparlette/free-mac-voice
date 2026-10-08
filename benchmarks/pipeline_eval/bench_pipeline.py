@@ -18,6 +18,7 @@ from common import split_test, ACCEPT  # noqa: E402
 import free_voice as fv  # noqa: E402
 
 ap = argparse.ArgumentParser(); ap.add_argument("--n", type=int, default=80); ap.add_argument("--out", default=os.path.join(HERE, "results"))
+ap.add_argument("--tag", default="", help="suffix for the results file, e.g. 8b_instruct")
 ap.add_argument("--no-decision-tier", action="store_true", help="disable Tier 0.5b (the tev1 decision-model router); the command gate keeps using tev1")
 args = ap.parse_args()
 
@@ -55,7 +56,7 @@ def run(text, window):
 
 rows = split_test(0)[1]; rnd = random.Random(11)
 cmds = rnd.sample([r for r in rows if r["is_command"]], args.n); non = rnd.sample([r for r in rows if not r["is_command"]], args.n)
-res = {"n": args.n, "no_decision_tier": args.no_decision_tier}
+res = {"n": args.n, "model": fv.OLLAMA_MODEL, "no_decision_tier": args.no_decision_tier}
 for mode, window in (("after_wake", False), ("window", True)):
     tiers = collections.Counter(); ok = wrong = none = 0; lat = []; wrong_ex = []
     for r in cmds:
@@ -74,4 +75,4 @@ for mode, window in (("after_wake", False), ("window", True)):
                   "false_trigger_examples": fa_ex[:8], "median_s_non_commands": round(sorted(nlat)[len(nlat) // 2], 2)})
     res[mode] = d
     print(mode, json.dumps({k: v for k, v in d.items() if "examples" not in k}), flush=True)
-json.dump(res, open(os.path.join(args.out, "pipeline_end_to_end_no_0.5b.json" if args.no_decision_tier else "pipeline_end_to_end.json"), "w"), indent=1)
+json.dump(res, open(os.path.join(args.out, ("pipeline_end_to_end_no_0.5b" if args.no_decision_tier else "pipeline_end_to_end") + (("_" + args.tag) if args.tag else "") + ".json"), "w"), indent=1)

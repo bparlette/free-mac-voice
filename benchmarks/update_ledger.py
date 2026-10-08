@@ -31,20 +31,21 @@ def models_table():
 
 
 def pipeline_table():
-    p = {}
-    for name in ("pipeline_end_to_end.json", "pipeline_end_to_end_no_0.5b.json"):
-        f = os.path.join(HERE, "pipeline_eval", "results", name)
-        if os.path.exists(f): p[name] = json.load(open(f))
-    if len(p) < 2: return "_(pipeline results not found)_"
-    a, b = p["pipeline_end_to_end.json"], p["pipeline_end_to_end_no_0.5b.json"]
-    n = a["n"]
-    def cell(d, mode, k): return d[mode][k]
-    out = ["| | Current pipeline | Tier 0.5b disabled |", "|---|---|---|",
-           f"| After wake word: commands routed to an acceptable action | {cell(a,'after_wake','commands_correct')}/{n} | {cell(b,'after_wake','commands_correct')}/{n} |",
-           f"| Wake window: commands correct | {cell(a,'window','commands_correct')}/{n} | {cell(b,'window','commands_correct')}/{n} |",
-           f"| Wake window: wrong action | {cell(a,'window','wrong_action')} | {cell(b,'window','wrong_action')} |",
-           f"| **Wake window: non-commands wrongly acted on** | **{cell(a,'window','false_triggers')}/{n}** | **{cell(b,'window','false_triggers')}/{n}** |",
-           f"| ...by tier | {json.dumps(cell(a,'window','false_triggers_by_tier'))} | {json.dumps(cell(b,'window','false_triggers_by_tier'))} |"]
+    names = [("pipeline_end_to_end.json", "Current pipeline"), ("pipeline_end_to_end_no_0.5b.json", "Tier 0.5b disabled"),
+             ("pipeline_end_to_end_no_0.5b_8b_instruct.json", "Tier 0.5b disabled + 8B instruct (live setup)")]
+    cols = []
+    for fname, label in names:
+        f = os.path.join(HERE, "pipeline_eval", "results", fname)
+        if os.path.exists(f): cols.append((label, json.load(open(f))))
+    if len(cols) < 2: return "_(pipeline results not found)_"
+    n = cols[0][1]["n"]
+    def row(label, fn): return "| " + label + " | " + " | ".join(fn(d) for _, d in cols) + " |"
+    out = ["| | " + " | ".join(l for l, _ in cols) + " |", "|---|" + "---|" * len(cols),
+           row("After wake word: commands routed to an acceptable action", lambda d: f"{d['after_wake']['commands_correct']}/{n}"),
+           row("Wake window: commands correct", lambda d: f"{d['window']['commands_correct']}/{n}"),
+           row("Wake window: wrong action", lambda d: str(d['window']['wrong_action'])),
+           row("**Wake window: non-commands wrongly acted on**", lambda d: f"**{d['window']['false_triggers']}/{n}**"),
+           row("...by tier", lambda d: json.dumps(d['window']['false_triggers_by_tier']))]
     return "\n".join(out)
 
 

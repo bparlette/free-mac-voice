@@ -21,9 +21,11 @@ output in that folder's `results/`, add a dated row to the [timeline](#timeline)
 | Speaker verification removed | 2026-10-08 | Wake word makes it unnecessary for this setup (the model was only a weak second filter) |
 | App-name lookup handles polite phrasing ("can you launch chrome please") | 2026-10-08 | Tier 0.5a matched the intent but dropped it for lack of an app name |
 | Ollama upgraded 0.35 -> 0.40 | 2026-10-07 | Identical accuracy; embeddings through Ollama faster; command-gate endpoint compatible |
+| **Tier 0.5b (decision-model router) switched off** on the live setup (`OLLAMA_DECISION_MODEL=` empty in the local config; the code default is unchanged) | 2026-10-08 | End to end: false triggers in the wake window 33 -> 21 of 80, correct commands up |
+| **Tier 1 / vision / answers model changed to `qwen3-vl:8b-instruct`** on the live setup (`OLLAMA_MODEL`); the code now pre-fills the answer start **only for thinking builds** | 2026-10-08 | Routing 51/60 vs 52/60 for the thinking build, with fewer false accepts (7 vs 9); general answers 12 s -> 0.5 s; screen questions 9.3 s -> 4.9 s; no silent replies |
+| Command-gate model kept resident (`keep_alive`) and warmed at startup | 2026-10-08 | A cold gate call took about 2.7 s against the 3 s timeout, and a timeout fails closed (drops the phrase) |
 
-**Supported by the data but not applied yet** (needs an owner decision): disable Tier 0.5b (`OLLAMA_DECISION_MODEL=` empty), tighten the Tier 0 regex, and
-skip the pre-filled answer start for non-thinking models so a 4B/8B *instruct* model can be used. See [recommendations](#recommendations).
+**Still open:** tighten the Tier 0 regex (12 of 80 false triggers); the code's *default* model is still the thinking `qwen3-vl:8b` (the installer pulls it), so making an instruct build the default for everyone is a separate decision. See [recommendations](#recommendations).
 
 ## Current standings
 
@@ -61,7 +63,7 @@ Notes (from `model_size_eval/README.md`):
 - The default tags `qwen3-vl:8b` / `:4b` are **thinking** builds: general answers take about 12 s on the 8B and the answer can come back **empty** (the model spends its
   token budget reasoning). **Instruct** builds answer in 0.3-0.5 s.
 - With the pre-fill skipped, **4B instruct routes 51/60 (15 false accepts)**; the same pre-fill that helps thinking models collapses it to 9/60.
-- The 8B instruct's routing without the pre-fill, and a harder screen/question set, were **not run**.
+- **8B instruct without the pre-fill routes 51/60 with 7 false accepts** (1.35 s), matching the 8B thinking build's 52/60 with 9; with the pre-fill it scores 47/60. A harder screen/question set was **not run**.
 - Cold start (model unloaded): 8B 6.6 s, 4B instruct 9.6 s.
 - Qwen3.5 0.8B / 2B without `format=json`: routing 35 / 45 of 60 (with 20 / 11-15 false accepts).
 
@@ -70,13 +72,13 @@ Notes (from `model_size_eval/README.md`):
 In the real pipeline the command gate only guards the **wake window** (follow-up speech) and only for phrases the regex tier does not match.
 
 <!-- AUTO:pipeline:START -->
-| | Current pipeline | Tier 0.5b disabled |
-|---|---|---|
-| After wake word: commands routed to an acceptable action | 53/80 | 55/80 |
-| Wake window: commands correct | 37/80 | 39/80 |
-| Wake window: wrong action | 20 | 17 |
-| **Wake window: non-commands wrongly acted on** | **33/80** | **22/80** |
-| ...by tier | {"Tier 0.5b": 12, "Tier 0.5a": 6, "Tier 0": 12, "Tier 1": 3} | {"Tier 0.5a": 6, "Tier 0": 12, "Tier 1": 4} |
+| | Current pipeline | Tier 0.5b disabled | Tier 0.5b disabled + 8B instruct (live setup) |
+|---|---|---|---|
+| After wake word: commands routed to an acceptable action | 53/80 | 55/80 | 55/80 |
+| Wake window: commands correct | 37/80 | 39/80 | 39/80 |
+| Wake window: wrong action | 20 | 17 | 17 |
+| **Wake window: non-commands wrongly acted on** | **33/80** | **22/80** | **21/80** |
+| ...by tier | {"Tier 0.5b": 12, "Tier 0.5a": 6, "Tier 0": 12, "Tier 1": 3} | {"Tier 0.5a": 6, "Tier 0": 12, "Tier 1": 4} | {"Tier 0.5a": 6, "Tier 0": 12, "Tier 1": 3} |
 <!-- AUTO:pipeline:END -->
 
 ### D. Voice output (TTS): Kokoro vs Paradee (`tts_eval/`)
@@ -97,9 +99,9 @@ Not adopted: memory barely improves, the voice changes, and it needs Python 3.12
 
 | # | Recommendation | Evidence | Status |
 |---|---|---|---|
-| 1 | Disable Tier 0.5b (the `tev1:0.8b` action router) | End to end: false triggers in the wake window 33 -> 22 of 80, correct commands up. It got 2 commands right and caused 12 false triggers and `quit_app` misroutes. Also weak in `docs/router-benchmark.md` (36% false triggers) and as a re-ranker | **Open: needs owner OK** |
+| 1 | Disable Tier 0.5b (the `tev1:0.8b` action router) | End to end: false triggers in the wake window 33 -> 22 of 80, correct commands up. It got 2 commands right and caused 12 false triggers and `quit_app` misroutes. Also weak in `docs/router-benchmark.md` (36% false triggers) and as a re-ranker | **Done on the live setup (config); not the code default** |
 | 2 | Fix the Tier 0 regex false triggers (12 of 80) and the `close this one` -> `quit_app` mapping | Pipeline check | Open |
-| 3 | If switching the LLM: prefer an **instruct** build and skip the answer pre-fill for non-thinking models | Model-size results | Open |
+| 3 | If switching the LLM: prefer an **instruct** build and skip the answer pre-fill for non-thinking models | Model-size results; 8B instruct 51/60 without the pre-fill | **Done** (code skips the pre-fill for instruct builds; live setup uses 8B instruct) |
 | 4 | Keep `tev1:0.8b` as the yes/no command gate only | Gate works on Ollama 0.40; poor as an action router | Done (current behaviour) |
 
 ## Timeline
@@ -116,6 +118,7 @@ Not adopted: memory barely improves, the voice changes, and it needs Python 3.12
 | 2026-10-08 | Qwen3-VL 8B (thinking) vs 4B (thinking) vs 4B / 8B instruct | Thinking builds are slow and sometimes silent; instruct builds fix it; 4B instruct routes like the 8B once the pre-fill is skipped | `model_size_eval/` |
 | 2026-10-08 | End-to-end pipeline dry-run, with and without Tier 0.5b | 33 -> 22 of 80 false triggers without 0.5b | `pipeline_eval/` |
 | 2026-10-08 | `tev1:0.8b` as action router (embedding shortlist + decision model) | Worse than embeddings alone; the API takes 2-26 options | `model_size_eval/` |
+| 2026-10-08 | 8B instruct with / without the pre-filled answer start; pipeline with the planned live setup | 51/60 without (47/60 with); pipeline false triggers 21/80. **Applied to the live setup** (Tier 0.5b off, 8B instruct) | `model_size_eval/`, `pipeline_eval/` |
 | 2026-10-08 | Qwen3.5 0.8B / 2B and qwen3-vl 2B instruct | 2B instruct: 1.6 GB, 12/12 screen questions in 1.5 s, weak router. Qwen3.5 refused by Ollama's JSON mode | `model_size_eval/` |
 
 ## Tried and dropped, or ruled out without running
@@ -133,16 +136,15 @@ Not adopted: memory barely improves, the voice changes, and it needs Python 3.12
 
 ## Backlog (priority order)
 
-1. Apply and re-verify recommendation 1 (disable Tier 0.5b) in the live assistant; then tighten the regex tier.
-2. Full pipeline with 4B instruct and 8B instruct as Tier 1 (needs the pre-fill skipped for instruct models).
-3. Harder screens and reasoning questions for the 2B / 4B (the current ones are easy).
-4. 8B instruct without the pre-fill (6 GB download).
-5. New decision models: Liquid d1-omni-600M and d1-3B (released 2026-10-07; needs a runtime that serves `/v1/systemone`, which the installed llama.cpp lacks), Amazon Strands Decider 2B (2026-10-01), `tev1:4b`, and a re-test of Kev-4B end to end.
-6. Real-audio false-wake test (hours of TV and podcasts) and the wake-word false-wake rate.
-7. TTS listening test and time to first spoken word on long replies.
-8. Compositor load at true idle: plain 1080p vs 4K-backed mode, wallpaper, Safari content.
-9. Live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`, then grep the log).
-10. Fine-tune a decision head on the assistant's own labeled utterances (data was the biggest lever).
+1. Tighten the Tier 0 regex (12 of 80 false triggers; `close this one` -> `quit_app`).
+2. Full pipeline with 4B instruct as Tier 1 (saves 2.2 GB vs the 8B instruct now live).
+3. Harder screens and reasoning questions for the 2B / 4B / 8B (the current ones are easy).
+4. New decision models: Liquid d1-omni-600M and d1-3B (released 2026-10-07; needs a runtime that serves `/v1/systemone`, which the installed llama.cpp lacks), Amazon Strands Decider 2B (2026-10-01), `tev1:4b`, and a re-test of Kev-4B end to end.
+5. Real-audio false-wake test (hours of TV and podcasts) and the wake-word false-wake rate.
+6. TTS listening test and time to first spoken word on long replies.
+7. Compositor load at true idle: plain 1080p vs 4K-backed mode, wallpaper, Safari content.
+8. Live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`, then grep the log).
+9. Fine-tune a decision head on the assistant's own labeled utterances (data was the biggest lever).
 
 ## Folder index
 

@@ -6552,6 +6552,7 @@ def is_voice_command(text: str) -> tuple[bool, float]:
     url = f"{OLLAMA_HOST}/v1/systemone"
     payload = {
         "model": gate_model,
+        "keep_alive": "60m",  # a cold load can take ~2.7 s against the 3 s timeout below, and a timeout fails closed
         "state": clean,
         "questions": {
             "is_command": {
@@ -6782,6 +6783,13 @@ def tier05_route(text: str) -> tuple[str, dict, float] | None:
     return None
 
 
+def _needs_answer_prefill(model: str) -> bool:
+    """True for "thinking" model builds (qwen3 / r1 / deepseek), where pre-filling the start of the answer skips the hidden
+    reasoning. Non-thinking "instruct" builds must NOT be pre-filled: it collapses their routing (benchmarks/model_size_eval)."""
+    m = model.lower()
+    return any(k in m for k in ("qwen3", "r1", "deepseek")) and "instruct" not in m
+
+
 def ollama_route(text: str):
     """Tier 1: ask the local model for a typed action.
 
@@ -6795,7 +6803,7 @@ def ollama_route(text: str):
     if _ollama_ok is False and (time.time() - _ollama_last_failure < 30.0):
         return None
 
-    is_thinking_model = any(k in OLLAMA_MODEL.lower() for k in ("qwen3", "r1", "deepseek"))
+    is_thinking_model = _needs_answer_prefill(OLLAMA_MODEL)
     messages = [
         {"role": "system", "content": _TIER1_SYSTEM},
         {"role": "user", "content": text},
@@ -7111,6 +7119,18 @@ def prewarm_ollama() -> None:
             log(f"prewarmed {OLLAMA_MODEL} (model resident for 60m)")
         except Exception as e:  # noqa: BLE001
             log(f"prewarm skipped ({e})")
+        if VOICE_COMMAND_GATE and VOICE_COMMAND_GATE_MODEL:
+            try:  # keep the command-gate decision model loaded too, so its first call is not a cold start
+                greq = urllib.request.Request(
+                    OLLAMA_HOST + "/api/generate",
+                    data=json.dumps({"model": VOICE_COMMAND_GATE_MODEL, "prompt": "", "keep_alive": "60m"}).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(greq, timeout=60) as r:
+                    json.load(r)
+                log(f"prewarmed command gate {VOICE_COMMAND_GATE_MODEL}")
+            except Exception as e:  # noqa: BLE001
+                log(f"gate prewarm skipped ({e})")
 
     threading.Thread(target=_load, daemon=True, name="ollama-prewarm").start()
 

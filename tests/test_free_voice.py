@@ -533,9 +533,16 @@ class TestOllama(Base):
         return fake, captured
 
     def test_default_model_is_qwen3_vl_8b(self):
-        # code default when OLLAMA_MODEL is unset in the environment
-        self.assertEqual(os.environ.get("OLLAMA_MODEL", "qwen3-vl:8b"),
-                         "qwen3-vl:8b")
+        # The CODE default, independent of this machine's ~/.free-voice/.env or environment (which may select another build):
+        # run in a clean subprocess with HOME pointing at an empty folder and OLLAMA_MODEL unset.
+        import subprocess, sys, tempfile
+        env = {k: v for k, v in os.environ.items() if k != "OLLAMA_MODEL"}
+        with tempfile.TemporaryDirectory() as home:
+            env["HOME"] = home
+            out = subprocess.run([sys.executable, "-c", "import free_voice as f; print(f.OLLAMA_MODEL)"],
+                                 cwd=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."), env=env,
+                                 capture_output=True, text=True, timeout=120).stdout.strip().splitlines()[-1]
+        self.assertEqual(out, "qwen3-vl:8b")
         self.assertIn("qwen3-vl", fv.OLLAMA_MODEL)
 
     def test_payload_uses_think_false_and_long_keepalive(self):
@@ -745,13 +752,13 @@ class TestPrewarm(Base):
 
     def test_prewarm_sends_tiny_chat_request(self):
         fv.DRY_RUN = False
-        captured = {}
+        captured = {"bodies": []}
         resp = mock.MagicMock()
         resp.__enter__.return_value = resp
         resp.read.return_value = b"{}"
 
         def fake(req, timeout=None):
-            captured["body"] = json.loads(req.data.decode())
+            captured["bodies"].append(json.loads(req.data.decode()))   # first request is the main model; a later one warms the command gate
             return resp
 
         patch_thread, created = self._inline_thread()
@@ -763,7 +770,7 @@ class TestPrewarm(Base):
             fv.DRY_RUN = True
         self.assertEqual(len(created), 1)
         self.assertTrue(created[0][1])  # daemon
-        body = captured["body"]
+        body = captured["bodies"][0]
         self.assertEqual(body["model"], fv.OLLAMA_MODEL)
         self.assertIs(body["think"], False)
         self.assertEqual(body["options"]["num_predict"], 1)
