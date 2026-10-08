@@ -1,0 +1,92 @@
+{
+ "model": "qwen3-vl:8b",
+ "generation_tok_s": 16.3,
+ "prompt_tok_s": 384,
+ "resident_gb": 5.17,
+ "routing": {
+  "commands": 60,
+  "correct": 52,
+  "wrong_action": 5,
+  "no_answer": 3,
+  "non_commands": 60,
+  "false_accepts": 9,
+  "median_s": 1.39,
+  "p95_s": 1.83,
+  "wrong_examples": [
+   [
+    "close that tab mate",
+    "close_window",
+    "close_tab"
+   ],
+   [
+    "hide the app",
+    "minimize",
+    "hide"
+   ],
+   [
+    "can we go back to netflix",
+    "switch_app",
+    "nav_back"
+   ],
+   [
+    "hide spotify",
+    "minimize",
+    "hide"
+   ],
+   [
+    "go to sleep",
+    "lock_screen",
+    "sleep"
+   ]
+  ],
+  "false_accept_examples": [
+   [
+    "switch and save, call now",
+    "switch_app"
+   ],
+   [
+    "photoshop, lightroom, premiere",
+    "switch_app"
+   ],
+   [
+    "the hacker typed 'open terminal' and the screen went green",
+    "open_app"
+   ],
+   [
+    "how do I lock the screen on this thing",
+    "lock"
+   ],
+   [
+    "maximizing a window on macos is weirdly hard",
+    "maximize_window"
+   ],
+   [
+    "Emma, take a screenshot of that for me",
+    "screenshot"
+   ]
+  ]
+ },
+ "vision": {
+  "questions": 12,
+  "correct": 12,
+  "median_s": 9.3,
+  "misses": []
+ },
+ "qa": {
+  "questions": 10,
+  "correct": 8,
+  "empty_replies": 1,
+  "median_s": 12.1,
+  "median_tokens_used": 194,
+  "misses": [
+   [
+    "Spell the word necessary backwards.",
+    "Y-R-A-S-S-E-C-E-N"
+   ],
+   [
+    "Which is larger, three quarters or two thirds? Name the fraction.",
+    "<EMPTY>"
+   ]
+  ]
+ }
+}

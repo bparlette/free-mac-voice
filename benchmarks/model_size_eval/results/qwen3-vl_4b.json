@@ -1,0 +1,72 @@
+{
+ "model": "qwen3-vl:4b",
+ "generation_tok_s": 29.6,
+ "prompt_tok_s": 680,
+ "resident_gb": 3.02,
+ "routing": {
+  "commands": 60,
+  "correct": 9,
+  "wrong_action": 3,
+  "no_answer": 48,
+  "non_commands": 60,
+  "false_accepts": 1,
+  "median_s": 0.17,
+  "p95_s": 1.05,
+  "wrong_examples": [
+   [
+    "hide spotify",
+    "minimize",
+    "hide"
+   ],
+   [
+    "turn sound back on",
+    "mute",
+    "set_volume"
+   ],
+   [
+    "turn the sound off",
+    "mute",
+    "set_volume"
+   ]
+  ],
+  "false_accept_examples": [
+   [
+    "the trick is to snap the window to the left with a shortcut",
+    "snap_left"
+   ]
+  ]
+ },
+ "vision": {
+  "questions": 12,
+  "correct": 11,
+  "median_s": 5.6,
+  "misses": [
+   [
+    "hq.png",
+    "What percentage is complete?",
+    "To determine the percentage complete, look at the top section of the page where "
+   ]
+  ]
+ },
+ "qa": {
+  "questions": 10,
+  "correct": 7,
+  "empty_replies": 3,
+  "median_s": 8.0,
+  "median_tokens_used": 226,
+  "misses": [
+   [
+    "What is 17 times 6?",
+    "<EMPTY>"
+   ],
+   [
+    "What is the chemical symbol for gold?",
+    "<EMPTY>"
+   ],
+   [
+    "Spell the word necessary backwards.",
+    "<EMPTY>"
+   ]
+  ]
+ }
+}

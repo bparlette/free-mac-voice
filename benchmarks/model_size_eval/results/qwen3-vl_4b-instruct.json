@@ -1,0 +1,43 @@
+{
+ "model": "qwen3-vl:4b-instruct",
+ "generation_tok_s": 27.4,
+ "prompt_tok_s": 222,
+ "resident_gb": 3.02,
+ "routing": {
+  "commands": 60,
+  "correct": 9,
+  "wrong_action": 1,
+  "no_answer": 50,
+  "non_commands": 60,
+  "false_accepts": 0,
+  "median_s": 0.17,
+  "p95_s": 1.07,
+  "wrong_examples": [
+   [
+    "hide spotify",
+    "minimize",
+    "hide"
+   ]
+  ],
+  "false_accept_examples": []
+ },
+ "vision": {
+  "questions": 12,
+  "correct": 12,
+  "median_s": 4.1,
+  "misses": []
+ },
+ "qa": {
+  "questions": 10,
+  "correct": 9,
+  "empty_replies": 0,
+  "median_s": 0.3,
+  "median_tokens_used": 6,
+  "misses": [
+   [
+    "Spell the word necessary backwards.",
+    "yssarecnas"
+   ]
+  ]
+ }
+}
