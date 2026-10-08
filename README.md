@@ -330,6 +330,8 @@ Whenever the voice engine starts or reloads, it automatically discovers and bind
 
 > *"How we made local Mac voice commands 7.2x faster with zero cloud lag, zero silence hallucinations, and a tiny 164 MB footprint."*  
 > 🔗 **Shareable Benchmark Link:** [Interactive Benchmark Card](https://bparlette.github.io/free-mac-voice/benchmark.html) · [Direct High-Res Image](https://raw.githubusercontent.com/bparlette/free-mac-voice/main/docs/assets/benchmark_card.png)
+>
+> 📒 **Every benchmark we have run, what we changed because of it, and what we ruled out:** [`benchmarks/README.md`](benchmarks/README.md) (kept up to date; headline tables are generated from the saved results).
 
 We benchmarked **OpenAI Whisper `base.en`** against **Phonon-2 (Parakeet-TDT)** head-to-head on Apple Silicon unified memory using real macOS speech across representative desktop voice commands:
 
