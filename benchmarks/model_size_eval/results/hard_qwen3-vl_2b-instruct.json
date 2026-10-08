@@ -1,0 +1,38 @@
+{
+ "model": "qwen3-vl:2b-instruct",
+ "vision_hard": {
+  "questions": 10,
+  "correct": 9,
+  "median_s": 1.3,
+  "misses": [
+   [
+    "What is the title of task T09?",
+    "Based on the image provided, the title of task T09 is:\n\n**Deploy a pre"
+   ]
+  ]
+ },
+ "reasoning": {
+  "questions": 10,
+  "correct": 6,
+  "empty_replies": 0,
+  "median_s": 0.2,
+  "misses": [
+   [
+    "If 3 notebooks cost $7.50, how much do 8 notebooks",
+    "$15.00"
+   ],
+   [
+    "I have 17 apples, give away 5, then buy twice as m",
+    "17 - 5 = 12  \n12 \u00d7 2 = 24  \n24 apples now."
+   ],
+   [
+    "If today is Wednesday, what day of the week is it ",
+    "Friday."
+   ],
+   [
+    "How many minutes are there between 9:50 AM and 1:1",
+    "2 hours 25 minutes."
+   ]
+  ]
+ }
+}

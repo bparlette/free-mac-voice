@@ -1,0 +1,50 @@
+{
+ "model": "qwen3-vl:8b",
+ "vision_hard": {
+  "questions": 10,
+  "correct": 9,
+  "median_s": 10.1,
+  "misses": [
+   [
+    "What is the title of task T09?",
+    "<EMPTY>"
+   ]
+  ]
+ },
+ "reasoning": {
+  "questions": 10,
+  "correct": 3,
+  "empty_replies": 6,
+  "median_s": 16.3,
+  "misses": [
+   [
+    "A train leaves at 3:45 PM and the trip takes 2 hou",
+    "<EMPTY>"
+   ],
+   [
+    "If 3 notebooks cost $7.50, how much do 8 notebooks",
+    "Three notebooks cost $7.50, so each notebook is $2.50."
+   ],
+   [
+    "What is 15 percent of 240?",
+    "<EMPTY>"
+   ],
+   [
+    "If today is Wednesday, what day of the week is it ",
+    "<EMPTY>"
+   ],
+   [
+    "A recipe needs 3 eggs for 12 muffins. How many egg",
+    "<EMPTY>"
+   ],
+   [
+    "What is the next number in the sequence 2, 6, 12, ",
+    "<EMPTY>"
+   ],
+   [
+    "How many minutes are there between 9:50 AM and 1:1",
+    "<EMPTY>"
+   ]
+  ]
+ }
+}

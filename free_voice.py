@@ -279,6 +279,26 @@ def _notify_hammerspoon_display_next() -> bool:
     return False
 
 
+_WAKE_LOOSE = ("max", "matt", "mark", "match", "make", "mike", "mock")   # spellings the recognizer sometimes writes for "Mac", and also common names/verbs
+# VOICE_WAKE_LOOSE: "command" (default) accepts those spellings only when what follows is a recognizable command; "always" = old behaviour
+# (any sentence starting with Mike / Mark / Make ... wakes the assistant); "off" = only mac / mack / macs.
+VOICE_WAKE_LOOSE = os.environ.get("VOICE_WAKE_LOOSE", "command").strip().lower()
+_WAKE_FIRST_RE = re.compile(r"^(?:(?:hey|hay|hi|hello|ok|okay|yo|ay|ey|and|a|an)[,\s]*)*([a-z']+)", re.IGNORECASE)
+
+
+def _looks_like_command(cmd: str) -> bool:
+    """True if `cmd` is a complete command the router would act on (Tier 0 regex or a confident embedding match), not narration."""
+    c = cmd.strip()
+    if not c:
+        return False
+    if len(c.split()) >= 5 and _NARRATIVE_COMMA_RE.search(c):
+        return False
+    try:
+        return route(c) is not None or tier05_embed_match(c) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
     """Check if text begins with the wake word (e.g. 'Mac', 'Hey Mac', 'Mack').
 
@@ -308,6 +328,11 @@ def parse_wake_word(text: str, wake_word: str = "mac") -> tuple[bool, str]:
     if m:
         cmd = (m.group(1) or m.group(2) or "").strip()
         cmd = re.sub(r"^[,\s:!\.-]+", "", cmd).strip()
+        first = (_WAKE_FIRST_RE.match(t) or [None, ""])[1].lower() if w == "mac" else ""
+        if first in _WAKE_LOOSE and VOICE_WAKE_LOOSE != "always":
+            # "Mike, turn it up" on TV is not the wake word. A loose spelling counts only when a real command follows.
+            if VOICE_WAKE_LOOSE == "off" or not _looks_like_command(cmd):
+                return False, t
         return True, cmd
     return False, t
 

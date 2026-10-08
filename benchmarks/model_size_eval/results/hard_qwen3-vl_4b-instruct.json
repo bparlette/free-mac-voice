@@ -1,0 +1,30 @@
+{
+ "model": "qwen3-vl:4b-instruct",
+ "vision_hard": {
+  "questions": 10,
+  "correct": 9,
+  "median_s": 1.3,
+  "misses": [
+   [
+    "What is the title of task T05?",
+    "The title of task T05 is: **Set up hello@ email**."
+   ]
+  ]
+ },
+ "reasoning": {
+  "questions": 10,
+  "correct": 8,
+  "empty_replies": 0,
+  "median_s": 0.4,
+  "misses": [
+   [
+    "I have 17 apples, give away 5, then buy twice as m",
+    "You have 24 apples now."
+   ],
+   [
+    "How many minutes are there between 9:50 AM and 1:1",
+    "105 minutes."
+   ]
+  ]
+ }
+}

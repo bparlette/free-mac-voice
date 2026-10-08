@@ -1,0 +1,96 @@
+{
+ "voices": [
+  "af_heart",
+  "af_sarah",
+  "af_bella",
+  "am_fenrir",
+  "am_adam",
+  "am_michael"
+ ],
+ "recall": {
+  "current (10 spellings)": {
+   "overall": 98.6,
+   "by_voice": {
+    "af_heart": 98.3,
+    "af_sarah": 98.3,
+    "af_bella": 100.0,
+    "am_fenrir": 98.3,
+    "am_adam": 98.3,
+    "am_michael": 98.3
+   }
+  },
+  "medium (mac mack macs max matt)": {
+   "overall": 99.7,
+   "by_voice": {
+    "af_heart": 100.0,
+    "af_sarah": 98.3,
+    "af_bella": 100.0,
+    "am_fenrir": 100.0,
+    "am_adam": 100.0,
+    "am_michael": 100.0
+   }
+  },
+  "strict (mac mack macs)": {
+   "overall": 97.8,
+   "by_voice": {
+    "af_heart": 98.3,
+    "af_sarah": 95.0,
+    "af_bella": 100.0,
+    "am_fenrir": 96.7,
+    "am_adam": 98.3,
+    "am_michael": 98.3
+   }
+  },
+  "first_word_written_by_recognizer": [
+   [
+    "mac",
+    352
+   ],
+   [
+    "max",
+    5
+   ],
+   [
+    "maxblit",
+    2
+   ],
+   [
+    "mark",
+    1
+   ]
+  ],
+  "examples_not_woken_by_current_parser": [
+   "Max, Blit Screen, Right.",
+   "Max look.",
+   "Max-Blit screen right.",
+   "Max Blitz Green right.",
+   "Max-Blit Screen Right."
+  ]
+ },
+ "false_wake": {
+  "non-command": {
+   "clips": 360,
+   "current (10 spellings)": 3,
+   "medium (mac mack macs max matt)": 3,
+   "strict (mac mack macs)": 3
+  },
+  "tv-name-line": {
+   "clips": 60,
+   "current (10 spellings)": 16,
+   "medium (mac mack macs max matt)": 15,
+   "strict (mac mack macs)": 0
+  },
+  "examples_current_parser_woke_on": [
+   "Mac and cheese for dinner.",
+   "Max play fetch with the ball.",
+   "Mark, mute the TV.",
+   "Max, lock the screen.",
+   "Make a timer for 10 minutes.",
+   "Mac and cheese for dinner.",
+   "Max play fetch with the ball.",
+   "Mike paused the game for a second.",
+   "Mark mute the TV.",
+   "Max lock the screen."
+  ]
+ }
+}

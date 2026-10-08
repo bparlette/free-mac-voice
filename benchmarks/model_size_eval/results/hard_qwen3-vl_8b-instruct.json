@@ -1,0 +1,34 @@
+{
+ "model": "qwen3-vl:8b-instruct",
+ "vision_hard": {
+  "questions": 10,
+  "correct": 9,
+  "median_s": 4.4,
+  "misses": [
+   [
+    "What is the title of task T09?",
+    "Based on the provided image, the title of task **T09** is:\n\n**Decide w"
+   ]
+  ]
+ },
+ "reasoning": {
+  "questions": 10,
+  "correct": 7,
+  "empty_replies": 0,
+  "median_s": 0.6,
+  "misses": [
+   [
+    "I have 17 apples, give away 5, then buy twice as m",
+    "You have 27 apples now."
+   ],
+   [
+    "If today is Wednesday, what day of the week is it ",
+    "It will be Friday."
+   ],
+   [
+    "How many minutes are there between 9:50 AM and 1:1",
+    "2 hours 25 minutes, which is 145 minutes."
+   ]
+  ]
+ }
+}

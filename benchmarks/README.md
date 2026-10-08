@@ -131,6 +131,31 @@ Correct command at about 16% false accepts (the router's own level), leak-free, 
 
 Covered by the benchmark section above in this README (`benchmarks/bench.py`, `results.jsonl`): Phonon-2 (Apple MLX) is about 7.2x faster than Whisper `base.en` on Apple silicon.
 
+### I. Harder questions, 4B pipeline and wake word (2026-10-08)
+
+**Hard questions** (`model_size_eval/bench_hard.py`; 10 screen questions on a dense task page, 10 reasoning questions):
+
+| Model | Screen questions right | Reasoning right | Silent empty replies | Median reply (screen / reasoning) |
+|---|---|---|---|---|
+| qwen3-vl:2b-instruct | 9/10 | 6/10 | 0 | 1.3 s / 0.2 s |
+| qwen3-vl:4b-instruct | 9/10 | **8/10** | 0 | 1.3 s / 0.4 s |
+| qwen3-vl:8b-instruct (live) | 9/10 | 7/10 | 0 | 4.4 s / 0.6 s |
+| qwen3-vl:8b (thinking) | 9/10 | 3/10 | 6 | 10.1 s / 16.3 s |
+
+The 4B instruct build is at least as good as the 8B instruct build on these questions. The thinking 8B fails reasoning mostly by returning nothing. Samples are small (10 each): differences of one or two questions are noise.
+
+**Full pipeline with 4B instruct as Tier 1** (`pipeline_eval/results/pipeline_end_to_end_tier0_tight_4b_instruct.json`): after the wake word 55/80 commands got an acceptable action (22 wrong, 3 not handled); in the wake window 40/80.
+
+**Wake word** (`wake_eval/bench_wake.py`; Kokoro speech in 6 voices through the real recognizer, so indicative only):
+
+| Parser | "Mac, <command>" recognised | TV-style lines that start with a name or verb (60 clips) woken | Non-command speech woken (360 clips) |
+|---|---|---|---|
+| Before 2026-10-08 (10 spellings, any sentence) | 100% | 56 | 3 |
+| Now (command-aware: mac/mack/macs always; max/matt/mark/match/make/mike/mock only when a real command follows) | 98.6% | **16** | 3 |
+| Strict (mac/mack/macs only) | 97.8% | 0 | 3 |
+
+`VOICE_WAKE_LOOSE=always|command|off` selects the behaviour (default `command`).
+
 ## Recommendations
 
 | # | Recommendation | Evidence | Status |
@@ -173,8 +198,7 @@ Covered by the benchmark section above in this README (`benchmarks/bench.py`, `r
 
 ## Backlog (priority order)
 
-1. Full pipeline with 4B instruct as Tier 1 (saves 2.2 GB vs the 8B instruct now live).
-2. Harder screens and reasoning questions for the 2B / 4B / 8B (the current ones are easy).
+1. Decide 4B vs 8B instruct for Tier 1 with real use (section I: 4B is equal on hard questions, 55/80 after the wake word, same as the 8B, and 40 vs 39 in the wake window; saves 2.2 GB).
 3. New decision models: Liquid d1-omni-600M and d1-3B (released 2026-10-07; needs a runtime that serves `/v1/systemone`, which the installed llama.cpp lacks), Amazon Strands Decider 2B (2026-10-01), `tev1:4b`, and a re-test of Kev-4B end to end.
 4. Real-audio false-wake test (hours of TV and podcasts) and the wake-word false-wake rate.
 5. TTS listening test and time to first spoken word on long replies.

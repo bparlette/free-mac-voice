@@ -1,0 +1,141 @@
+{
+ "n": 80,
+ "model": "qwen3-vl:4b-instruct",
+ "no_decision_tier": false,
+ "after_wake": {
+  "commands_correct": 55,
+  "wrong_action": 22,
+  "not_handled": 3,
+  "which_tier_got_it_right": {
+   "Tier 0.5a": 36,
+   "Tier 1": 8,
+   "Tier 0": 11
+  },
+  "median_s": 0.01,
+  "wrong_examples": [
+   [
+    "move chrome left half",
+    "snap_left",
+    "move_next_display",
+    "Tier 1"
+   ],
+   [
+    "uh, volume down a couple",
+    "set_volume",
+    "help",
+    "Tier 0.5a"
+   ],
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "can we go back to netflix",
+    "switch_app",
+    "nav_back",
+    "Tier 1"
+   ],
+   [
+    "open system settings",
+    "open_app",
+    "settings",
+    "Tier 0"
+   ]
+  ]
+ },
+ "window": {
+  "commands_correct": 40,
+  "wrong_action": 14,
+  "not_handled": 26,
+  "which_tier_got_it_right": {
+   "Tier 0.5a": 24,
+   "Tier 1": 5,
+   "Tier 0": 11
+  },
+  "median_s": 0.03,
+  "wrong_examples": [
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "open system settings",
+    "open_app",
+    "settings",
+    "Tier 0"
+   ],
+   [
+    "kill the tv",
+    "tv_power",
+    "kill_app",
+    "Tier 0"
+   ],
+   [
+    "close this tab",
+    "close_window",
+    "close_tab",
+    "Tier 0"
+   ],
+   [
+    "close that tab mate",
+    "close_window",
+    "close_tab",
+    "Tier 0.5a"
+   ]
+  ],
+  "non_commands": 80,
+  "false_triggers": 16,
+  "false_triggers_by_tier": {
+   "Tier 0.5a": 7,
+   "Tier 1": 9
+  },
+  "stopped_by_gate": 40,
+  "false_trigger_examples": [
+   [
+    "turn the volume of your life up, that's what grandma said",
+    "set_volume",
+    "Tier 0.5a"
+   ],
+   [
+    "is the timer still going",
+    "timer",
+    "Tier 0.5a"
+   ],
+   [
+    "take a screenshot of this offer and show it at the counter",
+    "screenshot",
+    "Tier 1"
+   ],
+   [
+    "turn up the fun this weekend at six flags",
+    "web_search",
+    "Tier 1"
+   ],
+   [
+    "the teacher said close your laptops",
+    "minimize",
+    "Tier 1"
+   ],
+   [
+    "hit play on summer with spotify premium",
+    "media",
+    "Tier 1"
+   ],
+   [
+    "open happiness",
+    "open_app",
+    "Tier 1"
+   ],
+   [
+    "switch off, you're working too hard",
+    "tv_power",
+    "Tier 0.5a"
+   ]
+  ],
+  "median_s_non_commands": 0.29
+ }
+}
