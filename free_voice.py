@@ -138,10 +138,11 @@ OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "embeddinggemma").stri
 # both recall (77.5% vs 72.6%) and false accepts (6.5% vs 9.0%) with the expanded example set.
 TIER05_EMBED_THRESHOLD = float(os.environ.get("TIER05_EMBED_THRESHOLD", "0.82"))
 _EMBED_PREFIX = "task: classification | query: "
-# Tier 0.5a embedding backend: "ollama" (default), "onnx" (in-process 4-bit EmbeddingGemma via onnxruntime, no Ollama;
-# fetch it with scripts/fetch_onnx_embedder.py), or "compare" (act on Ollama, also run ONNX and log where they differ:
-# grep "Tier 0.5a compare" in daemon.log). Missing ONNX files fall back to Ollama. See benchmarks/finetune_eval/.
-TIER05_EMBED_BACKEND = os.environ.get("TIER05_EMBED_BACKEND", "ollama").strip().lower()
+# Tier 0.5a embedding backend: "onnx" (default: in-process 4-bit EmbeddingGemma via onnxruntime, ~6 ms and ~0.1 GB, same
+# accuracy as the Ollama copy; fetch it once with scripts/fetch_onnx_embedder.py), "ollama" (the previous behaviour), or
+# "compare" (act on Ollama, also run ONNX and log where they differ: grep "Tier 0.5a compare" in daemon.log).
+# If the ONNX model files are missing, "onnx" falls back to Ollama with one log line. See benchmarks/finetune_eval/.
+TIER05_EMBED_BACKEND = os.environ.get("TIER05_EMBED_BACKEND", "onnx").strip().lower()
 # Confidence threshold for decision routing: 0.7 for tev1:0.8b, 0.5 for qwen2.5:1.5b
 DECISION_MIN_CONFIDENCE = float(os.environ.get("DECISION_MIN_CONFIDENCE", "0.7" if "tev1" in OLLAMA_DECISION_MODEL.lower() else "0.5"))
 # Model for multi-action sequential planning in JSON chat mode (generative model required)

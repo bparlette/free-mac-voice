@@ -46,6 +46,7 @@ if args.baseline:
     sys.path.insert(0, ROOT)
     import free_voice as fv
     fv.DRY_RUN = True; fv.log = lambda *a, **k: None
+    fv.TIER05_EMBED_BACKEND = "ollama"  # this baseline is the Ollama copy; ONNX is benchmarked in bench_engines.py
     fv._init_intent_embeddings()
     assert fv._EMBED_NEURAL, "neural embeddings unavailable; start Ollama"
     def t0(text):

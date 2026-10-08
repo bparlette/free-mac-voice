@@ -26,6 +26,9 @@ import menu_bar
 
 class Base(unittest.TestCase):
     def setUp(self):
+        # these tests exercise the Ollama/hashing Tier 0.5a path; the ONNX backend has its own tests (test_onnx_embed.py)
+        self.addCleanup(setattr, fv, "TIER05_EMBED_BACKEND", fv.TIER05_EMBED_BACKEND)
+        fv.TIER05_EMBED_BACKEND = "ollama"
         self._dry = fv.DRY_RUN
         fv.DRY_RUN = True
         self.said = []

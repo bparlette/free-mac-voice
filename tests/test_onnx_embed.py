@@ -38,9 +38,17 @@ class _Base(unittest.TestCase):
 
 
 class TestBackendSelection(_Base):
-    def test_default_is_ollama(self):
-        self.assertEqual(fv.TIER05_EMBED_BACKEND, "ollama")
-        self.assertFalse(fv._use_onnx())
+    def test_default_is_onnx(self):
+        import subprocess
+        env = {k: v for k, v in os.environ.items() if k != "TIER05_EMBED_BACKEND"}
+        out = subprocess.run([sys.executable, "-c", "import free_voice as f; print(f.TIER05_EMBED_BACKEND)"],
+                             cwd=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."), env=env,
+                             capture_output=True, text=True, timeout=120).stdout.strip().splitlines()[-1]
+        self.assertEqual(out, "onnx")
+
+    def test_ollama_backend_never_uses_onnx(self):
+        with mock.patch.object(fv, "TIER05_EMBED_BACKEND", "ollama"):
+            self.assertFalse(fv._use_onnx())
 
     def test_onnx_requested_but_files_missing_falls_back_and_warns_once(self):
         with mock.patch.object(fv, "TIER05_EMBED_BACKEND", "onnx"), \
@@ -65,6 +73,17 @@ class TestBackendSelection(_Base):
             self.assertEqual(fv._PRECOMPUTED_MATRIX.shape, (N, 8))
             fv.tier05_embed_match("open safari")
         self.assertEqual(len(calls), 2)  # examples once, then the query
+
+    def test_onnx_default_without_model_files_behaves_like_ollama(self):
+        n = sum(len(v) for v in fv._INTENT_EXAMPLES.values())
+        with mock.patch.object(fv, "TIER05_EMBED_BACKEND", "onnx"), \
+             mock.patch.object(onnx_embed, "available", return_value=False), \
+             mock.patch.object(fv, "OLLAMA_EMBED_MODEL", "embeddinggemma"), \
+             mock.patch.object(fv, "_onnx_embed", side_effect=AssertionError("ONNX must not run")), \
+             mock.patch.object(fv, "_ollama_embed", return_value=_fake_matrix(3)) as oe:
+            fv._init_intent_embeddings()
+        self.assertTrue(fv._EMBED_NEURAL)
+        self.assertEqual(oe.call_count, 1)
 
     def test_onnx_embed_adds_the_task_prefix_and_validates_shape(self):
         class Fake:
@@ -129,7 +148,8 @@ class TestCompareMode(_Base):
 
     def test_default_backend_never_touches_onnx(self):
         primary = _fake_matrix(1)
-        with mock.patch.object(fv, "OLLAMA_EMBED_MODEL", "embeddinggemma"), \
+        with mock.patch.object(fv, "TIER05_EMBED_BACKEND", "ollama"), \
+             mock.patch.object(fv, "OLLAMA_EMBED_MODEL", "embeddinggemma"), \
              mock.patch.object(fv, "_ollama_embed", side_effect=lambda b, timeout=30.0: primary if len(b) == N else primary[[0]]), \
              mock.patch.object(fv, "_onnx_embed", side_effect=AssertionError("ONNX must not run")):
             self.assertIsNotNone(fv.tier05_embed_match("open safari"))

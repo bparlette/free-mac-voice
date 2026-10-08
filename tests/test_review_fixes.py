@@ -89,6 +89,8 @@ class TestMicWatchdog(unittest.TestCase):
 
 class TestEmbedRobustness(unittest.TestCase):
     def setUp(self):
+        self.addCleanup(setattr, fv, "TIER05_EMBED_BACKEND", fv.TIER05_EMBED_BACKEND)
+        fv.TIER05_EMBED_BACKEND = "ollama"  # these tests are about the Ollama path
         self._saved = (fv._PRECOMPUTED_MATRIX, fv._PRECOMPUTED_INTENTS,
                        fv._EMBED_NEURAL, fv._embed_last_try)
         fv._PRECOMPUTED_MATRIX, fv._PRECOMPUTED_INTENTS = None, []

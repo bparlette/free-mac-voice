@@ -35,7 +35,7 @@ fv._init_intent_embeddings()
 if not fv._EMBED_NEURAL and fv.OLLAMA_EMBED_MODEL and not args.allow_hashing:
     sys.exit(f"Ollama embeddings ({fv.OLLAMA_EMBED_MODEL}) unavailable: numbers would be from the legacy hashing "
              "fallback, not production. Start Ollama / pull the model, or pass --allow-hashing.")
-print(f"Tier 0.5a mode: {'neural ' + fv.OLLAMA_EMBED_MODEL if fv._EMBED_NEURAL else 'HASHING fallback'}; "
+print(f"Tier 0.5a mode: {('neural ' + ('ONNX EmbeddingGemma' if fv._use_onnx() else fv.OLLAMA_EMBED_MODEL)) if fv._EMBED_NEURAL else 'HASHING fallback'}; "
       f"{len(rows)} phrases\n")
 
 
@@ -43,7 +43,7 @@ def sims(text):
     """Best (action, cosine) over the example matrix, same query path as tier05_embed_match."""
     qv = None
     if fv._EMBED_NEURAL:
-        q = fv._ollama_embed([text], timeout=10)
+        q = fv._onnx_embed([text]) if fv._use_onnx() else fv._ollama_embed([text], timeout=10)
         qv = q[0] if q is not None else None
     else:
         qv = fv.embed_utterance(text)

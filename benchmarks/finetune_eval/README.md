@@ -114,32 +114,39 @@ Harness: `bench_engines.py`.
 - Google's task prefix (`task: classification | query: `) helps v1 slightly and hurts v2. Keep v1 with the prefix if tried.
 - **Do not use the int8 variants or the CoreML provider**: the int8 graphs are slow and large, and CoreML either fails or
   produces unusable embeddings for most variants.
-- Not done: wiring this into `free_voice.py`. The speed and memory figures were measured in a benchmark process, not under
-  the live daemon.
+- Now wired into `free_voice.py` as the default (see the next section). The speed and memory figures above were measured in
+  a benchmark process, not under the live daemon.
 
 ## Live comparison in the running assistant (ONNX vs Ollama)
 
-`free_voice.py` has a switch, `TIER05_EMBED_BACKEND`:
+`free_voice.py` has a switch, `TIER05_EMBED_BACKEND`. **The default is now `onnx`.**
 
 | Value | Behaviour |
 |---|---|
-| `ollama` (default) | Unchanged: embeddings from Ollama |
-| `onnx` | In-process 4-bit EmbeddingGemma via onnxruntime; no Ollama call for Tier 0.5a. Falls back to Ollama (with one log line) if the model files are missing |
+| `onnx` (default) | In-process 4-bit EmbeddingGemma via onnxruntime; no Ollama call for Tier 0.5a. If the model files are missing it falls back to Ollama and logs one line telling you to run the fetch script |
+| `ollama` | The previous behaviour: embeddings from Ollama |
 | `compare` | Routes exactly as `ollama`, but also runs ONNX on every utterance and logs where they differ |
 
-Setup:
+Why it is the default: on the held-out benchmark it matched the Ollama copy of the same model on accuracy (62-64% vs 61.8%
+correct at about 16% false accepts, a difference within noise), took about 6 ms a query instead of 10-16 ms, and used about
+0.1 GB of process memory instead of the ~650 MB Ollama keeps resident. The fallback means a machine without the model file
+behaves as before. The decision was made on benchmark evidence from a synthetic test set; use `compare` mode (or just watch
+the log) to confirm on real speech, and set `TIER05_EMBED_BACKEND=ollama` to go back instantly.
+
+Setup (the installer now does the first step):
 
 ```bash
 ./.venv/bin/python scripts/fetch_onnx_embedder.py        # one-time, ~220 MB into ~/.cache/free-voice/embeddinggemma-onnx
-echo 'TIER05_EMBED_BACKEND=compare' >> ~/.free-voice/.env   # then restart the daemon (e.g. ./service.sh restart)
+echo 'TIER05_EMBED_BACKEND=compare' >> ~/.free-voice/.env   # optional: log ONNX vs Ollama side by side, then restart (./service.sh restart)
 grep "Tier 0.5a compare" ~/.free-voice/daemon.log
 ```
 
-Each utterance logs one line, for example
+In `compare` mode each utterance logs one line, for example
 `Tier 0.5a compare: 'open safari' ollama=open_app 0.94 (13 ms) | onnx=open_app 0.93 (7 ms) | AGREE`
 and every 20 utterances a summary (agreement rate, hits only one backend would have taken, median embed time). When the
-two disagree, look at who was right: the log shows both actions and cosines. To switch for real, set `TIER05_EMBED_BACKEND=onnx`.
-The ONNX path uses the same task prefix, the same threshold (`TIER05_EMBED_THRESHOLD`, 0.82) and the same example set.
+two disagree, the log shows both actions and cosines. The ONNX path uses the same task prefix, the same threshold
+(`TIER05_EMBED_THRESHOLD`, 0.82) and the same example set. Benchmark scripts: `intent_eval/run.py` follows the active
+backend; `finetune_eval/eval.py --baseline` deliberately pins Ollama because it is the baseline.
 
 A first smoke test with real Ollama and the real ONNX model on 10 phrases: 9 agreed; they differed on "can you launch
 chrome please" (Ollama: `switch_app`, ONNX: `open_app`). Ten phrases prove nothing statistically; the live log is the real test.
@@ -194,5 +201,5 @@ All commands run from the repository root with the project venv. Artifacts go to
 2. Re-run with the production command gate in front, and examine which Tier 0 regex rules produce the false accepts.
 3. Try a fine-tuned model as the *primary* classifier with Tier 0 kept only for exact, safe patterns.
 4. Test under real load (Qwen resident, daemon running) for memory pressure and latency.
-5. Try the ONNX q4 embedding backend for Tier 0.5a (benchmarked above): same accuracy, much less memory.
-6. Only then consider wiring a fine-tuned classifier behind a feature flag; nothing in `free_voice.py` was changed by this experiment.
+5. Confirm the ONNX backend (now the default) on real speech with `compare` mode, then drop the Ollama embedding model if desired.
+6. Only then consider wiring a fine-tuned classifier behind a feature flag; the fine-tuning experiment itself added no model code to `free_voice.py` (only the ONNX embedding backend above was wired in).

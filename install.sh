@@ -133,6 +133,11 @@ if [[ ! -f "$KOKORO_DIR/kokoro-v1.0.onnx" ]]; then
   fi
 fi
 
+# --- 6.4 Tier 0.5a ONNX embedder (default backend; falls back to Ollama if this download fails) --------------
+step "Fetching the in-process intent embedder (~220 MB, skipped if present)..."
+"$VENV/bin/python" "$REPO_DIR/scripts/fetch_onnx_embedder.py" \
+  || warn "ONNX embedder download failed — voice commands will use Ollama until you run scripts/fetch_onnx_embedder.py."
+
 # --- 6.5 Phonon-2 Next-Gen ASR (Default on Apple Silicon) ---------------------
 if [[ "$(uname -m)" == "arm64" ]]; then
   step "Configuring Phonon-2 ASR (~164 MB Parakeet-TDT, skipped if present)..."
