@@ -36,6 +36,48 @@ the voice service running during the tests (so absolute speeds are a bit pessimi
 - Its one general-question miss was spelling "necessary" backwards.
 - Raw numbers: `results/qwen3-vl_8b-instruct.json`.
 
+## Added later: `tev1:0.8b` (a decision model) as the action router
+
+Decision models answer typed questions with calibrated probabilities through `/v1/systemone`. Findings (`bench_decision_router.py`):
+
+- **The API accepts only 2-26 options per `choice` question** (HTTP 400 otherwise), so it cannot pick among all ~46 actions in one go.
+  A shortlist design was tested instead: the embedding tier proposes the top 8 candidate actions, the decision model picks one or "none".
+  The right action was in the top-8 shortlist for 58 of 60 commands.
+- **It did worse than the embeddings alone** (60 held-out commands / 60 non-commands):
+
+  | | correct | wrong | non-commands acted on |
+  |---|---|---|---|
+  | Embeddings alone, cosine >= 0.82 | 29 | 4 | 4 |
+  | Embeddings + tev1:0.8b, probability >= 0.70 | 23 | 10 | 17 |
+  | Embeddings + tev1:0.8b, probability >= 0.50 | 29 | 13 | 25 |
+
+- Median call time 317 ms (with other load running). Verdict: **`tev1:0.8b` is a fine yes/no command gate but a poor action router**,
+  consistent with the end-to-end result in `../pipeline_eval/README.md` (disabling the tier that uses it improves results).
+
+## Added later: smaller models (Qwen3.5 0.8B / 2B, qwen3-vl 2B instruct)
+
+Same tests, run one model at a time (`results/small_models_run.txt` has the raw log; each model was removed afterwards).
+Routing here is the better of "with / without the pre-filled answer start", run with `route_prefill_ab.py` (it retries without
+`format=json`, see the first finding).
+
+| | resident | speed | Tier 1 routing (60 cmds / 60 non-cmds) | screen questions (12) | general (10) |
+|---|---|---|---|---|---|
+| 8B thinking (current) | 5.2 GB | 16 tok/s | 52 right, 9 false accepts, 1.4 s | 12/12, 9.3 s | 8/10, 12 s, 1 silent |
+| 8B instruct | 5.2 GB | 16 tok/s | 47 right (current code; no-pre-fill not run), 7 FA | 12/12, 4.9 s | 9/10, 0.5 s |
+| 4B instruct | 3.0 GB | 27 tok/s | 51 right, 15 FA, 0.8 s (no pre-fill) | 12/12, 4.1 s | 9/10, 0.3 s |
+| Qwen3.5 2B | 3.0 GB | 33 tok/s | 45 right, 15 FA, 0.9 s | 12/12, 2.8 s | 8/10, 0.5 s |
+| **qwen3-vl 2B instruct** | **1.6 GB** | 54 tok/s | 13 right, 8 FA (weak) | **12/12, 1.5 s** | **9/10, 0.1 s** |
+| Qwen3.5 0.8B | 1.3 GB | 69 tok/s | 35 right, 20 FA (weak) | 10/12, 1.4 s | 7/10, 0.1 s |
+
+Findings:
+1. **Ollama 0.40 refuses `format: "json"` for the Qwen3.5 models** (`HTTP 501 structured output is unavailable`). The assistant's Tier 1 routing
+   requests JSON that way, so with the current code the Qwen3.5 models return nothing (0/60). They would need a no-`format` path.
+2. **Routing accuracy falls with size**: 0.8B 35, 2B 45, 4B 51, 8B about 47-52 of 60; false accepts stay high (11-20 of 60) below 8B.
+3. **Screen questions and short answers hold up much better than routing.** `qwen3-vl:2b-instruct` answered all 12 screen questions in 1.5 s with
+   1.6 GB resident, and 9/10 general questions in 0.1 s, but routed only 13/60. The test screens had large, clear text; harder screens are untested.
+4. This supports a **split design**: embeddings/regex for routing, with a small model (the 2B instruct) for screen and short-answer jobs, and a
+   bigger model only when needed. Cold-start for the 8B / 4B instruct measured 6.6 s / 9.6 s (warm 0.2-0.3 s).
+
 ## What it says
 
 1. **The plain 4B does not work as a drop-in.** With the assistant's current Tier 1 code, 4B returns an empty `{}` for most commands

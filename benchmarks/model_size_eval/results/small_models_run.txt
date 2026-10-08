@@ -1,0 +1,44 @@
+######## qwen3.5:0.8b  09:01:33  disk free 25Gi
+success 
+installed: qwen3.5:0.8b 1.2 GB
+qwen3.5:0.8b: 68.7 tok/s generation, 2488 tok/s prompt, resident 1.29 GB
+[note] routing warm-up failed (HTTP Error 501: Not Implemented); the assistant's current routing (format=json) cannot use qwen3.5:0.8b - see route_prefill_ab.py for a no-format run
+routing: 0/60 correct, 0 wrong action, 60 no answer; 0/60 false accepts; median 0.0s
+vision: 10/12 correct; median 1.4s
+general Q&A: 7/10 correct, 0 empty (nothing would be spoken); median 0.1s, 5 tokens
+-- routing with / without the pre-filled answer start
+[note] qwen3.5:0.8b: Ollama refuses format=json here; retrying without it (the assistant's own routing would fail on this model)
+qwen3.5:0.8b with prefill (current code) : 35/60 correct, 12 wrong, 13 no answer; 20/60 false accepts; median 0.29s
+qwen3.5:0.8b no prefill                  : 18/60 correct, 12 wrong, 30 no answer; 13/60 false accepts; median 0.30s
+removed qwen3-vl:2b-instruct
+removed qwen3.5:0.8b
+disk free after cleanup: 24Gi
+######## qwen3.5:2b  09:10:02  disk free 24Gi
+success 
+installed: qwen3.5:2b 3.1 GB
+qwen3.5:2b: 32.8 tok/s generation, 1141 tok/s prompt, resident 3.0 GB
+[note] routing warm-up failed (HTTP Error 501: Not Implemented); the assistant's current routing (format=json) cannot use qwen3.5:2b - see route_prefill_ab.py for a no-format run
+routing: 0/60 correct, 0 wrong action, 60 no answer; 0/60 false accepts; median 0.0s
+vision: 12/12 correct; median 2.8s
+general Q&A: 8/10 correct, 0 empty (nothing would be spoken); median 0.5s, 13 tokens
+-- routing with / without the pre-filled answer start
+[note] qwen3.5:2b: Ollama refuses format=json here; retrying without it (the assistant's own routing would fail on this model)
+qwen3.5:2b with prefill (current code) : 44/60 correct, 7 wrong, 9 no answer; 11/60 false accepts; median 0.55s
+qwen3.5:2b no prefill                  : 45/60 correct, 10 wrong, 5 no answer; 15/60 false accepts; median 0.85s
+removed qwen3.5:2b
+disk free after cleanup: 22Gi
+######## qwen3-vl:2b-instruct  09:22:09  disk free 22Gi
+success 
+installed: qwen3-vl:2b-instruct 1.9 GB
+qwen3-vl:2b-instruct: 53.7 tok/s generation, 529 tok/s prompt, resident 1.64 GB
+routing: 12/60 correct, 1 wrong action, 47 no answer; 1/60 false accepts; median 0.1s
+vision: 12/12 correct; median 1.5s
+general Q&A: 9/10 correct, 0 empty (nothing would be spoken); median 0.1s, 5 tokens
+-- routing with / without the pre-filled answer start
+qwen3-vl:2b-instruct with prefill (current code) : 12/60 correct, 1 wrong, 47 no answer; 1/60 false accepts; median 0.10s
+qwen3-vl:2b-instruct no prefill                  : 13/60 correct, 3 wrong, 44 no answer; 8/60 false accepts; median 0.38s
+removed llamacpp:ff304a477a01ad3771ecdabc5edbd40da7070efff96f58a553a29c30aa920c8c
+removed qwen3-vl:2b-instruct
+disk free after cleanup: 23Gi
+live model reloaded
+ALL-DONE

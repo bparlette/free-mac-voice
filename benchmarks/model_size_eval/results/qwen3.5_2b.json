@@ -1,0 +1,41 @@
+{
+ "model": "qwen3.5:2b",
+ "generation_tok_s": 32.8,
+ "prompt_tok_s": 1141,
+ "resident_gb": 3.0,
+ "routing": {
+  "commands": 60,
+  "correct": 0,
+  "wrong_action": 0,
+  "no_answer": 60,
+  "non_commands": 60,
+  "false_accepts": 0,
+  "median_s": 0.0,
+  "p95_s": 0.01,
+  "wrong_examples": [],
+  "false_accept_examples": []
+ },
+ "vision": {
+  "questions": 12,
+  "correct": 12,
+  "median_s": 2.8,
+  "misses": []
+ },
+ "qa": {
+  "questions": 10,
+  "correct": 8,
+  "empty_replies": 0,
+  "median_s": 0.5,
+  "median_tokens_used": 13,
+  "misses": [
+   [
+    "What is 17 times 6?",
+    "One hundred and forty-four."
+   ],
+   [
+    "Spell the word necessary backwards.",
+    "yseranace"
+   ]
+  ]
+ }
+}

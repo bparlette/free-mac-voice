@@ -62,8 +62,11 @@ cmds = rnd.sample([r for r in rows if r["is_command"]], args.n_route)
 non = rnd.sample([r for r in rows if not r["is_command"]], args.n_route)
 # warm-up with the assistant's exact request shape (a different context size reloads the model; that cold load must not count),
 # and reset the assistant's "Ollama failed recently, skip for 30 s" latch before every call so one slow call cannot cascade
-post("/api/chat", {"model": args.model, "format": "json", "keep_alive": "20m", "think": False, "options": {"temperature": 0, "num_predict": 64, "num_ctx": 1024},
-                   "messages": [{"role": "system", "content": fv._TIER1_SYSTEM}, {"role": "user", "content": "open safari"}, {"role": "assistant", "content": '{"action": "'}], "stream": False})
+try:
+    post("/api/chat", {"model": args.model, "format": "json", "keep_alive": "20m", "think": False, "options": {"temperature": 0, "num_predict": 64, "num_ctx": 1024},
+                       "messages": [{"role": "system", "content": fv._TIER1_SYSTEM}, {"role": "user", "content": "open safari"}, {"role": "assistant", "content": '{"action": "'}], "stream": False})
+except Exception as e:  # e.g. HTTP 501 "structured output is unavailable": the assistant's current routing code cannot use this model
+    print(f"[note] routing warm-up failed ({e}); the assistant's current routing (format=json) cannot use {args.model} - see route_prefill_ab.py for a no-format run", flush=True)
 right = wrong = miss = 0; lat = []; wrong_ex = []
 for r in cmds:
     fv._ollama_ok = None; fv._ollama_last_failure = 0.0

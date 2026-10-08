@@ -1,0 +1,142 @@
+{
+ "n": 80,
+ "after_wake": {
+  "commands_correct": 53,
+  "wrong_action": 26,
+  "not_handled": 1,
+  "which_tier_got_it_right": {
+   "Tier 1": 4,
+   "Tier 0.5a": 34,
+   "Tier 0": 13,
+   "Tier 0.5b": 2
+  },
+  "median_s": 0.01,
+  "wrong_examples": [
+   [
+    "snap it left mate",
+    "snap_left",
+    "quit_app",
+    "Tier 0.5b"
+   ],
+   [
+    "uh, volume down a couple",
+    "set_volume",
+    "help",
+    "Tier 0.5a"
+   ],
+   [
+    "snap it right mate",
+    "snap_right",
+    "quit_app",
+    "Tier 0.5b"
+   ],
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "can we go back to netflix",
+    "switch_app",
+    "nav_back",
+    "Tier 1"
+   ]
+  ]
+ },
+ "window": {
+  "commands_correct": 37,
+  "wrong_action": 20,
+  "not_handled": 23,
+  "which_tier_got_it_right": {
+   "Tier 0.5a": 22,
+   "Tier 0": 13,
+   "Tier 0.5b": 2
+  },
+  "median_s": 0.02,
+  "wrong_examples": [
+   [
+    "snap it left mate",
+    "snap_left",
+    "quit_app",
+    "Tier 0.5b"
+   ],
+   [
+    "snap it right mate",
+    "snap_right",
+    "quit_app",
+    "Tier 0.5b"
+   ],
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "open system settings",
+    "open_app",
+    "settings",
+    "Tier 0"
+   ],
+   [
+    "hide this window",
+    "minimize",
+    "hide_app",
+    "Tier 0"
+   ]
+  ],
+  "non_commands": 80,
+  "false_triggers": 33,
+  "false_triggers_by_tier": {
+   "Tier 0.5b": 12,
+   "Tier 0.5a": 6,
+   "Tier 0": 12,
+   "Tier 1": 3
+  },
+  "stopped_by_gate": 41,
+  "false_trigger_examples": [
+   [
+    "timer cards are due on Friday",
+    "timer",
+    "Tier 0.5b"
+   ],
+   [
+    "turn the volume of your life up, that's what grandma said",
+    "set_volume",
+    "Tier 0.5a"
+   ],
+   [
+    "switch the lights off when you leave",
+    "quit_app",
+    "Tier 0.5b"
+   ],
+   [
+    "is the timer still going",
+    "timer",
+    "Tier 0.5a"
+   ],
+   [
+    "if the timer beeps, ignore it",
+    "timer",
+    "Tier 0.5b"
+   ],
+   [
+    "minimise the risk of fire by unplugging chargers",
+    "minimize_app",
+    "Tier 0"
+   ],
+   [
+    "take a screenshot of this offer and show it at the counter",
+    "screenshot",
+    "Tier 1"
+   ],
+   [
+    "turn up the fun this weekend at six flags",
+    "set_volume",
+    "Tier 0.5b"
+   ]
+  ],
+  "median_s_non_commands": 0.39
+ }
+}

@@ -1,0 +1,141 @@
+{
+ "n": 80,
+ "no_decision_tier": true,
+ "after_wake": {
+  "commands_correct": 55,
+  "wrong_action": 23,
+  "not_handled": 2,
+  "which_tier_got_it_right": {
+   "Tier 1": 8,
+   "Tier 0.5a": 34,
+   "Tier 0": 13
+  },
+  "median_s": 0.01,
+  "wrong_examples": [
+   [
+    "uh, volume down a couple",
+    "set_volume",
+    "help",
+    "Tier 0.5a"
+   ],
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "can we go back to netflix",
+    "switch_app",
+    "nav_back",
+    "Tier 1"
+   ],
+   [
+    "open system settings",
+    "open_app",
+    "settings",
+    "Tier 0"
+   ],
+   [
+    "hide this window",
+    "minimize",
+    "hide_app",
+    "Tier 0"
+   ]
+  ]
+ },
+ "window": {
+  "commands_correct": 39,
+  "wrong_action": 17,
+  "not_handled": 24,
+  "which_tier_got_it_right": {
+   "Tier 0.5a": 22,
+   "Tier 1": 4,
+   "Tier 0": 13
+  },
+  "median_s": 0.03,
+  "wrong_examples": [
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "open system settings",
+    "open_app",
+    "settings",
+    "Tier 0"
+   ],
+   [
+    "hide this window",
+    "minimize",
+    "hide_app",
+    "Tier 0"
+   ],
+   [
+    "kill the tv",
+    "tv_power",
+    "kill_app",
+    "Tier 0"
+   ],
+   [
+    "close this tab",
+    "close_window",
+    "close_tab",
+    "Tier 0"
+   ]
+  ],
+  "non_commands": 80,
+  "false_triggers": 22,
+  "false_triggers_by_tier": {
+   "Tier 0.5a": 6,
+   "Tier 0": 12,
+   "Tier 1": 4
+  },
+  "stopped_by_gate": 40,
+  "false_trigger_examples": [
+   [
+    "turn the volume of your life up, that's what grandma said",
+    "set_volume",
+    "Tier 0.5a"
+   ],
+   [
+    "is the timer still going",
+    "timer",
+    "Tier 0.5a"
+   ],
+   [
+    "minimise the risk of fire by unplugging chargers",
+    "minimize_app",
+    "Tier 0"
+   ],
+   [
+    "take a screenshot of this offer and show it at the counter",
+    "screenshot",
+    "Tier 1"
+   ],
+   [
+    "open mic night on friday",
+    "open_app",
+    "Tier 0"
+   ],
+   [
+    "switch board operator",
+    "switch_app",
+    "Tier 1"
+   ],
+   [
+    "the teacher said close your laptops",
+    "close_laptops",
+    "Tier 1"
+   ],
+   [
+    "close the deal before Friday or we lose them",
+    "quit_app",
+    "Tier 0"
+   ]
+  ],
+  "median_s_non_commands": 0.38
+ }
+}

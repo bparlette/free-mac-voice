@@ -1,0 +1,56 @@
+{
+ "model": "qwen3.5:0.8b",
+ "generation_tok_s": 68.7,
+ "prompt_tok_s": 2488,
+ "resident_gb": 1.29,
+ "routing": {
+  "commands": 60,
+  "correct": 0,
+  "wrong_action": 0,
+  "no_answer": 60,
+  "non_commands": 60,
+  "false_accepts": 0,
+  "median_s": 0.0,
+  "p95_s": 0.01,
+  "wrong_examples": [],
+  "false_accept_examples": []
+ },
+ "vision": {
+  "questions": 12,
+  "correct": 10,
+  "median_s": 1.4,
+  "misses": [
+   [
+    "verdict.png",
+    "What is the page title?",
+    "The page title is: **OFF THE RIP**"
+   ],
+   [
+    "hq.png",
+    "What percentage is complete?",
+    "Based on the image provided, here\u2019s the answer:\n\nThe page shows a progress bar a"
+   ]
+  ]
+ },
+ "qa": {
+  "questions": 10,
+  "correct": 7,
+  "empty_replies": 0,
+  "median_s": 0.1,
+  "median_tokens_used": 5,
+  "misses": [
+   [
+    "What is the capital of Australia?",
+    "Sydney."
+   ],
+   [
+    "How many minutes are in three hours?",
+    "120 minutes."
+   ],
+   [
+    "Spell the word necessary backwards.",
+    "necessa"
+   ]
+  ]
+ }
+}
