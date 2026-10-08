@@ -1,8 +1,8 @@
 {
- "model": "tev1:0.8b",
+ "model": "tev1:4b",
  "shortlist": 8,
  "ceiling_correct_in_shortlist": 58,
- "median_ms": 195,
+ "median_ms": 727,
  "embedding_only": {
   "0.74": [
    38,
@@ -27,24 +27,24 @@
  },
  "with_decision_model": {
   "0.0": [
-   32,
-   15,
-   34
+   50,
+   7,
+   10
   ],
   "0.5": [
-   29,
-   13,
-   25
+   47,
+   7,
+   9
   ],
   "0.7": [
-   23,
-   10,
-   17
+   41,
+   3,
+   5
   ],
   "0.85": [
-   16,
-   6,
-   11
+   36,
+   1,
+   1
   ]
  }
 }

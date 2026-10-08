@@ -156,6 +156,42 @@ The 4B instruct build is at least as good as the 8B instruct build on these ques
 
 `VOICE_WAKE_LOOSE=always|command|off` selects the behaviour (default `command`).
 
+### J. Backlog benches run without a microphone (2026-10-08)
+
+**Command gate on its own** (`model_size_eval/bench_gate.py`; held-out half: 204 commands / 200 non-commands; "accepted" = P(command) >= 0.5):
+
+| Gate model | Commands accepted | Non-commands accepted (false accepts) | Median latency | Size |
+|---|---|---|---|---|
+| `tev1:0.8b` (live) | 42.6% | 24.5% | 129 ms | 0.8 GB |
+| **`tev1:4b`** | **83.8%** | **10.5%** | 419 ms | 4.4 GB |
+| Kev-4B (Q4_K_M, llama-server 0.6.0) | 79.9% | 14.5% | 336 ms | 3.0 GB |
+
+**Pipeline with the gate swapped** (4B instruct as Tier 1, Tier 0.5b off, 80 commands + 80 non-commands; the wake-window rows are the ones the gate affects):
+
+| Setup | After wake word: correct | Wake window: correct | Wake window: false triggers |
+|---|---|---|---|
+| gate `tev1:0.8b` (live) | 55/80 | 40/80 | 13/80 |
+| **gate `tev1:4b`** | 55/80 | **52/80** | **9/80** |
+| gate `tev1:4b` + Tier 0.5b `tev1:4b` | 54/80 | 51/80 | 12/80 |
+
+Non-commands that the gate rejects cost about 0.55 s median. `tev1:4b` as the Tier 0.5b decision model adds nothing, so that tier stays off. As a re-ranker behind the embedding tier (60 commands / 60 non-commands, shortlist of 8, `bench_decision_router.py`), `tev1:4b` gets 47/60 correct with 9/60 false triggers at P >= 0.5 (727 ms), versus 29/60 and 25/60 for `tev1:0.8b` and 25/60 and 6/60 for Kev-4B.
+
+**Not runnable here:** Liquid `d1-omni-600M` and `d1-3B` (GGUF files pull into Ollama 0.40 but it rejects their decision type; the installed llama.cpp 0.6.0 says "unsupported decision model type: lfm2-d1"; llama.cpp's development branch has it, a local build was made but not run) and Amazon Strands Decider 2B (published as a LoRA adapter plus a head on a Qwen3.5 base, with no GGUF or Ollama build). Both remain untested.
+
+**TTS: wait before the first word** (`tts_eval/bench_ttfa.py`, Kokoro af_heart, no playback; macOS `say` could not be timed while the audio daemon is hung). The assistant synthesizes the whole reply before playing it:
+
+| Reply length | Synthesize whole reply | Synthesize first sentence only |
+|---|---|---|
+| 6 words | 0.44 s | 0.43 s |
+| 20 words | 1.35 s | 1.20 s |
+| 50 words | 3.62 s | 1.18 s |
+| 100 words | 6.91 s | 1.15 s |
+| 200 words | 13.4 s | 1.14 s |
+
+Speaking sentence by sentence would keep the wait near 1.2 s for any length. Not implemented yet.
+
+**Replay of logged utterances** (`finetune_eval/replay_logged_utterances.py`): only 59 unique real utterances were in the log (most rows are ambient). At the 0.82 threshold both embedding backends accepted 15 (14 of them the same ones; 13 of those with the same action) and agreed on the top action for 51 of 59. Mean cosine 0.754 (ONNX) vs 0.751 (Ollama). Small sample, but no sign the ONNX default behaves differently on real speech-to-text output.
+
 ## Recommendations
 
 | # | Recommendation | Evidence | Status |
@@ -198,13 +234,12 @@ The 4B instruct build is at least as good as the 8B instruct build on these ques
 
 ## Backlog (priority order)
 
-1. Decide 4B vs 8B instruct for Tier 1 with real use (section I: 4B is equal on hard questions, 55/80 after the wake word, same as the 8B, and 40 vs 39 in the wake window; saves 2.2 GB).
-3. New decision models: Liquid d1-omni-600M and d1-3B (released 2026-10-07; needs a runtime that serves `/v1/systemone`, which the installed llama.cpp lacks), Amazon Strands Decider 2B (2026-10-01), `tev1:4b`, and a re-test of Kev-4B end to end.
-4. Real-audio false-wake test (hours of TV and podcasts) and the wake-word false-wake rate.
-5. TTS listening test and time to first spoken word on long replies.
-6. Compositor load at true idle: plain 1080p vs 4K-backed mode, wallpaper, Safari content.
-7. Live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`, then grep the log).
-8. Fine-tune a decision head on the assistant's own labeled utterances (data was the biggest lever).
+1. Move the command gate to `tev1:4b` (section J: wake-window correct 40 -> 52 of 80, false triggers 13 -> 9; +3.6 GB memory).
+2. Speak long replies sentence by sentence (section J: up to 13 s wait before the first word on a 200-word reply).
+3. Liquid d1 models and Amazon Strands Decider 2B: need a decision-capable runtime (llama.cpp development build) or the Strands Python stack.
+4. Real-audio false-wake test (hours of TV and podcasts) and the live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`); both need a working microphone.
+5. Compositor load at true idle: plain 1080p vs 4K-backed mode, wallpaper, Safari content (needs display changes and your OK).
+6. Fine-tune a decision head on the assistant's own labeled utterances (data was the biggest lever).
 
 ## Folder index
 

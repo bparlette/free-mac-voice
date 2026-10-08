@@ -1,0 +1,25 @@
+{
+ "model": "kev",
+ "name": "kev_4b_q4km",
+ "commands": 204,
+ "non_commands": 200,
+ "median_ms": 336,
+ "cutoffs": {
+  "0.3": {
+   "commands_accepted_pct": 98.0,
+   "non_commands_accepted_pct": 36.5
+  },
+  "0.5": {
+   "commands_accepted_pct": 79.9,
+   "non_commands_accepted_pct": 14.5
+  },
+  "0.7": {
+   "commands_accepted_pct": 43.6,
+   "non_commands_accepted_pct": 4.0
+  },
+  "0.9": {
+   "commands_accepted_pct": 4.9,
+   "non_commands_accepted_pct": 0.0
+  }
+ }
+}

@@ -1,8 +1,8 @@
 {
- "model": "tev1:0.8b",
+ "model": "kev-4b-q4km",
  "shortlist": 8,
  "ceiling_correct_in_shortlist": 58,
- "median_ms": 195,
+ "median_ms": 419,
  "embedding_only": {
   "0.74": [
    38,
@@ -27,24 +27,24 @@
  },
  "with_decision_model": {
   "0.0": [
-   32,
-   15,
-   34
+   33,
+   7,
+   12
   ],
   "0.5": [
-   29,
-   13,
-   25
+   25,
+   1,
+   6
   ],
   "0.7": [
-   23,
    10,
-   17
+   1,
+   3
   ],
   "0.85": [
-   16,
-   6,
-   11
+   3,
+   1,
+   1
   ]
  }
 }

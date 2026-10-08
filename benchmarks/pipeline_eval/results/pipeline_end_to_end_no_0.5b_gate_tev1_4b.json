@@ -1,0 +1,141 @@
+{
+ "n": 80,
+ "model": "qwen3-vl:4b-instruct",
+ "no_decision_tier": true,
+ "after_wake": {
+  "commands_correct": 55,
+  "wrong_action": 22,
+  "not_handled": 3,
+  "which_tier_got_it_right": {
+   "Tier 0.5a": 36,
+   "Tier 1": 8,
+   "Tier 0": 11
+  },
+  "median_s": 0.01,
+  "wrong_examples": [
+   [
+    "move chrome left half",
+    "snap_left",
+    "move_next_display",
+    "Tier 1"
+   ],
+   [
+    "uh, volume down a couple",
+    "set_volume",
+    "help",
+    "Tier 0.5a"
+   ],
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "can we go back to netflix",
+    "switch_app",
+    "nav_back",
+    "Tier 1"
+   ],
+   [
+    "open system settings",
+    "open_app",
+    "settings",
+    "Tier 0"
+   ]
+  ]
+ },
+ "window": {
+  "commands_correct": 52,
+  "wrong_action": 21,
+  "not_handled": 7,
+  "which_tier_got_it_right": {
+   "Tier 0.5a": 33,
+   "Tier 1": 8,
+   "Tier 0": 11
+  },
+  "median_s": 0.04,
+  "wrong_examples": [
+   [
+    "move chrome left half",
+    "snap_left",
+    "move_next_display",
+    "Tier 1"
+   ],
+   [
+    "uh, volume down a couple",
+    "set_volume",
+    "help",
+    "Tier 0.5a"
+   ],
+   [
+    "close this one",
+    "close_window",
+    "quit_app",
+    "Tier 0"
+   ],
+   [
+    "can we go back to netflix",
+    "switch_app",
+    "nav_back",
+    "Tier 1"
+   ],
+   [
+    "open system settings",
+    "open_app",
+    "settings",
+    "Tier 0"
+   ]
+  ],
+  "non_commands": 80,
+  "false_triggers": 9,
+  "false_triggers_by_tier": {
+   "Tier 0.5a": 5,
+   "Tier 1": 4
+  },
+  "stopped_by_gate": 51,
+  "false_trigger_examples": [
+   [
+    "turn the volume of your life up, that's what grandma said",
+    "set_volume",
+    "Tier 0.5a"
+   ],
+   [
+    "take a screenshot of this offer and show it at the counter",
+    "screenshot",
+    "Tier 1"
+   ],
+   [
+    "turn up the fun this weekend at six flags",
+    "web_search",
+    "Tier 1"
+   ],
+   [
+    "open happiness",
+    "open_app",
+    "Tier 1"
+   ],
+   [
+    "switch off, you're working too hard",
+    "tv_power",
+    "Tier 0.5a"
+   ],
+   [
+    "close friends only",
+    "close_app",
+    "Tier 1"
+   ],
+   [
+    "pause the clock, we need a ruling",
+    "media",
+    "Tier 0.5a"
+   ],
+   [
+    "close the blinds please",
+    "close_all_windows",
+    "Tier 0.5a"
+   ]
+  ],
+  "median_s_non_commands": 0.55
+ }
+}

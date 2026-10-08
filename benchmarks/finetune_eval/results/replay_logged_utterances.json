@@ -1,0 +1,16 @@
+{
+ "unique_utterances": 59,
+ "examples": 252,
+ "threshold": 0.82,
+ "accepted_by_onnx": 15,
+ "accepted_by_ollama": 15,
+ "accepted_by_both": 14,
+ "accepted_by_only_onnx": 1,
+ "accepted_by_only_ollama": 1,
+ "same_action_when_both_accept": 13,
+ "same_top1_action_all": 51,
+ "mean_cosine_onnx": 0.754,
+ "mean_cosine_ollama": 0.751,
+ "seconds_onnx": 3.2,
+ "seconds_ollama": 4.6
+}

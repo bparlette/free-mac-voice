@@ -1,0 +1,41 @@
+{
+ "voice": "af_heart",
+ "note": "median of 3, Kokoro ONNX on CPU; machine was also running other jobs",
+ "cases": {
+  "6": {
+   "words": 6,
+   "audio_s": 1.5,
+   "whole_reply_synth_s": 0.44,
+   "first_sentence_synth_s": 0.43,
+   "first_sentence_audio_s": 1.5
+  },
+  "20": {
+   "words": 20,
+   "audio_s": 5.7,
+   "whole_reply_synth_s": 1.35,
+   "first_sentence_synth_s": 1.2,
+   "first_sentence_audio_s": 4.8
+  },
+  "50": {
+   "words": 50,
+   "audio_s": 15.6,
+   "whole_reply_synth_s": 3.62,
+   "first_sentence_synth_s": 1.18,
+   "first_sentence_audio_s": 4.8
+  },
+  "100": {
+   "words": 100,
+   "audio_s": 30.8,
+   "whole_reply_synth_s": 6.91,
+   "first_sentence_synth_s": 1.15,
+   "first_sentence_audio_s": 4.8
+  },
+  "200": {
+   "words": 200,
+   "audio_s": 61.4,
+   "whole_reply_synth_s": 13.41,
+   "first_sentence_synth_s": 1.14,
+   "first_sentence_audio_s": 4.8
+  }
+ }
+}

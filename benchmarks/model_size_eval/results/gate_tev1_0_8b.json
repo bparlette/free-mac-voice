@@ -1,0 +1,25 @@
+{
+ "model": "tev1:0.8b",
+ "name": "tev1_0_8b",
+ "commands": 204,
+ "non_commands": 200,
+ "median_ms": 129,
+ "cutoffs": {
+  "0.3": {
+   "commands_accepted_pct": 70.6,
+   "non_commands_accepted_pct": 50.5
+  },
+  "0.5": {
+   "commands_accepted_pct": 42.6,
+   "non_commands_accepted_pct": 24.5
+  },
+  "0.7": {
+   "commands_accepted_pct": 19.1,
+   "non_commands_accepted_pct": 6.5
+  },
+  "0.9": {
+   "commands_accepted_pct": 4.9,
+   "non_commands_accepted_pct": 1.5
+  }
+ }
+}
