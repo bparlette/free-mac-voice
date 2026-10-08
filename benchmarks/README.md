@@ -2,7 +2,8 @@
 
 **Last updated: 2026-10-08.** This is the one file to read first. The headline tables below are regenerated from the saved result files by
 `python benchmarks/update_ledger.py` (check with `--check`); everything else is hand-written history. **When you run something new:** save the raw
-output in that folder's `results/`, add a dated row to the [timeline](#timeline), run the updater, commit.
+output in that folder's `results/`, add a dated row to the [timeline](#timeline), run the updater, commit. (The updater also copies the main sections into the
+**Benchmark Ledger** section of the repository's top-level `README.md`; do not edit that copy by hand.)
 
 ## Read this first
 
