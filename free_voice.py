@@ -6594,6 +6594,25 @@ _COMMAND_VERB_PREFIX_RE = re.compile(
 )
 
 
+def _gate_payload(gate_model: str, text: str) -> dict:
+    """Request body for the command-gate question on /v1/systemone (also used to prewarm the gate model)."""
+    return {
+        "model": gate_model,
+        "keep_alive": "60m",  # a cold load can take ~2.7 s against the 3 s timeout in is_voice_command, and a timeout fails closed
+        "state": text,
+        "questions": {
+            "is_command": {
+                "type": "choice",
+                "instructions": "Is this spoken phrase an imperative command or action directed at a computer assistant?",
+                "criteria": {
+                    "command": "An instruction or command for the computer to perform an action (e.g. open an app, adjust volume, search, play music, set timer)",
+                    "none": "Casual speech, statement, question, TV/podcast dialogue, or not asking the assistant to take an action",
+                },
+            }
+        },
+    }
+
+
 def is_voice_command(text: str) -> tuple[bool, float]:
     """Step 1 Gate: Fast pre-routing check to filter out ambient conversation,
     TV dialogue, and statements before invoking the intent router.
@@ -6613,21 +6632,7 @@ def is_voice_command(text: str) -> tuple[bool, float]:
     # Decision model gate check via /v1/systemone
     gate_model = VOICE_COMMAND_GATE_MODEL or OLLAMA_DECISION_MODEL
     url = f"{OLLAMA_HOST}/v1/systemone"
-    payload = {
-        "model": gate_model,
-        "keep_alive": "60m",  # a cold load can take ~2.7 s against the 3 s timeout below, and a timeout fails closed
-        "state": clean,
-        "questions": {
-            "is_command": {
-                "type": "choice",
-                "instructions": "Is this spoken phrase an imperative command or action directed at a computer assistant?",
-                "criteria": {
-                    "command": "An instruction or command for the computer to perform an action (e.g. open an app, adjust volume, search, play music, set timer)",
-                    "none": "Casual speech, statement, question, TV/podcast dialogue, or not asking the assistant to take an action",
-                },
-            }
-        },
-    }
+    payload = _gate_payload(gate_model, clean)
     try:
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),
@@ -7184,9 +7189,9 @@ def prewarm_ollama() -> None:
             log(f"prewarm skipped ({e})")
         if VOICE_COMMAND_GATE and VOICE_COMMAND_GATE_MODEL:
             try:  # keep the command-gate decision model loaded too, so its first call is not a cold start
-                greq = urllib.request.Request(
-                    OLLAMA_HOST + "/api/generate",
-                    data=json.dumps({"model": VOICE_COMMAND_GATE_MODEL, "prompt": "", "keep_alive": "60m"}).encode(),
+                greq = urllib.request.Request(  # decision models (tev1:4b) reject /api/generate, so warm through the endpoint the gate uses
+                    OLLAMA_HOST + "/v1/systemone",
+                    data=json.dumps(_gate_payload(VOICE_COMMAND_GATE_MODEL, "hello")).encode(),
                     headers={"Content-Type": "application/json"},
                 )
                 with urllib.request.urlopen(greq, timeout=60) as r:
