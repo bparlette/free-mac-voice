@@ -1,0 +1,7 @@
+# Each model in its own fresh process (CPU). mem = peak process memory growth after load + inference.
+ONNX embeddinggemma1 model_q4 [CPU]                        no prefix correct@FA<=16%:  62.3% (thr 0.775, FA 16.0%)  | weights 188 MB | single 6 ms, batch 214/s, load 0.2s, mem +0.10 GB
+ONNX embeddinggemma1 model_q4f16 [CPU]                     no prefix correct@FA<=16%:  61.8% (thr 0.775, FA 15.5%)  | weights 168 MB | single 8 ms, batch 172/s, load 0.2s, mem +0.15 GB
+ONNX embeddinggemma1 model_quantized [CPU]                 no prefix correct@FA<=16%:  61.8% (thr 0.77, FA 16.0%)  | weights 295 MB | single 43 ms, batch 271/s, load 0.1s, mem +1.15 GB
+ONNX embeddinggemma2 model_q4 [CPU]                        no prefix correct@FA<=16%:  57.8% (thr 0.875, FA 16.0%)  | weights 166 MB | single 14 ms, batch 96/s, load 0.1s, mem +0.25 GB
+ONNX embeddinggemma2 model_q4f16 [CPU]                     no prefix correct@FA<=16%:  57.8% (thr 0.875, FA 16.0%)  | weights 150 MB | single 15 ms, batch 76/s, load 0.2s, mem +0.25 GB
+ONNX embeddinggemma2 model_fp16 [CPU]                      no prefix correct@FA<=16%:  54.9% (thr 0.88, FA 15.5%)  | weights 517 MB | single 12 ms, batch 93/s, load 0.2s, mem +0.40 GB

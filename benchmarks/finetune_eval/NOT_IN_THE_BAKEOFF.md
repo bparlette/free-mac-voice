@@ -14,7 +14,7 @@ already resident (a large Qwen model already takes about 8 GB of a 16 GB Apple M
 | **Fine-tune "A2"** (24 LoRA layers, lr 3e-4, 900 iterations) | Training diverged (validation loss NaN) | Learning rate too high for the quantized 0.5B model. Retrained as "A3" at lr 1e-4, 16 layers (this is the A3 in README.md). |
 | **Fine-tune "B"** (same too-high settings, 800 iterations, trained on examples + half the test set) | 0% correct; answered only "none" or "tv_right" regardless of input | Collapsed to the label prior because of the same learning-rate problem (its training loss of about 0.65 was just the cost of guessing the prior). Retrained as "B2" at lr 1e-4 (the B2 in README.md), which reached 81% correct. A healthy run showed training loss of about 0.16 early on. |
 | **EmbeddingGemma 2 270M-class (q4 ONNX)** as a drop-in embedding model for Tier 0.5a | Run; no better than the current model. With Tier 0 first it needed thresholds near 0.88-0.90 and gave 52-56% correct at 15-16.5% false accepts, versus 61.8% / 16.0% for the current model. About 0.5 GB and 16-23 ms per query. | Not an improvement on accuracy. Note: the 270M-class label is approximate: the downloaded ONNX text graph is Google's single q4 text model from the 740M multimodal repo, not the separately packaged Ollama "270m" tag, which could not be tested (next row). |
-| **EmbeddingGemma 2 via Ollama** (`embeddinggemma-2:270m`, 378 MB) | Could not run | Ollama 0.35 refused to pull it ("requires a newer version"). The Homebrew `llama.cpp` (build 11146) failed with "unknown model architecture: gemma-embedding2" and `transformers` 5.18 does not know `embedding_gemma2`. Upgrading Homebrew Ollama to 0.40 was attempted, but the Ollama desktop app relaunches its own (older, 0.35.0) server on the same port, and quitting the app needs a manual click, so the update was abandoned and the ONNX route above was used instead. The Homebrew Ollama background service was left **stopped** at that point; the desktop app's server is what answers on the port. |
+| **EmbeddingGemma 2 via Ollama** (`embeddinggemma-2:270m`, 378 MB) | Initially could not run; later run on a side-by-side Ollama 0.40: **54.9% correct at 16% false accepts** (52.0% with task prefix), 330 MB loaded, versus 61.8% / 648 MB for the current model | Not better. The original failure was: | Ollama 0.35 refused to pull it ("requires a newer version"). The Homebrew `llama.cpp` (build 11146) failed with "unknown model architecture: gemma-embedding2" and `transformers` 5.18 does not know `embedding_gemma2`. Upgrading Homebrew Ollama to 0.40 was attempted; to avoid disturbing the live service it was then run on a separate port (11500) just for the benchmark. The Ollama desktop app relaunches its own (older, 0.35.0) server on the same port, and quitting the app needs a manual click, so the app's server (0.35.0) remains the one that answers on the standard port. The ONNX route above was also used. The Homebrew Ollama background service was left **stopped** at that point; the desktop app's server is what answers on the port. |
 
 ### What Laya was *not* given (so this is not a final verdict on Laya)
 
@@ -52,3 +52,12 @@ are valid for what they measure; do not compare numbers across them.
 - Fine-tuning data is small (177 production examples left after removing 75 that also appear in the test set,
   plus 112 hand-written non-commands). Style overlap between my negatives and the test negatives is possible.
 - One random 50/50 split (seed 0). With about 200 commands per side, differences under about 5 points are noise.
+
+## ONNX variants that were run and dropped
+
+| Variant | Why dropped |
+|---|---|
+| ONNX int8 ("quantized") graphs, v1 and v2 | 43-57 ms per query and up to +1.15 GB memory, no accuracy gain over q4 |
+| ONNX on the CoreML execution provider | v1 q4 gave unusable embeddings (0% correct), v1 int8 22%, all EmbeddingGemma 2 variants failed on zero-size inputs; the one variant that worked (v1 q4f16) was slower than CPU |
+| ONNX fp32 and fp16 of v1 (1.2 GB / 617 MB files) | Not downloaded: larger than needed for the memory budget |
+| EmbeddingGemma 2 in any ONNX precision | 51-58% correct at 16% false accepts, below v1's 62-64% |

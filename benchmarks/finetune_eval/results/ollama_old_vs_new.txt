@@ -1,0 +1,8 @@
+404 held-out rows; 177 leak-free examples
+
+Ollama old v0.35.0: embeddinggemma                         no prefix correct@FA<=16%:  61.8% (thr 0.77, FA 16.0%)  | single-query median 16 ms, batch 69 texts/s, loaded 648 MB
+Ollama new v0.40.0: embeddinggemma                         no prefix correct@FA<=16%:  61.8% (thr 0.77, FA 16.0%)  | single-query median 10 ms, batch 107 texts/s, loaded 648 MB
+Ollama new v0.40.0: embeddinggemma-2:270m                  no prefix correct@FA<=16%:  54.9% (thr 0.875, FA 15.5%)  | single-query median 15 ms, batch 91 texts/s, loaded 330 MB
+Ollama new v0.40.0: embeddinggemma-2:270m                  prefix    correct@FA<=16%:  52.0% (thr 0.905, FA 16.0%)  | single-query median 16 ms, batch 69 texts/s, loaded 330 MB
+Ollama old v0.35.0: qwen2.5:1.5b generation speed 61 tokens/s (median of 3, 96 tokens)
+Ollama new v0.40.0: qwen2.5:1.5b generation speed 61 tokens/s (median of 3, 96 tokens)

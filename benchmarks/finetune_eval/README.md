@@ -68,6 +68,54 @@ holds GPU buffers that this number may undercount. Speeds are per request on thi
 5. **It fits the budget.** About 0.4 GB and 45 ms per decision, comparable to the 621 MB embedding model it
    would replace rather than add to.
 6. **Laya and EmbeddingGemma 2 did not earn a place** (see rows and NOT_IN_THE_BAKEOFF.md).
+7. **Separately from the model question, the ONNX build of the current embedding model is a cheap win** (same accuracy, a fraction of the memory); see the next section.
+
+## Engine and ONNX benchmarks (embedding step only)
+
+Same held-out half and leak-free examples as above, Tier 0 first. The metric here is **correct command at <= 16% false
+accepts** (the router's own level), found by scanning the confidence threshold, because different models have different
+cosine scales. Raw logs: `results/ollama_old_vs_new.txt`, `results/onnx_variants.txt`, `results/onnx_memory_isolated.txt`.
+Harness: `bench_engines.py`.
+
+### Old vs new Ollama (0.35.0 vs 0.40.0, run side by side on different ports)
+
+| Model | Engine | Correct @ FA<=16% | Single query | Batch | Loaded size |
+|---|---|---|---|---|---|
+| embeddinggemma (current) | old 0.35.0 | 61.8% | 16 ms | 69 texts/s | 648 MB |
+| embeddinggemma (current) | **new 0.40.0** | 61.8% | **10 ms** | **107 texts/s** | 648 MB |
+| embeddinggemma-2:270m | new 0.40.0 (old cannot load it) | 54.9% (52.0% with task prefix) | 15 ms | 91 texts/s | **330 MB** |
+| qwen2.5:1.5b generation | old / new | 61 / 61 tokens/s | | | |
+
+- The newer Ollama gives **identical accuracy** for the current model and embeds about 1.5x faster; text generation
+  speed is unchanged. Upgrading the engine is not an accuracy risk.
+- EmbeddingGemma 2 (270m) uses half the memory but is about 7 points less accurate. Not worth it for this task.
+- `llama.cpp` from Homebrew (build 11146) has no newer release available and cannot load EmbeddingGemma 2, so it is
+  represented by the Ollama versions, which bundle their own newer engine.
+
+### ONNX (onnxruntime 1.30, in-process, no Ollama)
+
+| Model (weights) | Provider | Correct @ FA<=16% (no prefix / task prefix) | Single query | Memory growth (fresh process) |
+|---|---|---|---|---|
+| **embeddinggemma v1 q4 (188 MB)** | CPU | **62.3% / 63.2%** | **6 ms** | **+0.10 GB** |
+| embeddinggemma v1 q4f16 (168 MB) | CPU | 61.8% / 63.7% | 8 ms | +0.15 GB |
+| embeddinggemma v1 int8 "quantized" (295 MB) | CPU | 61.8% / 61.8% | 43 ms | +1.15 GB |
+| embeddinggemma 2 q4 (166 MB) | CPU | 57.8% / 51.0% | 14 ms | +0.25 GB |
+| embeddinggemma 2 q4f16 (150 MB) | CPU | 57.8% / 50.5% | 15 ms | +0.25 GB |
+| embeddinggemma 2 fp16 (517 MB) | CPU | 54.9% / 54.4% | 12 ms | +0.40 GB |
+| v1 q4f16 | CoreML | 61.8% / 63.7% | 13 ms (slower than CPU) | |
+| v1 q4 | CoreML | **0.0%: output unusable** | 131 ms | |
+| v1 int8 | CoreML | **22%: output unusable** | 270 ms | |
+| embeddinggemma 2 (all four) | CoreML | **fails to run** (zero-size input unsupported) | | |
+
+- **The standout is v1 q4 on the CPU:** the same accuracy as Ollama's copy of the same model (62-64% vs 61.8%), about 6 ms
+  per query versus 10-16 ms, and roughly 0.1 GB of process memory growth versus the 648 MB Ollama reports as
+  loaded. (Different measures, but the order of magnitude is the point.) `onnxruntime` is already a project dependency, so
+  Tier 0.5a could embed in-process and stop depending on Ollama for this step, freeing about 0.5 GB next to the large Qwen.
+- Google's task prefix (`task: classification | query: `) helps v1 slightly and hurts v2. Keep v1 with the prefix if tried.
+- **Do not use the int8 variants or the CoreML provider**: the int8 graphs are slow and large, and CoreML either fails or
+  produces unusable embeddings for most variants.
+- Not done: wiring this into `free_voice.py`. The speed and memory figures were measured in a benchmark process, not under
+  the live daemon.
 
 ## Process (to reproduce)
 
@@ -97,7 +145,8 @@ All commands run from the repository root with the project venv. Artifacts go to
    ./.venv/bin/python benchmarks/finetune_eval/eval.py --baseline --eg2   # EmbeddingGemma 2 q4 ONNX copied into /tmp/eg2 (see below)
    ```
    Every contender is run in its own process so memory numbers do not mix.
-4. **EmbeddingGemma 2 files:** Ollama 0.35, the Homebrew `llama.cpp` build and `transformers` 5.18 on this machine all
+4. **ONNX and engine benchmarks:** download the `onnx-community/embeddinggemma-300m-ONNX` and `.../embeddinggemma-2-ONNX` variants with `huggingface_hub` and copy them (dereferencing cache symlinks) to `/tmp/onnx_models/embeddinggemma1/` and `.../embeddinggemma2/` (each with `onnx/<variant>.onnx` + `.onnx_data` and `tokenizer.json`), then `bench_engines.py onnx`. For `bench_engines.py ollama`, run two Ollama versions on different ports.
+5. **EmbeddingGemma 2 files for `eval.py --eg2`:** Ollama 0.35, the Homebrew `llama.cpp` build and `transformers` 5.18 on this machine all
    failed to load the model (unknown architecture), so the `onnx-community/embeddinggemma-2-ONNX` q4 text graph was run
    with `onnxruntime`. Copy `onnx/model_q4.onnx`, `onnx/model_q4.onnx_data`, `tokenizer.json`, `tokenizer_config.json`
    and `config.json` (dereference the Hugging Face cache symlinks) into `/tmp/eg2`.
@@ -118,4 +167,5 @@ All commands run from the repository root with the project venv. Artifacts go to
 2. Re-run with the production command gate in front, and examine which Tier 0 regex rules produce the false accepts.
 3. Try a fine-tuned model as the *primary* classifier with Tier 0 kept only for exact, safe patterns.
 4. Test under real load (Qwen resident, daemon running) for memory pressure and latency.
-5. Only then consider wiring a fine-tuned classifier behind a feature flag; nothing in `free_voice.py` was changed by this experiment.
+5. Try the ONNX q4 embedding backend for Tier 0.5a (benchmarked above): same accuracy, much less memory.
+6. Only then consider wiring a fine-tuned classifier behind a feature flag; nothing in `free_voice.py` was changed by this experiment.

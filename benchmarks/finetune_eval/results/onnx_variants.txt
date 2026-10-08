@@ -1,0 +1,26 @@
+# First pass: all variants in ONE process (the 'mem' column here is unreliable: peak memory carries over between models; use onnx_memory_isolated.txt).
+404 held-out rows; 177 leak-free examples
+ONNX embeddinggemma1 model_q4 [CPU]                        no prefix correct@FA<=16%:  62.3% (thr 0.775, FA 16.0%)  | single 5 ms, batch 214/s, load 0.2s, mem +0.10 GB
+ONNX embeddinggemma1 model_q4 [CPU]                        prefix    correct@FA<=16%:  63.2% (thr 0.82, FA 15.5%)  | single 8 ms, batch 148/s, load 0.2s, mem +0.11 GB
+ONNX embeddinggemma1 model_q4 [CoreML]                     no prefix correct@FA<=16%:   0.0% (thr None, FA  0.0%)  | single 131 ms, batch 79/s, load 2.0s, mem +0.51 GB
+ONNX embeddinggemma1 model_q4 [CoreML]                     prefix    correct@FA<=16%:   0.0% (thr None, FA  0.0%)  | single 138 ms, batch 61/s, load 2.0s, mem +0.84 GB
+ONNX embeddinggemma1 model_q4f16 [CPU]                     no prefix correct@FA<=16%:  61.8% (thr 0.775, FA 15.5%)  | single 7 ms, batch 171/s, load 0.2s, mem +0.00 GB
+ONNX embeddinggemma1 model_q4f16 [CPU]                     prefix    correct@FA<=16%:  63.7% (thr 0.815, FA 16.0%)  | single 11 ms, batch 118/s, load 0.2s, mem +0.00 GB
+ONNX embeddinggemma1 model_q4f16 [CoreML]                  no prefix correct@FA<=16%:  61.8% (thr 0.775, FA 15.5%)  | single 13 ms, batch 159/s, load 1.9s, mem +0.00 GB
+ONNX embeddinggemma1 model_q4f16 [CoreML]                  prefix    correct@FA<=16%:  63.7% (thr 0.815, FA 16.0%)  | single 20 ms, batch 112/s, load 1.9s, mem +0.00 GB
+ONNX embeddinggemma1 model_quantized [CPU]                 no prefix correct@FA<=16%:  61.8% (thr 0.77, FA 16.0%)  | single 40 ms, batch 271/s, load 0.1s, mem +0.81 GB
+ONNX embeddinggemma1 model_quantized [CPU]                 prefix    correct@FA<=16%:  61.8% (thr 0.825, FA 16.0%)  | single 48 ms, batch 207/s, load 0.1s, mem +0.81 GB
+ONNX embeddinggemma1 model_quantized [CoreML]              no prefix correct@FA<=16%:  22.1% (thr 0.4, FA 12.5%)  | single 270 ms, batch 66/s, load 1.5s, mem +1.35 GB
+ONNX embeddinggemma1 model_quantized [CoreML]              prefix    correct@FA<=16%:  22.1% (thr 0.4, FA 12.5%)  | single 282 ms, batch 62/s, load 1.5s, mem +1.35 GB
+ONNX embeddinggemma2 model_fp16 [CPU]                      no prefix correct@FA<=16%:  54.9% (thr 0.88, FA 15.5%)  | single 12 ms, batch 92/s, load 0.6s, mem +0.05 GB
+ONNX embeddinggemma2 model_fp16 [CPU]                      prefix    correct@FA<=16%:  54.4% (thr 0.905, FA 16.0%)  | single 18 ms, batch 63/s, load 0.6s, mem +0.09 GB
+ONNX embeddinggemma2 model_fp16 [CoreML]: FAILED Fail: [ONNXRuntimeError] : 1 : FAIL : Non-zero status code returned while running 8995942008220802379_CoreML_8995942
+ONNX embeddinggemma2 model_q4 [CPU]                        no prefix correct@FA<=16%:  57.8% (thr 0.875, FA 16.0%)  | single 14 ms, batch 94/s, load 0.2s, mem +0.00 GB
+ONNX embeddinggemma2 model_q4 [CPU]                        prefix    correct@FA<=16%:  51.0% (thr 0.905, FA 15.0%)  | single 18 ms, batch 65/s, load 0.2s, mem +0.00 GB
+ONNX embeddinggemma2 model_q4 [CoreML]: FAILED Fail: [ONNXRuntimeError] : 1 : FAIL : Non-zero status code returned while running 1707626967185624548_CoreML_1707626
+ONNX embeddinggemma2 model_q4f16 [CPU]                     no prefix correct@FA<=16%:  57.8% (thr 0.875, FA 16.0%)  | single 16 ms, batch 75/s, load 0.5s, mem +0.00 GB
+ONNX embeddinggemma2 model_q4f16 [CPU]                     prefix    correct@FA<=16%:  50.5% (thr 0.905, FA 15.0%)  | single 23 ms, batch 53/s, load 0.5s, mem +0.00 GB
+ONNX embeddinggemma2 model_q4f16 [CoreML]: FAILED Fail: [ONNXRuntimeError] : 1 : FAIL : Non-zero status code returned while running 15749303750108559482_CoreML_157493
+ONNX embeddinggemma2 model_quantized [CPU]                 no prefix correct@FA<=16%:  54.9% (thr 0.88, FA 15.5%)  | single 47 ms, batch 179/s, load 0.1s, mem +0.00 GB
+ONNX embeddinggemma2 model_quantized [CPU]                 prefix    correct@FA<=16%:  53.9% (thr 0.905, FA 16.0%)  | single 57 ms, batch 137/s, load 0.1s, mem +0.00 GB
+ONNX embeddinggemma2 model_quantized [CoreML]: FAILED Fail: [ONNXRuntimeError] : 1 : FAIL : Non-zero status code returned while running 7789762998889891001_CoreML_7789762
