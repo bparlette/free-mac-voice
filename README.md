@@ -9,7 +9,10 @@
 [![Hardware](https://img.shields.io/badge/accelerated-Metal%20GPU%20%2F%20MLX-green.svg)](https://developer.apple.com/metal/)
 [![Tests](https://img.shields.io/badge/tests-223%20passing%20(100%25)-brightgreen.svg)](tests/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)](#privacy--local-by-default)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-full%20ledger-informational.svg)](benchmarks/README.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+> 📒 **Benchmarks:** every test we have run over weeks, what we changed because of it, and what we ruled out, is in the **[Benchmark Ledger](benchmarks/README.md)** ([summary on this page](#-benchmark-ledger-weeks-of-testing-in-one-place)).
 
 ---
 
