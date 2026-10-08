@@ -32,7 +32,8 @@ def models_table():
 
 def pipeline_table():
     names = [("pipeline_end_to_end.json", "Current pipeline"), ("pipeline_end_to_end_no_0.5b.json", "Tier 0.5b disabled"),
-             ("pipeline_end_to_end_no_0.5b_8b_instruct.json", "Tier 0.5b disabled + 8B instruct (live setup)")]
+             ("pipeline_end_to_end_no_0.5b_8b_instruct.json", "+ 8B instruct"),
+             ("pipeline_end_to_end_tier0_tight.json", "+ Tier 0 regex tightened (live setup)")]
     cols = []
     for fname, label in names:
         f = os.path.join(HERE, "pipeline_eval", "results", fname)
@@ -62,7 +63,7 @@ def render(text):
 
 # Sections of benchmarks/README.md that are mirrored into the main README (between AUTO:ledger-<key> markers).
 MIRROR = {"live": "What is live in the assistant because of these benchmarks", "standings": "Current standings",
-          "timeline": "Timeline", "dropped": "Tried and dropped, or ruled out without running", "backlog": "Backlog (priority order)"}
+          "timeline": "Timeline", "index": "Folder index", "dropped": "Tried and dropped, or ruled out without running", "backlog": "Backlog (priority order)"}
 
 
 def section(ledger, heading):

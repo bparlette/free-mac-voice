@@ -2907,6 +2907,16 @@ class TestDaemonAndService(Base):
         service_sh = os.path.join(repo_dir, "service.sh")
         res = fv.subprocess.run([service_sh, "status"], capture_output=True, text=True, check=False)
 class TestTier05Router(Base):
+    def setUp(self):
+        super().setUp()
+        # These tests exercise the built-in hashing matcher (threshold 0.75). Pin it so they do not depend on whether an embedding
+        # model happens to be warm in Ollama or an ONNX file is installed on this machine.
+        saved = (fv._PRECOMPUTED_MATRIX, fv._PRECOMPUTED_INTENTS, fv._EMBED_NEURAL, fv._embed_last_try, fv.OLLAMA_EMBED_MODEL)
+        self.addCleanup(lambda: (setattr(fv, "_PRECOMPUTED_MATRIX", saved[0]), setattr(fv, "_PRECOMPUTED_INTENTS", saved[1]),
+                                 setattr(fv, "_EMBED_NEURAL", saved[2]), setattr(fv, "_embed_last_try", saved[3]), setattr(fv, "OLLAMA_EMBED_MODEL", saved[4])))
+        fv._PRECOMPUTED_MATRIX, fv._PRECOMPUTED_INTENTS, fv._EMBED_NEURAL, fv._embed_last_try = None, [], False, 0.0
+        fv.OLLAMA_EMBED_MODEL = ""
+
     def test_tier05_embed_speed_and_threshold(self):
         # Embedding and matching must run well under 50ms budget (typically <1ms)
         t0 = fv.time.time()

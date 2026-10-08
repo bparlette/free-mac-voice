@@ -1374,7 +1374,7 @@ _APP_ALIASES = {
     "messages": "Messages", "imessage": "Messages", "imessages": "Messages", "text messages": "Messages",
     "facetime": "FaceTime", "photos": "Photos", "music": "Music", "itunes": "Music", "apple music": "Music",
     "tv": "TV", "apple tv": "TV", "podcasts": "Podcasts",
-    "finder": "Finder", "settings": "System Settings", "system preferences": "System Settings",
+    "finder": "Finder", "settings": "System Settings", "system preferences": "System Settings", "sys prefs": "System Settings", "system prefs": "System Settings",
     "preferences": "System Settings", "system settings": "System Settings",
     "terminal": "Terminal", "iterm": "iTerm", "iterm2": "iTerm",
     "calendar": "Calendar", "reminders": "Reminders", "maps": "Maps",
@@ -1496,6 +1496,18 @@ def _phonetic_map(apps: list[str]) -> dict:
     return cached
 
 
+_APP_LEAD_RE = re.compile(r"^(?:up|that|this)\s+", re.IGNORECASE)
+_APP_TAIL_RE = re.compile(r"(?:\s+(?:please|for me|now|right now|real quick|thanks|thank you))+$", re.IGNORECASE)
+
+
+def _clean_app_phrase(spoken: str) -> str:
+    """'up the music app' -> 'the music app', 'chrome please' -> 'chrome': drop filler around the app name before looking it up."""
+    p = _APP_TAIL_RE.sub("", spoken.strip().rstrip(".!?,"))
+    for _ in range(2):
+        p = _APP_LEAD_RE.sub("", p)
+    return p.strip()
+
+
 def resolve_app(spoken: str, prefer_running: bool = False) -> str | None:
     """Turn 'chrome' / 'notes' / 'es de' into a real app name.
 
@@ -1506,7 +1518,7 @@ def resolve_app(spoken: str, prefer_running: bool = False) -> str | None:
     """
     import difflib
 
-    raw = spoken.strip().lower()
+    raw = _clean_app_phrase(spoken).lower()
     # Strip conversational noise: "my notes" -> "notes", "the safari app" -> "safari"
     clean_spoken = re.sub(r"^(?:my|the)\s+", "", raw, flags=re.IGNORECASE).strip()
     clean_spoken = re.sub(r"\s+app$", "", clean_spoken, flags=re.IGNORECASE).strip()
@@ -5079,7 +5091,9 @@ _p(r"^gallery view$", "gallery_view", True)
 _p(r"^(click|press|tap|hit)(?: on)?( the)? (.+?) button$", "click_button")
 _p(r"^(?:click|press|tap|hit)(?: on)? (the )?(.+?) link$", "click_link")
 _p(r"^(click|tap)$", "click_here")
-_p(r"^(?:click|press|tap|hit)(?: on)? (the )?(.+)$", "click_any")
+# "hit" is excluded: "hit subscribe" / "hit play on ..." are ordinary podcast and ad speech, not clicks
+_p(r"^(?:click|press|tap)(?: on)? (the )?(.+)$", "click_any")
+_p(r"^hit(?: on)? (the )?(?!(?:subscribe|like|follow|play on|the bell)\b)(\S+(?: \S+){0,2})$", "click_any")   # "hit allow", not "hit subscribe, it really helps"
 _p(r"^move (the )?mouse to (the )?(.+)$", "mouse_to")
 _p(r"^move (the )?mouse (up|down|left|right)( (\d+))?$", "mouse_move")
 _p(r"^scroll (up|down|left|right)( (\d+))?$", "scroll")
@@ -5096,7 +5110,8 @@ _p(r"^(?:find|search(?: for)?)(?: the)? files?\s+(.+)$", "find_file")
 _p(r"^(?:spotlight(?: search)?|search spotlight(?: for)?)\s+(.+)$", "find_file")
 _p(r"^find my(?: (?:iphone|phone|ipad|mac|device|devices|watch|apple watch|airpods|tags?|airtags?|keys?|wallet|items?|friends?))?$", "find_my", True)
 _p(r"^(search|google|look up|find(?: me)?|look for)(?: the web)? for (.+)$", "web_search")
-_p(r"^(search|google|look up|find(?: me)?|look for) (.+)$", "web_search")
+# generic form: not when the next word shows it is a statement ("search no further", "google says it takes...")
+_p(r"^(search|google|look up|find(?: me)?|look for) (?!(?:no|our|your|his|her|their|it|its|that|this|says|said|is|are|was|were|has|had)\b)(.+)$", "web_search")
 _p(r"^(go to|visit|open website) ([a-z0-9][a-z0-9.\-]*\.[a-z]{2,}.*)$", "open_url")
 # --- volume / brightness / media
 _p(r"^(?:turn\s+)?(?:the\s+)?(volume|sound)\s+up$", "vol_up", True)
@@ -5188,7 +5203,8 @@ _p(r"^play video (\d+)$", "play_ordinal_video", True)
 _p(r"^(?:choose|select|click) video (\d+)$", "play_ordinal_video", True)
 _p(r"^play (?:the )?(?:video|result|stream|item)\s*(?:about |called |titled |on |named )?(.+)$", "play_video_on_screen", True)
 _p(r"^(?:choose|select|click) (?:the )?(?:video|result|stream|item)\s*(?:about |called |titled |on |named )?(.+)$", "play_video_on_screen", True)
-_p(r"^play (.+)$", "play_video_on_screen", True)
+# generic form: not "play it cool", "play next to the river" (those are speech, and "play it again"/"play next" are media commands for a later tier)
+_p(r"^play (?!(?:it|that|this|them|next|along|with|to|out|nice|dead)\b)(.+)$", "play_video_on_screen", True)
 # --- silent mode & command review log
 _p(r"^(?:enable |turn on )?(?:silent|quiet)(?: mode)?$", "quiet_on", True)
 _p(r"^(?:disable |turn off )?(?:silent|quiet)(?: mode)?|voice (?:on|feedback)$", "quiet_off", True)
@@ -5224,15 +5240,32 @@ def _partial_complete(name: str, m: re.Match) -> bool:
     return True
 
 
-def route(text: str, partial: bool = False):
+_APP_RULES = ("open_app", "quit_app", "minimize_app", "hide_app", "switch_app")
+_NARRATIVE_COMMA_RE = re.compile(r",\s*(?:it|he|she|they|we|you|i|that|which|so|but|the|there|this|these|those|my|your|our|his|her|their)\b", re.IGNORECASE)
+
+
+def _app_slot(name: str, m) -> str:
+    """The app-name text captured by an open/quit/minimize/hide/switch rule."""
+    if name in ("open_app", "switch_app", "hide_app"):
+        return m.group(2)
+    if name == "minimize_app":
+        return m.group(3)
+    return m.group(m.lastindex)
+
+
+def route(text: str, partial: bool = False, strict_apps: bool = True):
     """Tier 0 router. Returns (name, match) or None.
 
+    strict_apps=False: skip the "app name must resolve" check (used for steps of a compound command).
     partial=True: for streaming STT chunks. Only partial-safe patterns are
     considered, the match must consume the ENTIRE partial, and the
     completion gate must pass.
     """
     t = text.strip().rstrip(".!?").strip()
     if not t:
+        return None
+    # A clause that starts after a comma ("open the door, it's me") is narration, not a command.
+    if not partial and len(t.split()) >= 5 and _NARRATIVE_COMMA_RE.search(t):
         return None
     for rx, name, pok in _PATTERNS:
         if partial and not pok:
@@ -5244,9 +5277,10 @@ def route(text: str, partial: bool = False):
             continue
         if partial and not _partial_complete(name, m):
             continue
-        if name in ("open_app", "quit_app", "switch_app") and (" and " in t.lower() or " then " in t.lower()):
-            phrase = m.group(2) if name in ("open_app", "switch_app") else m.group(m.lastindex)
-            if resolve_app(phrase) is None:
+        if not partial and strict_apps and name in _APP_RULES:
+            # "open the door" / "close the deal" / "start a timer" must not become app commands: the slot has to name a real app.
+            phrase = _app_slot(name, m)
+            if len(phrase.split()) > 6 or resolve_app(phrase) is None:
                 continue
         return name, m
 
@@ -5264,6 +5298,10 @@ def route(text: str, partial: bool = False):
                     continue
                 if partial and not _partial_complete(name, m):
                     continue
+                if not partial and strict_apps and name in _APP_RULES:
+                    phrase = _app_slot(name, m)
+                    if len(phrase.split()) > 6 or resolve_app(phrase) is None:
+                        continue
                 return name, m
     return None
 
@@ -7336,7 +7374,7 @@ def handle_command(text: str, confirm_audio_fn=None,
             plan = []
             all_resolved = True
             for p in parts:
-                sub_r = route(p, partial=False)
+                sub_r = route(p, partial=False, strict_apps=False)   # a chain step naming an unknown app must still fail loudly and abort the chain
                 if sub_r:
                     plan.append(("tier0", sub_r[0], sub_r[1]))
                     continue

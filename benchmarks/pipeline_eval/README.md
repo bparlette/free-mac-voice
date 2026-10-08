@@ -32,6 +32,22 @@ How the real pipeline differs by path (read from `handle_command`):
 3. **About a quarter of non-commands still get through in the wake window** after fix 1. Real TV chatter is less adversarial than this
    set, and the wake word itself must be said first, but the window is the exposed path.
 
+## Later runs (same 80 + 80 phrases)
+
+| | Wake-window false triggers | Commands correct (wake window) | By tier |
+|---|---|---|---|
+| Original pipeline | 33 / 80 | 37 / 80 | 0.5b 12, regex 12, 0.5a 6, Tier 1 3 |
+| Tier 0.5b off | 22 / 80 | 39 / 80 | regex 12, 0.5a 6, Tier 1 4 |
+| + `qwen3-vl:8b-instruct` as Tier 1 | 21 / 80 | 39 / 80 | regex 12, 0.5a 6, Tier 1 3 |
+| **+ Tier 0 regex tightened (live setup)** | **13 / 80** | **39 / 80** | **0.5a 7, Tier 1 6, regex 0** |
+
+The tightened rules: an app-name slot must resolve to a real app (after dropping filler like "up", "please", "app"); a clause after a comma
+("open the door, it's me") is narration; the generic `search` / `play` / `hit` rules skip statements ("search no further", "play it cool", "hit subscribe").
+On the 400 adversarial non-commands Tier 0 false triggers fell **43 -> 3**; real commands matched at Tier 0 went **144 -> 119**, and the 25 that moved down were
+mostly ones Tier 0 had been mishandling ("close the current tab" treated as quitting an app called "current tab", "start a five minute timer" as opening an app).
+Chain steps keep the old permissive matching so "open <unknown app> and snap left" still stops at the failed first step.
+What is left in the wake window comes from the embedding tier (7) and the LLM (6), e.g. "is the timer still going", "the teacher said close your laptops".
+
 ## Caveats
 - Synthetic, adversarial set (built to contain command words). Real false-trigger rates will be lower; the wake-word false-wake rate on
   real TV audio was **not** measured.
