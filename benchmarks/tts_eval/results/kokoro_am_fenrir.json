@@ -1,0 +1,81 @@
+{
+ "engine": "kokoro_am_fenrir",
+ "threads": 1,
+ "load_s": 0.81,
+ "peak_rss_gb_total": 0.66,
+ "growth_after_imports_gb": 0.63,
+ "speed_x_realtime": 4.3,
+ "median_latency_ms_short": 450,
+ "rows": [
+  {
+   "i": 1,
+   "chars": 15,
+   "audio_s": 1.11,
+   "synth_s": 0.353,
+   "rtf": 3.1
+  },
+  {
+   "i": 2,
+   "chars": 28,
+   "audio_s": 1.62,
+   "synth_s": 0.45,
+   "rtf": 3.6
+  },
+  {
+   "i": 3,
+   "chars": 26,
+   "audio_s": 1.37,
+   "synth_s": 0.407,
+   "rtf": 3.4
+  },
+  {
+   "i": 4,
+   "chars": 44,
+   "audio_s": 2.03,
+   "synth_s": 0.526,
+   "rtf": 3.9
+  },
+  {
+   "i": 5,
+   "chars": 57,
+   "audio_s": 3.05,
+   "synth_s": 0.737,
+   "rtf": 4.1
+  },
+  {
+   "i": 6,
+   "chars": 61,
+   "audio_s": 3.37,
+   "synth_s": 0.798,
+   "rtf": 4.2
+  },
+  {
+   "i": 7,
+   "chars": 108,
+   "audio_s": 8.0,
+   "synth_s": 1.756,
+   "rtf": 4.6
+  },
+  {
+   "i": 8,
+   "chars": 135,
+   "audio_s": 8.02,
+   "synth_s": 1.767,
+   "rtf": 4.5
+  },
+  {
+   "i": 9,
+   "chars": 159,
+   "audio_s": 10.03,
+   "synth_s": 2.366,
+   "rtf": 4.2
+  },
+  {
+   "i": 10,
+   "chars": 190,
+   "audio_s": 13.06,
+   "synth_s": 2.898,
+   "rtf": 4.5
+  }
+ ]
+}

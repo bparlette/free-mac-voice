@@ -1,0 +1,59 @@
+{
+ "kokoro_af_heart": {
+  "wer_percent": 4.1,
+  "errors": 7,
+  "words": 170,
+  "worst": [
+   [
+    10,
+    6,
+    42,
+    "You're meeting with doctor. Newyen starts at 3, 45 p.m. in room 204, and it looks like traffic on the Brooklyn Bridge will add about 15 minutes to your commute, so you may want to leave by 3, 10."
+   ],
+   [
+    7,
+    1,
+    24,
+    "Here's what I found. Three results for cheap flights to Lisbon, the cheapest leaving on March 14th for $1,389."
+   ]
+  ]
+ },
+ "kokoro_am_fenrir": {
+  "wer_percent": 4.7,
+  "errors": 8,
+  "words": 170,
+  "worst": [
+   [
+    10,
+    6,
+    42,
+    "You're meeting with Doctor. Nuyin starts at 3.45 p.m. in room 204, and it looks like traffic on the Brooklyn Bridge will add about 15 minutes to your commute, so you may want to leave by 3.10."
+   ],
+   [
+    7,
+    1,
+    24,
+    "Here's what I found, three results for cheap flights to Lisbon, the cheapest leaving on March 14th for $1,389."
+   ]
+  ]
+ },
+ "paradee_int8": {
+  "wer_percent": 3.5,
+  "errors": 6,
+  "words": 170,
+  "worst": [
+   [
+    10,
+    4,
+    42,
+    "You're meeting with Dr. Nguyen starts at 3, 45 p.m. in room 204, and it looks like traffic on the Brooklyn Bridge will add about 15 minutes to your commute, so you may want to leave by 3, 10."
+   ],
+   [
+    7,
+    1,
+    24,
+    "Here's what I found. Three results for cheap flights to Lisbon, the cheapest leaving on March 14 for $389."
+   ]
+  ]
+ }
+}
