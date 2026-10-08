@@ -1,0 +1,9 @@
+404 test rows (heldout): 204 commands, 200 non-commands
+Laya (cpu): extra process memory after load ~2.75 GB (peak RSS now 2.79 GB); latency median 325 ms, p95 353 ms
+Laya zero-shot (english, cpu)
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.00   106/204  52.0%      55           43      127/200 63.5%
+  0.30    45/204  22.1%      17          142       52/200 26.0%
+  0.50    32/204  15.7%       9          163       36/200 18.0%
+  0.70    19/204   9.3%       5          180       25/200 12.5%
+  0.90     4/204   2.0%       1          199       11/200  5.5%

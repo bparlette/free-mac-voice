@@ -29,3 +29,7 @@ filter. Candidate next steps: tighten Tier 0 patterns that take free text (`open
 so the object must resolve to a real app, and replace the gate model.
 An "anti-example" filter (reject when a known non-command is closer than the best command) cut held-out false
 accepts from 13.5% to 10% at ~0 recall cost but is not adopted yet.
+
+> **Correction (see `benchmarks/finetune_eval/`):** the "command recall" above counts a command as recalled if *any*
+> action matched, not if the *correct* action matched, and the 75 leaked phrases flatter it further. Scored on the
+> correct action with leaked examples removed, the router is about 62% correct at 16% false accepts on a held-out half.

@@ -1,0 +1,51 @@
+404 test rows (heldout): 204 commands, 200 non-commands
+baseline AS DEPLOYED (examples include 75 phrases that are also in the test set: inflated)
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.78   154/204  75.5%      36           14       45/200 22.5%
+  0.82   150/204  73.5%      34           20       34/200 17.0%
+  0.86   140/204  68.6%      30           34       28/200 14.0%
+baseline LEAK-FREE: Tier0 + Tier0.5a (fair comparison)
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.70   144/204  70.6%      47           13       79/200 39.5%
+  0.74   142/204  69.6%      43           19       55/200 27.5%
+  0.78   135/204  66.2%      40           29       42/200 21.0%
+  0.82   126/204  61.8%      36           42       32/200 16.0%
+  0.86   119/204  58.3%      32           53       27/200 13.5%
+EmbeddingGemma-2 270M-class q4 ONNX (no prefix) + Tier0, leak-free: process memory growth ~0.49 GB; embed latency median 16 ms (CPU)
+EmbeddingGemma-2 270M-class q4 ONNX (no prefix) + Tier0, leak-free
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.75   143/204  70.1%      60            1      166/200 83.0%
+  0.80   137/204  67.2%      56           11       97/200 48.5%
+  0.84   131/204  64.2%      43           30       60/200 30.0%
+  0.86   120/204  58.8%      35           49       41/200 20.5%
+  0.88   114/204  55.9%      32           58       30/200 15.0%
+  0.90    91/204  44.6%      30           83       26/200 13.0%
+  0.92    74/204  36.3%      27          103       26/200 13.0%
+EmbeddingGemma-2 270M-class q4 ONNX (no prefix) alone, leak-free
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.75   137/204  67.2%      58            9      161/200 80.5%
+  0.80   126/204  61.8%      51           27       78/200 39.0%
+  0.84   113/204  55.4%      31           60       38/200 19.0%
+  0.86    96/204  47.1%      20           88       17/200  8.5%
+  0.88    87/204  42.6%      12          105        6/200  3.0%
+  0.90    63/204  30.9%      10          131        1/200  0.5%
+  0.92    41/204  20.1%       6          157        1/200  0.5%
+EmbeddingGemma-2 270M-class q4 ONNX (prefix) + Tier0, leak-free: process memory growth ~0.49 GB; embed latency median 23 ms (CPU)
+EmbeddingGemma-2 270M-class q4 ONNX (prefix) + Tier0, leak-free
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.75   149/204  73.0%      54            1      152/200 76.0%
+  0.80   144/204  70.6%      46           14       75/200 37.5%
+  0.84   138/204  67.6%      38           28       48/200 24.0%
+  0.86   125/204  61.3%      37           42       41/200 20.5%
+  0.88   116/204  56.9%      33           55       36/200 18.0%
+  0.90   106/204  52.0%      29           69       33/200 16.5%
+  0.92    93/204  45.6%      27           84       27/200 13.5%
+EmbeddingGemma-2 270M-class q4 ONNX (prefix) alone, leak-free
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.75   153/204  75.0%      45            6      142/200 71.0%
+  0.80   138/204  67.6%      36           30       55/200 27.5%
+  0.84   124/204  60.8%      22           58       24/200 12.0%
+  0.86   108/204  52.9%      18           78       17/200  8.5%
+  0.88    91/204  44.6%      12          101       12/200  6.0%
+  0.90    81/204  39.7%       8          115        9/200  4.5%
+  0.92    62/204  30.4%       6          136        2/200  1.0%

@@ -1,0 +1,45 @@
+404 test rows (heldout): 204 commands, 200 non-commands
+baseline AS DEPLOYED (examples include 75 phrases that are also in the test set: inflated)
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.78   154/204  75.5%      36           14       45/200 22.5%
+  0.82   150/204  73.5%      34           20       34/200 17.0%
+  0.86   140/204  68.6%      30           34       28/200 14.0%
+baseline LEAK-FREE: Tier0 + Tier0.5a (fair comparison)
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.70   144/204  70.6%      47           13       79/200 39.5%
+  0.74   142/204  69.6%      43           19       55/200 27.5%
+  0.78   135/204  66.2%      40           29       42/200 21.0%
+  0.82   126/204  61.8%      36           42       32/200 16.0%
+  0.86   119/204  58.3%      32           53       27/200 13.5%
+fine-tuned model [adA3]: peak process memory growth ~0.44 GB (MLX buffers on the GPU may add to this); decode latency median 45 ms, p95 57 ms
+fine-tuned Qwen2.5-0.5B-Instruct-4bit [adA3]
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.00   146/204  71.6%      38           20       39/200 19.5%
+  0.50   144/204  70.6%      23           37       30/200 15.0%
+  0.70   137/204  67.2%      21           46       19/200  9.5%
+  0.80   134/204  65.7%      19           51       19/200  9.5%
+  0.90   123/204  60.3%      16           65       17/200  8.5%
+  0.95   115/204  56.4%      13           76       11/200  5.5%
+fine-tuned Qwen2.5-0.5B-Instruct-4bit [adA3] + Tier0 first
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.50   140/204  68.6%      41           23       49/200 24.5%
+  0.70   134/204  65.7%      39           31       40/200 20.0%
+  0.80   134/204  65.7%      37           33       40/200 20.0%
+  0.90   128/204  62.7%      34           42       38/200 19.0%
+  0.95   124/204  60.8%      31           49       33/200 16.5%
+fine-tuned model [adB2]: peak process memory growth ~0.39 GB (MLX buffers on the GPU may add to this); decode latency median 45 ms, p95 56 ms
+fine-tuned Qwen2.5-0.5B-Instruct-4bit [adB2]
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.00   174/204  85.3%      19           11       16/200  8.0%
+  0.50   173/204  84.8%      17           14       15/200  7.5%
+  0.70   166/204  81.4%      12           26       10/200  5.0%
+  0.80   161/204  78.9%      12           31        9/200  4.5%
+  0.90   153/204  75.0%       8           43        7/200  3.5%
+  0.95   148/204  72.5%       4           52        7/200  3.5%
+fine-tuned Qwen2.5-0.5B-Instruct-4bit [adB2] + Tier0 first
+  thr    correct-command   wrong-command   missed   non-cmd false accepts
+  0.50   158/204  77.5%      34           12       36/200 18.0%
+  0.70   152/204  74.5%      31           21       32/200 16.0%
+  0.80   149/204  73.0%      31           24       31/200 15.5%
+  0.90   143/204  70.1%      28           33       30/200 15.0%
+  0.95   140/204  68.6%      27           37       30/200 15.0%
