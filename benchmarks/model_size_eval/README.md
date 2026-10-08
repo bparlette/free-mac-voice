@@ -16,6 +16,26 @@ the voice service running during the tests (so absolute speeds are a bit pessimi
 | Screen questions (12, assistant's `vision_ask`) | 12/12, median 9.3 s | 11/12, 5.6 s | **12/12, 4.1 s** |
 | General questions (10, assistant's answer prompt) | 8/10, **1 empty**, median **12.1 s** (194 tokens) | 7/10, **3 empty**, 8.0 s | **9/10, 0 empty, 0.3 s** (6 tokens) |
 
+## Added later: `qwen3-vl:8b-instruct` (same size as the current model, non-thinking)
+
+| | 8B thinking (current) | **8B instruct** | 4B instruct |
+|---|---|---|---|
+| Resident memory | 5.2 GB | 5.2 GB | 3.0 GB |
+| Generation speed | 16.3 tok/s | 15.8 tok/s | 27.4 tok/s |
+| Tier 1 routing, current code (of 60 commands) | 52 right, 5 wrong, 3 none | 47 right, 4 wrong, 9 none | 9 right (50 none) |
+| Routing false accepts (of 60 non-commands) | 9 | **7** | 0 (but see no-pre-fill row above: 15) |
+| Screen questions (of 12) | 12/12, 9.3 s | **12/12, 4.9 s** | 12/12, 4.1 s |
+| General questions (of 10) | 8/10, 1 empty, **12.1 s** | **9/10, 0 empty, 0.5 s** | 9/10, 0 empty, 0.3 s |
+
+- Same memory and speed as today, but general answers are about **24x faster** (0.5 s vs 12 s), screen answers about 2x faster, and no silent empty replies.
+- Routing is a bit lower under the *current* code (47 vs 52 of 60), but that code pre-fills the answer start for any `qwen3` model, which is
+  meant for thinking models. The same pre-fill collapsed the 4B instruct from 51 to 9 correct, so the 8B instruct's figure is probably also
+  understated. **The no-pre-fill run for 8B instruct was not done** (the model was removed to free disk); it is the missing test.
+- Several of its "wrong action" answers are arguably right and only look wrong against my labels: "close that tab mate" -> `close_tab`
+  (labelled `close_window`), "go to sleep" -> `sleep` (labelled `lock_screen`). Treat the routing counts as approximate.
+- Its one general-question miss was spelling "necessary" backwards.
+- Raw numbers: `results/qwen3-vl_8b-instruct.json`.
+
 ## What it says
 
 1. **The plain 4B does not work as a drop-in.** With the assistant's current Tier 1 code, 4B returns an empty `{}` for most commands
@@ -35,8 +55,6 @@ the voice service running during the tests (so absolute speeds are a bit pessimi
 
 ## Not tested / caveats
 
-- **`qwen3-vl:8b-instruct`** (6.1 GB download) was not tested. It is the obvious next candidate: same size as today with
-  (probably) none of the hidden-reasoning cost. 
 - No code change was made. Using `4b-instruct` needs `ollama_route` to skip the pre-fill for non-thinking models (e.g. only
   pre-fill when the model tag does not contain `instruct`), plus `OLLAMA_MODEL=qwen3-vl:4b-instruct`.
 - Small samples: 60+60 routing phrases from the synthetic held-out set, 12 screen questions (on screenshots of the Off The Rip

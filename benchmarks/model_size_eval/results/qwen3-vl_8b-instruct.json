@@ -1,0 +1,83 @@
+{
+ "model": "qwen3-vl:8b-instruct",
+ "generation_tok_s": 15.8,
+ "prompt_tok_s": 384,
+ "resident_gb": 5.17,
+ "routing": {
+  "commands": 60,
+  "correct": 47,
+  "wrong_action": 4,
+  "no_answer": 9,
+  "non_commands": 60,
+  "false_accepts": 7,
+  "median_s": 1.41,
+  "p95_s": 1.84,
+  "wrong_examples": [
+   [
+    "close that tab mate",
+    "close_window",
+    "close_tab"
+   ],
+   [
+    "can we go back to netflix",
+    "switch_app",
+    "nav_back"
+   ],
+   [
+    "shrink this window",
+    "minimize",
+    "center_window"
+   ],
+   [
+    "go to sleep",
+    "lock_screen",
+    "sleep"
+   ]
+  ],
+  "false_accept_examples": [
+   [
+    "photoshop, lightroom, premiere",
+    "switch_app"
+   ],
+   [
+    "the hacker typed 'open terminal' and the screen went green",
+    "open_app"
+   ],
+   [
+    "how do I lock the screen on this thing",
+    "lock"
+   ],
+   [
+    "the tv's too loud, said nobody ever in this house",
+    "tv_volume"
+   ],
+   [
+    "maximizing a window on macos is weirdly hard",
+    "maximize_window"
+   ],
+   [
+    "Emma, take a screenshot of that for me",
+    "screenshot"
+   ]
+  ]
+ },
+ "vision": {
+  "questions": 12,
+  "correct": 12,
+  "median_s": 4.9,
+  "misses": []
+ },
+ "qa": {
+  "questions": 10,
+  "correct": 9,
+  "empty_replies": 0,
+  "median_s": 0.5,
+  "median_tokens_used": 6,
+  "misses": [
+   [
+    "Spell the word necessary backwards.",
+    "ycessarni"
+   ]
+  ]
+ }
+}
