@@ -521,9 +521,14 @@ _tts_cache_dir = os.path.join(tempfile.gettempdir(), "free-voice-tts-cache")
 _say_proc = None  # in-flight speech process (say or afplay), so new speech cuts off the old
 
 
+_say_gen = 0                      # bumped by every say(); a streamed reply stops when it is no longer the latest
+_say_streams_running = 0          # sentence-by-sentence replies whose thread has not finished yet
+_say_lock = threading.Lock()
+
+
 def is_speaking() -> bool:
     """Return True if TTS audio playback is currently in flight."""
-    return _say_proc is not None and _say_proc.poll() is None
+    return _say_streams_running > 0 or (_say_proc is not None and _say_proc.poll() is None)
 
 
 # Curated voice catalog for Kokoro
@@ -666,21 +671,116 @@ def _synthesize_kokoro(text: str, voice: str | None = None) -> str | None:
         return None
 
 
+# Long replies are spoken sentence by sentence: the wait before the first word then stays ~1 s however long the reply is
+# (benchmarks/tts_eval/bench_ttfa.py: a 200-word reply took 13 s to synthesize whole, 1.1 s for its first sentence).
+VOICE_TTS_STREAM = os.environ.get("VOICE_TTS_STREAM", "1").strip().lower() in ("1", "true", "yes")
+_TTS_STREAM_MIN_CHARS = 160
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_for_streaming(text: str, min_chunk: int = 40) -> list[str]:
+    """Split a reply into sentences, joining fragments shorter than `min_chunk` characters onto the next one."""
+    chunks: list[str] = []
+    carry = ""
+    for sent in _SENTENCE_SPLIT_RE.split(text.strip()):
+        sent = sent.strip()
+        if not sent:
+            continue
+        carry = f"{carry} {sent}".strip()
+        if len(carry) >= min_chunk:
+            chunks.append(carry)
+            carry = ""
+    if carry:
+        if chunks and len(carry) < min_chunk:
+            chunks[-1] = f"{chunks[-1]} {carry}"
+        else:
+            chunks.append(carry)
+    return chunks
+
+
+def _kokoro_temp_wav(text: str, voice: str | None) -> str | None:
+    kokoro = _get_kokoro()
+    if kokoro is None:
+        return None
+    try:
+        import soundfile as sf
+        os.makedirs(_tts_cache_dir, exist_ok=True)
+        fd, path = tempfile.mkstemp(prefix="stream-", suffix=".wav", dir=_tts_cache_dir)
+        os.close(fd)
+        samples, sample_rate = kokoro.create(text, voice=voice or VOICE_KOKORO_VOICE, speed=1.0, lang="en-us")
+        sf.write(path, samples, sample_rate)
+        return path
+    except Exception as e:  # noqa: BLE001
+        log(f"Kokoro synthesis error ({e})")
+        return None
+
+
+def _say_streamed(chunks: list[str], voice: str | None, blocking: bool) -> None:
+    """Speak `chunks` in order: synthesize the first, play it, and synthesize the next one while it plays.
+    A later say() bumps `_say_gen` and terminates the current afplay, which ends this loop."""
+    global _say_gen, _say_streams_running
+    with _say_lock:
+        _say_gen += 1
+        gen = _say_gen
+        _say_streams_running += 1
+
+    def run() -> None:
+        global _say_proc, _say_streams_running
+        wav = _kokoro_temp_wav(chunks[0], voice)
+        try:
+            for i in range(len(chunks)):
+                if wav is None or gen != _say_gen:
+                    break
+                with _say_lock:
+                    if gen != _say_gen:
+                        break
+                    proc = subprocess.Popen(["afplay", wav], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    _say_proc = proc
+                nxt = _kokoro_temp_wav(chunks[i + 1], voice) if i + 1 < len(chunks) else None
+                proc.wait()
+                try:
+                    os.remove(wav)
+                except OSError:
+                    pass
+                wav = nxt
+        finally:
+            if wav:
+                try:
+                    os.remove(wav)
+                except OSError:
+                    pass
+            with _say_lock:
+                _say_streams_running -= 1
+
+    t = threading.Thread(target=run, daemon=True, name="say-stream")
+    t.start()
+    if blocking:
+        t.join()
+
+
 def say(text: str, blocking: bool = False, voice: str | None = None) -> None:
     """Speak text. Default engine is Kokoro (neural speech) with instant fallback
     to macOS native `say`. Non-blocking by default: fire-and-forget Popen so the
     action feels instant instead of waiting ~2s for the voice to finish. Any
     in-flight speech is terminated first so rapid commands don't talk over each other.
     Pass blocking=True when the full prompt must be heard before continuing."""
-    global _say_proc
+    global _say_proc, _say_gen
     log(f"say: {text}")
     notify_hud(text, "action")
     if DRY_RUN or VOICE_QUIET_MODE:
         return
     try:
-        if _say_proc is not None and _say_proc.poll() is None:
-            _say_proc.terminate()
-            _say_proc = None
+        with _say_lock:
+            _say_gen += 1   # any streamed reply still speaking stops
+            if _say_proc is not None and _say_proc.poll() is None:
+                _say_proc.terminate()
+                _say_proc = None
+
+        if VOICE_TTS_ENGINE == "kokoro" and VOICE_TTS_STREAM and len(text) >= _TTS_STREAM_MIN_CHARS and _get_kokoro() is not None:
+            chunks = _split_for_streaming(text)
+            if len(chunks) > 1:
+                _say_streamed(chunks, voice, blocking)
+                return
 
         if VOICE_TTS_ENGINE == "kokoro":
             wav = _synthesize_kokoro(text, voice=voice)

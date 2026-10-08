@@ -7,7 +7,7 @@
 [![ASR Engine](https://img.shields.io/badge/ASR-Phonon--2%20(164MB%20MLX)-orange.svg)](https://huggingface.co/FermionResearch/Phonon-2)
 [![TTS Engine](https://img.shields.io/badge/TTS-Kokoro--82M%20(Neural)-purple.svg)](docs/index.html)
 [![Hardware](https://img.shields.io/badge/accelerated-Metal%20GPU%20%2F%20MLX-green.svg)](https://developer.apple.com/metal/)
-[![Tests](https://img.shields.io/badge/tests-223%20passing%20(100%25)-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-412%20passing-brightgreen.svg)](tests/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)](#privacy--local-by-default)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-full%20ledger-informational.svg)](benchmarks/README.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -548,7 +548,7 @@ Non-commands that the gate rejects cost about 0.55 s median. `tev1:4b` as the Ti
 | 100 words | 6.91 s | 1.15 s |
 | 200 words | 13.4 s | 1.14 s |
 
-Speaking sentence by sentence would keep the wait near 1.2 s for any length. Not implemented yet.
+Speaking sentence by sentence keeps the wait near 1.2 s for any length. **Implemented 2026-10-08** (`VOICE_TTS_STREAM`, replies of 160+ characters with more than one sentence).
 
 **Replay of logged utterances** (`finetune_eval/replay_logged_utterances.py`): only 59 unique real utterances were in the log (most rows are ambient). At the 0.82 threshold both embedding backends accepted 15 (14 of them the same ones; 13 of those with the same action) and agreed on the top action for 51 of 59. Mean cosine 0.754 (ONNX) vs 0.751 (Ollama). Small sample, but no sign the ONNX default behaves differently on real speech-to-text output.
 <!-- AUTO:ledger-standings:END -->
@@ -617,7 +617,6 @@ Speaking sentence by sentence would keep the wait near 1.2 s for any length. Not
 
 <!-- AUTO:ledger-backlog:START -->
 1. Move the command gate to `tev1:4b` (section J: wake-window correct 40 -> 52 of 80, false triggers 13 -> 9; +3.6 GB memory).
-2. Speak long replies sentence by sentence (section J: up to 13 s wait before the first word on a 200-word reply).
 3. Liquid d1 models and Amazon Strands Decider 2B: need a decision-capable runtime (llama.cpp development build) or the Strands Python stack.
 4. Real-audio false-wake test (hours of TV and podcasts) and the live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`); both need a working microphone.
 5. Compositor load at true idle: plain 1080p vs 4K-backed mode, wallpaper, Safari content (needs display changes and your OK).
@@ -674,7 +673,7 @@ Control Samsung Smart TV power, inputs, volume, and playback over Wi-Fi:
 The test suite stubs all hardware (no mic, TV, or live Ollama instance required) for instant verification:
 
 ```bash
-# Run all 213 hermetic unit tests (completes in < 1 second):
+# Run the full unit-test suite (412 tests, about 4-5 minutes):
 python3 -m unittest discover -s tests
 
 # Run performance benchmarks:
