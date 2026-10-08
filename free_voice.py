@@ -6299,6 +6299,20 @@ def _init_intent_embeddings() -> None:
             log(f"Tier 0.5a using {name} ({len(_PRECOMPUTED_INTENTS)} examples, dim={neural.shape[1]})")
 
 
+_POLITE_LEAD_RE = re.compile(
+    r"^(?:(?:hey|ok|okay)\s+)?(?:mac\s+)?"
+    r"(?:(?:(?:can|could|would|will)\s+you(?:\s+please)?|please|go ahead and|"
+    r"i(?:'d|\s+would)?\s+(?:like|want|need)\s+you\s+to|i\s+want\s+to)\s+)+", re.IGNORECASE)
+_POLITE_TAIL_RE = re.compile(
+    r"(?:\s+(?:please|for me|thanks|thank you|now|right now|real quick|if you can))+[.!?]*$", re.IGNORECASE)
+
+
+def _strip_politeness(text: str) -> str:
+    """'can you launch chrome please' -> 'launch chrome': drop polite lead-ins and filler so the verb/app can be found."""
+    out = _POLITE_TAIL_RE.sub("", _POLITE_LEAD_RE.sub("", text.strip()))
+    return out.strip(" .!?,") or text.strip()
+
+
 def _extract_intent_params(intent: str, text: str) -> dict:
     params = {}
     if intent == "draw_ascii":
@@ -6316,7 +6330,8 @@ def _extract_intent_params(intent: str, text: str) -> dict:
     elif intent in ("open_app", "switch_app", "quit_app", "kill_app", "minimize", "hide"):
         app = resolve_app(text, prefer_running=(intent == "switch_app"))
         if not app:
-            sub = re.sub(r"^(?:open|launch|start|switch to|focus|quit|close|kill|minimize|hide)\s+(?:the\s+)?", "", text, flags=re.I)
+            plain = _strip_politeness(text)
+            sub = re.sub(r"^(?:open|launch|start(?:\s+up)?|fire\s+up|pull\s+up|bring\s+up|switch to|focus(?:\s+on)?|quit|close|kill|minimize|hide)\s+(?:the\s+)?", "", plain, flags=re.I)
             app = resolve_app(sub, prefer_running=(intent == "switch_app"))
         params["app"] = app or ""
     elif intent == "set_volume":
