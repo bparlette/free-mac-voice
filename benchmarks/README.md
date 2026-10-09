@@ -337,7 +337,7 @@ The resolution backing makes no difference; 60 Hz saves about 4 points. The 40-4
 
 ## Backlog (priority order)
 
-1. Grow `tier05_negatives.txt` and the example phrases from real misses (section M: the classifier gets better with every labelled phrase).
+1. Label real misses: `python3 scripts/review_attempts.py` lists phrases the assistant could not route (or routed via a model); `--apply N:action` / `N:none` saves your answers to a private file (`~/.free-voice/tier05_personal.jsonl`, never committed) that the classifier trains on at startup (section M).
 2. Apple SpeechAnalyzer as the recognizer (section K: lower error and faster than Whisper base.en on synthetic speech); test on a real voice first.
 3. Hours of real TV and podcast audio for the false-wake rate, and the live ONNX-vs-Ollama comparison (`TIER05_EMBED_BACKEND=compare`, then read the log).
 4. Find what keeps WindowServer at 40-45% at idle (section O).

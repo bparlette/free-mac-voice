@@ -142,6 +142,7 @@ TIER05_EMBED_THRESHOLD = float(os.environ.get("TIER05_EMBED_THRESHOLD", "0.82"))
 # 52 -> 58 of 80 for false triggers 9 -> 10 of 80 (ledger section M); on the embedding tier alone 70.1% -> ~71% correct at 16% -> 11.5% false accepts.
 TIER05_CLASSIFIER = os.environ.get("TIER05_CLASSIFIER", "1").strip().lower() in ("1", "true", "yes")
 TIER05_CLASSIFIER_MIN_CONF = float(os.environ.get("TIER05_CLASSIFIER_MIN_CONF", "0.5"))
+TIER05_PERSONAL_FILE = os.environ.get("TIER05_PERSONAL_FILE", os.path.join(os.path.expanduser("~"), ".free-voice", "tier05_personal.jsonl"))
 TIER05_CLASSIFIER_MIN_COS = float(os.environ.get("TIER05_CLASSIFIER_MIN_COS", "0.7"))   # also required: cosine to the closest example
 _EMBED_PREFIX = "task: classification | query: "
 # Tier 0.5a embedding backend: "onnx" (default: in-process 4-bit EmbeddingGemma via onnxruntime, ~6 ms and ~0.1 GB, same
@@ -6576,16 +6577,18 @@ def _train_tier05_classifier() -> None:
         neg = clf.read_negatives(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tier05_negatives.txt"))
         if not neg:
             return
-        neg_emb = _onnx_embed(neg) if _use_onnx() else _ollama_embed(neg)
-        if neg_emb is None or neg_emb.shape[1] != _PRECOMPUTED_MATRIX.shape[1]:
-            return
         labels = sorted({a for a, _ in _PRECOMPUTED_INTENTS}) + [clf.NONE]
         idx = {a: i for i, a in enumerate(labels)}
-        X = np.vstack([_PRECOMPUTED_MATRIX, neg_emb])
-        y = np.array([idx[a] for a, _ in _PRECOMPUTED_INTENTS] + [idx[clf.NONE]] * len(neg))
+        personal = [(t, a) for t, a in clf.read_personal(TIER05_PERSONAL_FILE) if a in idx]   # phrases the user confirmed (private, never in the repo)
+        extra_texts = neg + [t for t, _ in personal]
+        extra = _onnx_embed(extra_texts) if _use_onnx() else _ollama_embed(extra_texts)
+        if extra is None or extra.shape[1] != _PRECOMPUTED_MATRIX.shape[1]:
+            return
+        X = np.vstack([_PRECOMPUTED_MATRIX, extra])
+        y = np.array([idx[a] for a, _ in _PRECOMPUTED_INTENTS] + [idx[clf.NONE]] * len(neg) + [idx[a] for _, a in personal])
         W, b = clf.train(X, y, len(labels))
         _T05_CLF = (W, b, labels)
-        log(f"Tier 0.5a classifier trained ({len(_PRECOMPUTED_INTENTS)} examples + {len(neg)} non-commands, {len(labels) - 1} actions)")
+        log(f"Tier 0.5a classifier trained ({len(_PRECOMPUTED_INTENTS)} examples + {len(neg)} non-commands + {len(personal)} personal, {len(labels) - 1} actions)")
     except Exception as e:  # noqa: BLE001
         log(f"Tier 0.5a classifier unavailable ({e}); using nearest-example matching")
 

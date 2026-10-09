@@ -7,7 +7,7 @@
 [![ASR Engine](https://img.shields.io/badge/ASR-Phonon--2%20(164MB%20MLX)-orange.svg)](https://huggingface.co/FermionResearch/Phonon-2)
 [![TTS Engine](https://img.shields.io/badge/TTS-Kokoro--82M%20(Neural)-purple.svg)](docs/index.html)
 [![Hardware](https://img.shields.io/badge/accelerated-Metal%20GPU%20%2F%20MLX-green.svg)](https://developer.apple.com/metal/)
-[![Tests](https://img.shields.io/badge/tests-420%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-423%20passing-brightgreen.svg)](tests/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)](#privacy--local-by-default)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-full%20ledger-informational.svg)](benchmarks/README.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -719,7 +719,7 @@ The resolution backing makes no difference; 60 Hz saves about 4 points. The 40-4
 <summary><b>What we will benchmark next (priority order)</b></summary>
 
 <!-- AUTO:ledger-backlog:START -->
-1. Grow `tier05_negatives.txt` and the example phrases from real misses (section M: the classifier gets better with every labelled phrase).
+1. Label real misses: `python3 scripts/review_attempts.py` lists phrases the assistant could not route (or routed via a model); `--apply N:action` / `N:none` saves your answers to a private file (`~/.free-voice/tier05_personal.jsonl`, never committed) that the classifier trains on at startup (section M).
 2. Apple SpeechAnalyzer as the recognizer (section K: lower error and faster than Whisper base.en on synthetic speech); test on a real voice first.
 3. Hours of real TV and podcast audio for the false-wake rate, and the live ONNX-vs-Ollama comparison (`TIER05_EMBED_BACKEND=compare`, then read the log).
 4. Find what keeps WindowServer at 40-45% at idle (section O).
@@ -777,7 +777,7 @@ Control Samsung Smart TV power, inputs, volume, and playback over Wi-Fi:
 The test suite stubs all hardware (no mic, TV, or live Ollama instance required) for instant verification:
 
 ```bash
-# Run the full unit-test suite (420 tests, about 4-5 minutes):
+# Run the full unit-test suite (423 tests, about 1-5 minutes):
 python3 -m unittest discover -s tests
 
 # Run performance benchmarks:

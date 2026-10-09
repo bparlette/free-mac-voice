@@ -34,6 +34,25 @@ def _softmax(Z: np.ndarray) -> np.ndarray:
     return E / E.sum(axis=-1, keepdims=True)
 
 
+def read_personal(path: str) -> list[tuple[str, str]]:
+    """Phrases the user confirmed, one JSON object per line: {"text": "...", "action": "<router action or none>"}. Missing file -> []."""
+    import json
+    out = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for ln in f:
+                try:
+                    d = json.loads(ln)
+                    t, a = str(d["text"]).strip(), str(d["action"]).strip()
+                except (ValueError, KeyError, TypeError):
+                    continue
+                if t and a:
+                    out.append((t, a))
+    except OSError:
+        pass
+    return out
+
+
 def read_negatives(path: str) -> list[str]:
     try:
         with open(path, encoding="utf-8") as f:
