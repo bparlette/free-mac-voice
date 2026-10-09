@@ -7,12 +7,240 @@
   "threshold": 0.7450000000000003,
   "false_accept_pct": 16.0
  },
+ "classifier A (examples + negatives) curve": {
+  "conf>=0.05, nearest cosine>=0.0": [
+   76.5,
+   15.5
+  ],
+  "conf>=0.2, nearest cosine>=0.0": [
+   76.0,
+   15.5
+  ],
+  "conf>=0.3, nearest cosine>=0.0": [
+   75.0,
+   14.5
+  ],
+  "conf>=0.4, nearest cosine>=0.0": [
+   74.0,
+   12.5
+  ],
+  "conf>=0.5, nearest cosine>=0.0": [
+   71.1,
+   11.5
+  ],
+  "conf>=0.6, nearest cosine>=0.0": [
+   67.6,
+   9.0
+  ],
+  "conf>=0.7, nearest cosine>=0.0": [
+   66.2,
+   7.0
+  ],
+  "conf>=0.05, nearest cosine>=0.5": [
+   76.5,
+   15.5
+  ],
+  "conf>=0.2, nearest cosine>=0.5": [
+   76.0,
+   15.5
+  ],
+  "conf>=0.3, nearest cosine>=0.5": [
+   75.0,
+   14.5
+  ],
+  "conf>=0.4, nearest cosine>=0.5": [
+   74.0,
+   12.5
+  ],
+  "conf>=0.5, nearest cosine>=0.5": [
+   71.1,
+   11.5
+  ],
+  "conf>=0.6, nearest cosine>=0.5": [
+   67.6,
+   9.0
+  ],
+  "conf>=0.7, nearest cosine>=0.5": [
+   66.2,
+   7.0
+  ],
+  "conf>=0.05, nearest cosine>=0.6": [
+   76.5,
+   15.0
+  ],
+  "conf>=0.2, nearest cosine>=0.6": [
+   76.0,
+   15.0
+  ],
+  "conf>=0.3, nearest cosine>=0.6": [
+   75.0,
+   14.0
+  ],
+  "conf>=0.4, nearest cosine>=0.6": [
+   74.0,
+   12.5
+  ],
+  "conf>=0.5, nearest cosine>=0.6": [
+   71.1,
+   11.5
+  ],
+  "conf>=0.6, nearest cosine>=0.6": [
+   67.6,
+   9.0
+  ],
+  "conf>=0.7, nearest cosine>=0.6": [
+   66.2,
+   7.0
+  ],
+  "conf>=0.05, nearest cosine>=0.7": [
+   74.5,
+   11.5
+  ],
+  "conf>=0.2, nearest cosine>=0.7": [
+   74.0,
+   11.5
+  ],
+  "conf>=0.3, nearest cosine>=0.7": [
+   73.5,
+   11.0
+  ],
+  "conf>=0.4, nearest cosine>=0.7": [
+   73.0,
+   10.0
+  ],
+  "conf>=0.5, nearest cosine>=0.7": [
+   70.6,
+   9.0
+  ],
+  "conf>=0.6, nearest cosine>=0.7": [
+   67.6,
+   8.0
+  ],
+  "conf>=0.7, nearest cosine>=0.7": [
+   66.2,
+   7.0
+  ]
+ },
  "classifier A (examples + negatives)": {
   "correct_pct": 76.5,
   "threshold": 0.05,
   "false_accept_pct": 15.5,
   "train_rows": 289,
   "train_s": 0.1
+ },
+ "classifier B (+ other half of test set) curve": {
+  "conf>=0.05, nearest cosine>=0.0": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.2, nearest cosine>=0.0": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.3, nearest cosine>=0.0": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.4, nearest cosine>=0.0": [
+   83.3,
+   8.0
+  ],
+  "conf>=0.5, nearest cosine>=0.0": [
+   82.8,
+   7.5
+  ],
+  "conf>=0.6, nearest cosine>=0.0": [
+   82.4,
+   5.0
+  ],
+  "conf>=0.7, nearest cosine>=0.0": [
+   77.9,
+   5.0
+  ],
+  "conf>=0.05, nearest cosine>=0.5": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.2, nearest cosine>=0.5": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.3, nearest cosine>=0.5": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.4, nearest cosine>=0.5": [
+   83.3,
+   8.0
+  ],
+  "conf>=0.5, nearest cosine>=0.5": [
+   82.8,
+   7.5
+  ],
+  "conf>=0.6, nearest cosine>=0.5": [
+   82.4,
+   5.0
+  ],
+  "conf>=0.7, nearest cosine>=0.5": [
+   77.9,
+   5.0
+  ],
+  "conf>=0.05, nearest cosine>=0.6": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.2, nearest cosine>=0.6": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.3, nearest cosine>=0.6": [
+   83.8,
+   8.0
+  ],
+  "conf>=0.4, nearest cosine>=0.6": [
+   83.3,
+   8.0
+  ],
+  "conf>=0.5, nearest cosine>=0.6": [
+   82.8,
+   7.5
+  ],
+  "conf>=0.6, nearest cosine>=0.6": [
+   82.4,
+   5.0
+  ],
+  "conf>=0.7, nearest cosine>=0.6": [
+   77.9,
+   5.0
+  ],
+  "conf>=0.05, nearest cosine>=0.7": [
+   80.4,
+   7.5
+  ],
+  "conf>=0.2, nearest cosine>=0.7": [
+   80.4,
+   7.5
+  ],
+  "conf>=0.3, nearest cosine>=0.7": [
+   80.4,
+   7.5
+  ],
+  "conf>=0.4, nearest cosine>=0.7": [
+   79.9,
+   7.5
+  ],
+  "conf>=0.5, nearest cosine>=0.7": [
+   79.9,
+   7.0
+  ],
+  "conf>=0.6, nearest cosine>=0.7": [
+   79.9,
+   5.0
+  ],
+  "conf>=0.7, nearest cosine>=0.7": [
+   76.5,
+   5.0
+  ]
  },
  "classifier B (+ other half of test set)": {
   "correct_pct": 83.8,

@@ -7,7 +7,7 @@
 [![ASR Engine](https://img.shields.io/badge/ASR-Phonon--2%20(164MB%20MLX)-orange.svg)](https://huggingface.co/FermionResearch/Phonon-2)
 [![TTS Engine](https://img.shields.io/badge/TTS-Kokoro--82M%20(Neural)-purple.svg)](docs/index.html)
 [![Hardware](https://img.shields.io/badge/accelerated-Metal%20GPU%20%2F%20MLX-green.svg)](https://developer.apple.com/metal/)
-[![Tests](https://img.shields.io/badge/tests-412%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-420%20passing-brightgreen.svg)](tests/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)](#privacy--local-by-default)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-full%20ledger-informational.svg)](benchmarks/README.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -596,6 +596,19 @@ Design: [`docs/orchestrator-design.md`](../docs/orchestrator-design.md). One hub
 | Hark Handoff (web) | Own web app | Browser only; research preview / waitlist | Access for this account not confirmed |
 
 To measure once it runs: phone message to first reply, tasks finished without help per worker, approvals per task, tasks that touched the wrong folder (must be 0).
+
+### M. Trained classifier in the live Tier 0.5a (2026-10-08, applied)
+
+Pipeline run (4B instruct as Tier 1, `tev1:4b` gate, Tier 0.5b off; 80 commands + 80 non-commands):
+
+| Tier 0.5a | After wake word: correct | Wake window: correct | Wake window: false triggers |
+|---|---|---|---|
+| Nearest example (before) | 55/80 | 52/80 | 9/80 |
+| Classifier, confidence >= 0.4 | 61/80 | 58/80 | 12/80 |
+| **Classifier, confidence >= 0.5 (live)** | 61/80 | 58/80 | **10/80** |
+| Classifier, confidence >= 0.6 | 61/80 | 58/80 | 10/80 |
+
+Live defaults: `TIER05_CLASSIFIER=1`, `TIER05_CLASSIFIER_MIN_CONF=0.5`, `TIER05_CLASSIFIER_MIN_COS=0.7` (also needs a close example). The classifier trains at startup in under a second from the router's examples plus `tier05_negatives.txt`; with `TIER05_CLASSIFIER=0` or the hashing fallback the old nearest-example matching is used.
 <!-- AUTO:ledger-standings:END -->
 
 <details>
@@ -662,7 +675,7 @@ To measure once it runs: phone message to first reply, tasks finished without he
 <summary><b>What we will benchmark next (priority order)</b></summary>
 
 <!-- AUTO:ledger-backlog:START -->
-1. Replace the nearest-example embedding tier with the trained classifier (section K: 70.1% -> 76.5% correct at the same false-accept level, more with more labelled data).
+1. Grow `tier05_negatives.txt` and the example phrases from real misses (section M: the classifier gets better with every labelled phrase).
 2. Apple SpeechAnalyzer as the recognizer (section K: lower error and faster than Whisper base.en on synthetic speech); test on real voice first.
 3. Liquid d1 models and Amazon Strands Decider 2B: need a decision-capable runtime (llama.cpp development build) or the Strands Python stack.
 4. Real-audio false-wake test (hours of TV and podcasts) and the live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`); both need a working microphone.
@@ -720,7 +733,7 @@ Control Samsung Smart TV power, inputs, volume, and playback over Wi-Fi:
 The test suite stubs all hardware (no mic, TV, or live Ollama instance required) for instant verification:
 
 ```bash
-# Run the full unit-test suite (412 tests, about 4-5 minutes):
+# Run the full unit-test suite (420 tests, about 4-5 minutes):
 python3 -m unittest discover -s tests
 
 # Run performance benchmarks:

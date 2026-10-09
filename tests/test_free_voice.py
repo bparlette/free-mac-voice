@@ -29,6 +29,8 @@ class Base(unittest.TestCase):
         # these tests exercise the Ollama/hashing Tier 0.5a path; the ONNX backend has its own tests (test_onnx_embed.py)
         self.addCleanup(setattr, fv, "TIER05_EMBED_BACKEND", fv.TIER05_EMBED_BACKEND)
         fv.TIER05_EMBED_BACKEND = "ollama"
+        for patcher in (mock.patch.object(fv, "TIER05_CLASSIFIER", False), mock.patch.object(fv, "_T05_CLF", None)):
+            patcher.start(); self.addCleanup(patcher.stop)   # the classifier has its own tests (test_tier05_classifier.py)
         self._dry = fv.DRY_RUN
         fv.DRY_RUN = True
         self.said = []

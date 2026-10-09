@@ -237,6 +237,19 @@ Design: [`docs/orchestrator-design.md`](../docs/orchestrator-design.md). One hub
 
 To measure once it runs: phone message to first reply, tasks finished without help per worker, approvals per task, tasks that touched the wrong folder (must be 0).
 
+### M. Trained classifier in the live Tier 0.5a (2026-10-08, applied)
+
+Pipeline run (4B instruct as Tier 1, `tev1:4b` gate, Tier 0.5b off; 80 commands + 80 non-commands):
+
+| Tier 0.5a | After wake word: correct | Wake window: correct | Wake window: false triggers |
+|---|---|---|---|
+| Nearest example (before) | 55/80 | 52/80 | 9/80 |
+| Classifier, confidence >= 0.4 | 61/80 | 58/80 | 12/80 |
+| **Classifier, confidence >= 0.5 (live)** | 61/80 | 58/80 | **10/80** |
+| Classifier, confidence >= 0.6 | 61/80 | 58/80 | 10/80 |
+
+Live defaults: `TIER05_CLASSIFIER=1`, `TIER05_CLASSIFIER_MIN_CONF=0.5`, `TIER05_CLASSIFIER_MIN_COS=0.7` (also needs a close example). The classifier trains at startup in under a second from the router's examples plus `tier05_negatives.txt`; with `TIER05_CLASSIFIER=0` or the hashing fallback the old nearest-example matching is used.
+
 ## Recommendations
 
 | # | Recommendation | Evidence | Status |
@@ -280,7 +293,7 @@ To measure once it runs: phone message to first reply, tasks finished without he
 
 ## Backlog (priority order)
 
-1. Replace the nearest-example embedding tier with the trained classifier (section K: 70.1% -> 76.5% correct at the same false-accept level, more with more labelled data).
+1. Grow `tier05_negatives.txt` and the example phrases from real misses (section M: the classifier gets better with every labelled phrase).
 2. Apple SpeechAnalyzer as the recognizer (section K: lower error and faster than Whisper base.en on synthetic speech); test on real voice first.
 3. Liquid d1 models and Amazon Strands Decider 2B: need a decision-capable runtime (llama.cpp development build) or the Strands Python stack.
 4. Real-audio false-wake test (hours of TV and podcasts) and the live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`); both need a working microphone.

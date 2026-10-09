@@ -137,6 +137,12 @@ OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "embeddinggemma").stri
 # 0.82 from benchmarks/intent_eval (400 adversarial non-commands, leak-free): beats the old 0.78 on
 # both recall (77.5% vs 72.6%) and false accepts (6.5% vs 9.0%) with the expanded example set.
 TIER05_EMBED_THRESHOLD = float(os.environ.get("TIER05_EMBED_THRESHOLD", "0.82"))
+# Tier 0.5a decides with a small trained classifier (examples + non-command phrases) instead of nearest-example cosine when the neural
+# embedder is active. Defaults are the benchmarked operating point: in the full pipeline (4B instruct + tev1:4b gate) wake-window correct commands
+# 52 -> 58 of 80 for false triggers 9 -> 10 of 80 (ledger section M); on the embedding tier alone 70.1% -> ~71% correct at 16% -> 11.5% false accepts.
+TIER05_CLASSIFIER = os.environ.get("TIER05_CLASSIFIER", "1").strip().lower() in ("1", "true", "yes")
+TIER05_CLASSIFIER_MIN_CONF = float(os.environ.get("TIER05_CLASSIFIER_MIN_CONF", "0.5"))
+TIER05_CLASSIFIER_MIN_COS = float(os.environ.get("TIER05_CLASSIFIER_MIN_COS", "0.7"))   # also required: cosine to the closest example
 _EMBED_PREFIX = "task: classification | query: "
 # Tier 0.5a embedding backend: "onnx" (default: in-process 4-bit EmbeddingGemma via onnxruntime, ~6 ms and ~0.1 GB, same
 # accuracy as the Ollama copy; fetch it once with scripts/fetch_onnx_embedder.py), "ollama" (the previous behaviour), or
@@ -6460,6 +6466,7 @@ def _init_intent_embeddings() -> None:
             _PRECOMPUTED_MATRIX, _EMBED_NEURAL = neural, True
             name = "ONNX EmbeddingGemma (in-process)" if _use_onnx() else OLLAMA_EMBED_MODEL
             log(f"Tier 0.5a using {name} ({len(_PRECOMPUTED_INTENTS)} examples, dim={neural.shape[1]})")
+            _train_tier05_classifier()
 
 
 _POLITE_LEAD_RE = re.compile(
@@ -6554,6 +6561,33 @@ def _extract_intent_params(intent: str, text: str) -> dict:
 
 
 _t05_last = None  # (best action, best cosine) of the latest neural query, read by the compare-mode shadow run
+_T05_CLF = None   # (W, b, labels) once the Tier 0.5a classifier has been trained on the neural embeddings
+
+
+def _train_tier05_classifier() -> None:
+    """Train the classifier on the neural example embeddings plus tier05_negatives.txt. Any failure leaves nearest-example matching in place."""
+    global _T05_CLF
+    _T05_CLF = None
+    if not TIER05_CLASSIFIER or not _EMBED_NEURAL:
+        return
+    try:
+        import numpy as np
+        import tier05_classifier as clf
+        neg = clf.read_negatives(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tier05_negatives.txt"))
+        if not neg:
+            return
+        neg_emb = _onnx_embed(neg) if _use_onnx() else _ollama_embed(neg)
+        if neg_emb is None or neg_emb.shape[1] != _PRECOMPUTED_MATRIX.shape[1]:
+            return
+        labels = sorted({a for a, _ in _PRECOMPUTED_INTENTS}) + [clf.NONE]
+        idx = {a: i for i, a in enumerate(labels)}
+        X = np.vstack([_PRECOMPUTED_MATRIX, neg_emb])
+        y = np.array([idx[a] for a, _ in _PRECOMPUTED_INTENTS] + [idx[clf.NONE]] * len(neg))
+        W, b = clf.train(X, y, len(labels))
+        _T05_CLF = (W, b, labels)
+        log(f"Tier 0.5a classifier trained ({len(_PRECOMPUTED_INTENTS)} examples + {len(neg)} non-commands, {len(labels) - 1} actions)")
+    except Exception as e:  # noqa: BLE001
+        log(f"Tier 0.5a classifier unavailable ({e}); using nearest-example matching")
 
 
 def _tier05_embed_match_primary(text: str, threshold: float = 0.75) -> tuple[str, dict, float] | None:
@@ -6581,6 +6615,20 @@ def _tier05_embed_match_primary(text: str, threshold: float = 0.75) -> tuple[str
     best_sim = float(sims[best_idx])
     if _EMBED_NEURAL:
         _t05_last = (_PRECOMPUTED_INTENTS[best_idx][0], best_sim)
+    if _EMBED_NEURAL and _T05_CLF is not None:
+        import tier05_classifier as clf
+        W, b, labels = _T05_CLF
+        probs = clf.predict(W, b, qv)
+        k = int(np.argmax(probs))
+        action, conf = labels[k], float(probs[k])
+        if action != clf.NONE and conf >= TIER05_CLASSIFIER_MIN_CONF and best_sim >= TIER05_CLASSIFIER_MIN_COS:
+            params = _extract_intent_params(action, text)
+            if action in ("open_app", "switch_app", "quit_app", "kill_app", "minimize", "hide") and not params.get("app"):
+                log(f"Tier 0.5a skip: {action} classified for {text!r} but no app resolved (p={conf:.2f})")
+                return None
+            return action, params, conf
+        log(f"Tier 0.5a miss: {text!r} classifier={action} p={conf:.2f} nearest={best_sim:.2f}")
+        return None
     if best_sim >= threshold:
         action, _ = _PRECOMPUTED_INTENTS[best_idx]
         params = _extract_intent_params(action, text)

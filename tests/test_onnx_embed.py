@@ -20,6 +20,9 @@ def _fake_matrix(seed, dim=8):
 
 class _Base(unittest.TestCase):
     def setUp(self):
+        # these tests are about the embedding backends and count embed calls: they exercise nearest-example matching (the classifier has its own tests)
+        for patcher in (mock.patch.object(fv, "TIER05_CLASSIFIER", False), mock.patch.object(fv, "_T05_CLF", None)):
+            patcher.start(); self.addCleanup(patcher.stop)
         self._saved = (fv._PRECOMPUTED_MATRIX, fv._PRECOMPUTED_INTENTS, fv._EMBED_NEURAL, fv._embed_last_try,
                        fv._SHADOW_MATRIX, fv._warned_onnx_missing)
         fv._PRECOMPUTED_MATRIX, fv._PRECOMPUTED_INTENTS = None, []

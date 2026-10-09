@@ -39,6 +39,20 @@ def train(X, y, n_cls, l2=1e-3, lr=0.5, epochs=400, temp=20.0):
 def predict(W, b, X, temp=20.0):
     Z = temp * (X @ W) + b; Z -= Z.max(1, keepdims=True); P = np.exp(Z); return P / P.sum(1, keepdims=True)
 
+def curve(acts, confs, floors, nearest, ths=(0.05, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)):
+    """Operating points: (confidence threshold, minimum cosine to the nearest example) -> correct %, non-commands acted on %."""
+    nc = sum(r["is_command"] for r in rows); nn = len(rows) - nc; table = {}
+    for fl in floors:
+        for th in ths:
+            right = fa = 0
+            for r, a, c, a0, near in zip(rows, acts, confs, t0s, nearest):
+                act = a0 if a0 else (a if (c >= th and a != "none" and near >= fl) else None)
+                if not act: continue
+                if r["is_command"]: right += act in ACCEPT[r["intent"]]
+                else: fa += 1
+            table[f"conf>={th}, nearest cosine>={fl}"] = [round(100 * right / nc, 1), round(100 * fa / nn, 1)]
+    return table
+
 def score(acts, confs, grid):
     nc = sum(r["is_command"] for r in rows); nn = len(rows) - nc; best = (0, None, 0)
     for th in grid:
@@ -61,5 +75,6 @@ for name, extra in (("classifier A (examples + negatives)", []),
     X = emb([t for t, _ in data]); y = np.array([idx[a] for _, a in data])
     t = time.time(); W, b = train(X, y, len(labels)); tt = time.time() - t
     P = predict(W, b, Q); j = P.argmax(1)
+    out[name + " curve"] = curve([labels[k] for k in j], P.max(1), (0.0, 0.5, 0.6, 0.7), S.max(1))
     out[name] = score([labels[k] for k in j], P.max(1), np.arange(0.05, 1.0, 0.01)) | {"train_rows": len(data), "train_s": round(tt, 1)}
 print(json.dumps(out, indent=1)); json.dump(out, open(os.path.join(HERE, "results", "classifier_vs_nearest.json"), "w"), indent=1)
