@@ -1,0 +1,25 @@
+{
+ "model": "x",
+ "name": "d1_omni_600m_q8",
+ "commands": 204,
+ "non_commands": 200,
+ "median_ms": 44,
+ "cutoffs": {
+  "0.3": {
+   "commands_accepted_pct": 43.6,
+   "non_commands_accepted_pct": 16.0
+  },
+  "0.5": {
+   "commands_accepted_pct": 36.8,
+   "non_commands_accepted_pct": 13.0
+  },
+  "0.7": {
+   "commands_accepted_pct": 25.0,
+   "non_commands_accepted_pct": 12.0
+  },
+  "0.9": {
+   "commands_accepted_pct": 15.2,
+   "non_commands_accepted_pct": 9.0
+  }
+ }
+}

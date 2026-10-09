@@ -1,0 +1,55 @@
+{
+ "mic": "USB PnP Sound Device",
+ "room_noise_rms": 0.00247,
+ "voices": [
+  "af_heart",
+  "am_fenrir"
+ ],
+ "sets": {
+  "mac_command": {
+   "clips": 30,
+   "woke": 30,
+   "median_rms": 0.05217,
+   "missed_or_false_examples": []
+  },
+  "non_command": {
+   "clips": 30,
+   "woke": 0,
+   "median_rms": 0.05645,
+   "missed_or_false_examples": []
+  },
+  "tv_name_line": {
+   "clips": 10,
+   "woke": 6,
+   "median_rms": 0.05608,
+   "missed_or_false_examples": [
+    [
+     "Mark, close the window before the bugs get in",
+     "Mark close the window before the bugs get in."
+    ],
+    [
+     "Max, play fetch with the ball",
+     "Max play fetch with the ball."
+    ],
+    [
+     "Mike, pause the game for a second",
+     "Mike paused the game for a second."
+    ],
+    [
+     "Mark, mute the TV",
+     "Mark, mute the TV."
+    ],
+    [
+     "Max, lock the screen",
+     "Max, lock the screen."
+    ],
+    [
+     "Make a timer for ten minutes",
+     "Make a timer for 10 minutes."
+    ]
+   ]
+  }
+ },
+ "calibration_rms": 0.05076,
+ "volume_used": 75
+}

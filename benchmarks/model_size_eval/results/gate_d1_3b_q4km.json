@@ -1,0 +1,25 @@
+{
+ "model": "x",
+ "name": "d1_3b_q4km",
+ "commands": 204,
+ "non_commands": 200,
+ "median_ms": 276,
+ "cutoffs": {
+  "0.3": {
+   "commands_accepted_pct": 99.0,
+   "non_commands_accepted_pct": 45.0
+  },
+  "0.5": {
+   "commands_accepted_pct": 97.5,
+   "non_commands_accepted_pct": 33.0
+  },
+  "0.7": {
+   "commands_accepted_pct": 93.6,
+   "non_commands_accepted_pct": 24.0
+  },
+  "0.9": {
+   "commands_accepted_pct": 72.5,
+   "non_commands_accepted_pct": 10.5
+  }
+ }
+}

@@ -261,6 +261,39 @@ Source: a post about Qwen's open TTS family (Apache 2.0, [paper](https://arxiv.o
 
 Caveats: the reference clip here was a synthetic voice, so how closely it copies a real person was **not** measured; the first model load took 207 s (download); a 4-word reply took 1.7 s, so sentence-by-sentence playback (already live) would be needed, and a reply still starts about 2 s later than with Kokoro. Using someone's real voice needs their consent. The assistant would need a small separate local service for it (the model needs Python 3.12 + MLX, the assistant's venv is 3.14).
 
+### O. Backlog benches completed 2026-10-09
+
+**Wake word through the real room** (`wake_eval/bench_wake_room.py`: synthetic speech played out of the Mac's speaker at volume 75, recorded back by the USB mic, then the live recognizer and wake parser; calibration level 0.051 vs room noise 0.0025):
+
+| Clips | Woke the assistant |
+|---|---|
+| "Mac, <command>" (30) | **30/30** |
+| Ordinary non-command speech (30) | **0/30** |
+| TV-style lines starting with a name or verb (10) | 6/10 (the 6 are cases where a real command followed, e.g. "Mike, pause the game", "Max, lock the screen"; this is the command-aware rule working as designed) |
+
+Still synthetic voices and a single room, not hours of TV.
+
+**Liquid d1 models** (needed a llama.cpp development build with the UI download switched off, `-DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF`; `model_size_eval/bench_gate.py`, 404 held-out phrases):
+
+| Gate model | Commands accepted | Non-commands accepted | Median |
+|---|---|---|---|
+| `d1-omni-600M` (Q8) | 36.8% | 13.0% | 44 ms |
+| `d1-3B` (Q4_K_M), P >= 0.9 | 72.5% | 10.5% | 276 ms |
+| `tev1:4b` (live) | **83.8%** | 10.5% | 419 ms |
+
+`tev1:4b` stays the gate. Strands Decider 2B remains untested (adapter only, no runtime).
+
+**Compositor load at idle** (WindowServer CPU, 6 samples of 5 s each, other work idle; the display was restored to its original mode afterwards; same-mode repeat readings varied by about 1 point):
+
+| Display mode | WindowServer CPU |
+|---|---|
+| 1080p UI on 4K backing, 120 Hz (current) | 44.4% |
+| plain 1080p, 120 Hz | 45.2% |
+| 1080p UI on 4K backing, 60 Hz | 40.2% |
+| plain 1080p, 60 Hz | 40.4% |
+
+The resolution backing makes no difference; 60 Hz saves about 4 points. The 40-45% floor comes from something else (candidates: wallpaper, many open windows, remote-desktop capture); not found yet.
+
 ## Recommendations
 
 | # | Recommendation | Evidence | Status |
@@ -305,11 +338,11 @@ Caveats: the reference clip here was a synthetic voice, so how closely it copies
 ## Backlog (priority order)
 
 1. Grow `tier05_negatives.txt` and the example phrases from real misses (section M: the classifier gets better with every labelled phrase).
-2. Apple SpeechAnalyzer as the recognizer (section K: lower error and faster than Whisper base.en on synthetic speech); test on real voice first.
-3. Liquid d1 models and Amazon Strands Decider 2B: need a decision-capable runtime (llama.cpp development build) or the Strands Python stack.
-4. Real-audio false-wake test (hours of TV and podcasts) and the live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`); both need a working microphone.
-5. Compositor load at true idle: plain 1080p vs 4K-backed mode, wallpaper, Safari content (needs display changes and your OK).
-6. Fine-tune a decision head on the assistant's own labeled utterances (data was the biggest lever).
+2. Apple SpeechAnalyzer as the recognizer (section K: lower error and faster than Whisper base.en on synthetic speech); test on a real voice first.
+3. Hours of real TV and podcast audio for the false-wake rate, and the live ONNX-vs-Ollama comparison (`TIER05_EMBED_BACKEND=compare`, then read the log).
+4. Find what keeps WindowServer at 40-45% at idle (section O).
+5. Amazon Strands Decider 2B (needs its own Python stack).
+6. Fine-tune a decision head on the assistant's own labelled utterances; Qwen3-TTS voice cloning with a real, consenting speaker (section N).
 
 ## Folder index
 
