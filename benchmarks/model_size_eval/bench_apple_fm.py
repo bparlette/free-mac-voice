@@ -39,9 +39,9 @@ import FoundationModels
       guard let text = try? JSONDecoder().decode(String.self, from: Data(line.utf8)) else {{ continue }}
       var gate = "error", action = "error"; var gms = 0.0, rms = 0.0
       do {{ let t = Date(); let s = LanguageModelSession(instructions: gi)
-            gate = try await s.respond(to: text, generating: Gate.self, options: opts).content.rawValue; gms = Date().timeIntervalSince(t) * 1000 }} catch {{ gate = "error" }}
+            gate = try await s.respond(to: text, generating: Gate.self, options: opts).content.rawValue; gms = Date().timeIntervalSince(t) * 1000 }} catch {{ gate = "error"; FileHandle.standardError.write(Data("gate error: \\(error)\\n".utf8)) }}
       do {{ let t = Date(); let s = LanguageModelSession(instructions: ri)
-            action = try await s.respond(to: text, generating: Action.self, options: opts).content.rawValue; rms = Date().timeIntervalSince(t) * 1000 }} catch {{ action = "error" }}
+            action = try await s.respond(to: text, generating: Action.self, options: opts).content.rawValue; rms = Date().timeIntervalSince(t) * 1000 }} catch {{ action = "error"; FileHandle.standardError.write(Data("route error: \\(error)\\n".utf8)) }}
       let out: [String: Any] = ["gate": gate, "action": action, "gate_ms": gms, "route_ms": rms]
       print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!); fflush(stdout)
     }}
@@ -52,7 +52,8 @@ os.makedirs("/tmp/apple_fm_bench", exist_ok=True)
 open("/tmp/apple_fm_bench/run.swift", "w").write(swift)
 subprocess.run(["xcrun", "swiftc", "-O", "-parse-as-library", "-o", "/tmp/apple_fm_bench/run", "/tmp/apple_fm_bench/run.swift"], check=True)
 inp = "\n".join(json.dumps(t) for t in ["warm up"] + [r["text"] for r in rows]) + "\n"
-res = [json.loads(l) for l in subprocess.run(["/tmp/apple_fm_bench/run"], input=inp, capture_output=True, text=True, check=True).stdout.splitlines() if l.strip()][1:]
+proc = subprocess.run(["/tmp/apple_fm_bench/run"], input=inp, capture_output=True, text=True, check=True)
+res = [json.loads(l) for l in proc.stdout.splitlines() if l.strip()][1:]
 assert len(res) == len(rows), (len(res), len(rows))
 nc = sum(r["is_command"] for r in rows); nn = len(rows) - nc
 t0s = [(fv.route(r["text"]) or (None,))[0] for r in rows]
@@ -64,6 +65,8 @@ def route_score(use_t0):
         if r["is_command"]: right += act in ACCEPT[r["intent"]]
         else: fa += 1
     return {"correct_pct": round(100 * right / nc, 1), "false_accept_pct": round(100 * fa / nn, 1)}
+if all(x["gate"] == "error" and x["action"] == "error" for x in res):   # e.g. the model is still downloading: do not overwrite real results with nothing
+    sys.exit("Every call failed, no results written. First error: " + (proc.stderr.splitlines() or ["(none)"])[0])
 out = {"heldout_rows": len(rows), "errors": sum(x["gate"] == "error" or x["action"] == "error" for x in res),
        "gate": {"commands_accepted_pct": round(100 * sum(x["gate"] == "command" for r, x in zip(rows, res) if r["is_command"]) / nc, 1),
                 "non_commands_accepted_pct": round(100 * sum(x["gate"] == "command" for r, x in zip(rows, res) if not r["is_command"]) / nn, 1),
