@@ -1,18 +1,18 @@
 {
  "heldout_rows": 404,
- "errors": 2,
+ "errors": 0,
  "gate": {
-  "commands_accepted_pct": 12.3,
-  "non_commands_accepted_pct": 3.5,
-  "median_ms": 339
+  "commands_accepted_pct": 8.8,
+  "non_commands_accepted_pct": 0.0,
+  "median_ms": 433
  },
  "router_alone": {
-  "correct_pct": 47.5,
-  "false_accept_pct": 18.0
+  "correct_pct": 62.7,
+  "false_accept_pct": 20.0
  },
  "router_after_tier0": {
-  "correct_pct": 52.0,
-  "false_accept_pct": 18.5
+  "correct_pct": 61.8,
+  "false_accept_pct": 20.5
  },
- "router_median_ms": 842
+ "router_median_ms": 806
 }

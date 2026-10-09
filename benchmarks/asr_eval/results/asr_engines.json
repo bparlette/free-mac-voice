@@ -6,13 +6,13 @@
   "am_fenrir",
   "am_michael"
  ],
- "router_correct_on_reference_text": "220/320",
+ "router_correct_on_reference_text": "228/320",
  "engines": {
   "whisper base.en (live)": {
    "wer_pct": 5.0,
    "exact_transcripts": "279/320",
-   "router_correct": "197/320",
-   "median_ms_per_clip": 156,
+   "router_correct": "230/320",
+   "median_ms_per_clip": 140,
    "missing": 0,
    "examples_of_errors": [
     [
@@ -50,10 +50,10 @@
    ]
   },
   "Apple SpeechAnalyzer": {
-   "wer_pct": 3.1,
-   "exact_transcripts": "290/320",
-   "router_correct": "202/320",
-   "median_ms_per_clip": 102,
+   "wer_pct": 3.0,
+   "exact_transcripts": "291/320",
+   "router_correct": "230/320",
+   "median_ms_per_clip": 60,
    "missing": 0,
    "examples_of_errors": [
     [
@@ -91,10 +91,10 @@
    ]
   },
   "Parakeet TDT 0.6B v3": {
-   "wer_pct": 4.6,
-   "exact_transcripts": "280/320",
-   "router_correct": "191/320",
-   "median_ms_per_clip": 179,
+   "wer_pct": 12.2,
+   "exact_transcripts": "279/320",
+   "router_correct": "222/320",
+   "median_ms_per_clip": 166,
    "missing": 0,
    "examples_of_errors": [
     [
@@ -126,8 +126,8 @@
      "Uh open sapphire."
     ],
     [
-     "minimise",
-     "Minimize."
+     "another song",
+     "<unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk>"
     ]
    ]
   }

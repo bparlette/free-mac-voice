@@ -653,6 +653,30 @@ Still synthetic voices and a single room, not hours of TV.
 | plain 1080p, 60 Hz | 40.4% |
 
 The resolution backing makes no difference; 60 Hz saves about 4 points. The 40-45% floor comes from something else (candidates: wallpaper, many open windows, remote-desktop capture); not found yet.
+
+### P. macOS 27.0.1 re-test (2026-10-09)
+
+macOS 27 rebuilt Apple's on-device model and the Mac needed a restart before it would answer (its model-manager process sat at 100% CPU for over an hour and requests hung until the reboot).
+
+**Apple Foundation Model, guided generation into a fixed answer list** (`model_size_eval/bench_apple_fm.py`, same 404 held-out phrases; macOS 26 numbers in section K):
+
+| Use | macOS 26 zero-shot | macOS 27 zero-shot | macOS 27 with 40 examples in the instructions |
+|---|---|---|---|
+| Gate: commands / non-commands accepted | 93.6% / 91.5% | **43.6% / 12.0%** | 8.8% / 0.0% |
+| Router after Tier 0: correct / non-commands acted on | 67.2% / 78.0% | 65.7% / 51.0% | 61.8% / 20.5% |
+| Median latency (gate / router) | 191 / 644 ms | 300 / 638 ms | 433 / 806 ms |
+
+The new model is much better calibrated (it no longer says yes to everything), but as a gate it is far behind `tev1:4b` (83.8% / 10.5%) and as a router behind the live classifier (73.0% / 10.0% on the embedding tier). Not worth replacing anything with.
+
+**Speech recognizers again on macOS 27** (`asr_eval/bench_asr.py`, 320 synthetic clips; the router now includes the live classifier, so router counts are not comparable with section K):
+
+| Recognizer | Word error rate | Router picks an acceptable action | Median per clip |
+|---|---|---|---|
+| Whisper base.en (live) | 5.0% | 230/320 | 140 ms |
+| **Apple SpeechAnalyzer** | **3.0%** | 230/320 | **60 ms** |
+| Parakeet TDT 0.6B v3 | 12.2% (was 4.6%; same number of exact transcripts, so a few long wrong outputs; unstable) | 222/320 | 166 ms |
+
+SpeechAnalyzer is a little more accurate and about 2x faster than Whisper, and equal on routed commands; worth switching only after a real-voice check.
 <!-- AUTO:ledger-standings:END -->
 
 <details>
