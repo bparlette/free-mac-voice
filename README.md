@@ -583,6 +583,19 @@ Not usable: it either accepts nearly everything or rejects nearly everything. Th
 | Parakeet TDT 0.6B v3 (parakeet-mlx) | 4.6% | 280/320 | 191/320 | 179 ms |
 
 The router gets 220/320 right on the exact reference text, so on clean speech the recognizer costs at most 18-29 commands while the router itself loses 100: the router, not the recognizer, is the bottleneck. Many counted "errors" are spelling (maximise / maximize, T V). Real voice in a room with a TV is untested.
+
+### L. Phone-controlled orchestrator: tools checked 2026-10-08 (researched, not measured yet)
+
+Design: [`docs/orchestrator-design.md`](../docs/orchestrator-design.md). One hub (Claude Code in Remote Control server mode) takes tasks from the phone and hands them to workers.
+
+| Tool | Phone control | Can the hub drive it? | Finding |
+|---|---|---|---|
+| Claude Code | Remote Control (`claude remote-control`, already starts at login) | It is the hub | Outbound only; `--spawn worktree` isolates sessions; today it runs in this repo with the shared `same-dir` mode, which should change |
+| Antigravity | Remote Control (since 2026-08-21), joins sessions open on the Mac | **Yes, locally**: `agentapi new-conversation / send-message / get-conversation-metadata` ships with the app; `agy -p` CLI not installed | Best second worker for code |
+| Meta Muse (muse.ai in Chrome) | Own app; Sentinel approves outgoing actions | Browser only (no public API for individuals; Muse API announced for businesses) | Fragile: depends on page layout |
+| Hark Handoff (web) | Own web app | Browser only; research preview / waitlist | Access for this account not confirmed |
+
+To measure once it runs: phone message to first reply, tasks finished without help per worker, approvals per task, tasks that touched the wrong folder (must be 0).
 <!-- AUTO:ledger-standings:END -->
 
 <details>
