@@ -250,6 +250,17 @@ Pipeline run (4B instruct as Tier 1, `tev1:4b` gate, Tier 0.5b off; 80 commands 
 
 Live defaults: `TIER05_CLASSIFIER=1`, `TIER05_CLASSIFIER_MIN_CONF=0.5`, `TIER05_CLASSIFIER_MIN_COS=0.7` (also needs a close example). The classifier trains at startup in under a second from the router's examples plus `tier05_negatives.txt`; with `TIER05_CLASSIFIER=0` or the hashing fallback the old nearest-example matching is used.
 
+### N. Cloning a voice for the assistant: Qwen3-TTS (2026-10-08, benchmarked, not wired in)
+
+Source: a post about Qwen's open TTS family (Apache 2.0, [paper](https://arxiv.org/abs/2601.15621)). The model linked in the post, `Qwen3-TTS-12Hz-1.7B-CustomVoice`, only has 9 preset voices and needs a CUDA GPU; **cloning is the Base variant** (3-second reference clip). Community MLX conversions run on Apple silicon through `mlx-audio` (`benchmarks/tts_eval/bench_qwen_tts.py`, runs in a throwaway `uv` environment).
+
+| Voice engine | Speaks a 5.4 s reply in | Real-time factor | Memory | Heard correctly by Whisper | Voice |
+|---|---|---|---|---|---|
+| Kokoro (live) | about 1.2 s (first sentence) | 0.2 | about 0.3 GB | yes | 50 stock voices |
+| **Qwen3-TTS 0.6B Base, 4-bit (MLX)** | 4.5 s (19 words) | 0.77-1.21 | 2.3 GB | **0% word errors** (3 clips) | **cloned from a short clip** |
+
+Caveats: the reference clip here was a synthetic voice, so how closely it copies a real person was **not** measured; the first model load took 207 s (download); a 4-word reply took 1.7 s, so sentence-by-sentence playback (already live) would be needed, and a reply still starts about 2 s later than with Kokoro. Using someone's real voice needs their consent. The assistant would need a small separate local service for it (the model needs Python 3.12 + MLX, the assistant's venv is 3.14).
+
 ## Recommendations
 
 | # | Recommendation | Evidence | Status |
