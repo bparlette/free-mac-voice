@@ -1,0 +1,135 @@
+{
+ "clips": 320,
+ "voices": [
+  "af_heart",
+  "af_bella",
+  "am_fenrir",
+  "am_michael"
+ ],
+ "router_correct_on_reference_text": "220/320",
+ "engines": {
+  "whisper base.en (live)": {
+   "wer_pct": 5.0,
+   "exact_transcripts": "279/320",
+   "router_correct": "197/320",
+   "median_ms_per_clip": 156,
+   "missing": 0,
+   "examples_of_errors": [
+    [
+     "can you close safire",
+     "Can you close Sapphire?"
+    ],
+    [
+     "close the dialog",
+     "Close the dialogue."
+    ],
+    [
+     "send it to the dock",
+     "Send it to the dark."
+    ],
+    [
+     "enlarge the window",
+     "And large the window."
+    ],
+    [
+     "maximise the window",
+     "Maximize the window."
+    ],
+    [
+     "open you tube",
+     "Open YouTube."
+    ],
+    [
+     "uh, open safire",
+     "Uh, open Sapphire."
+    ],
+    [
+     "screenshot that",
+     "Screen shot that."
+    ]
+   ]
+  },
+  "Apple SpeechAnalyzer": {
+   "wer_pct": 3.1,
+   "exact_transcripts": "290/320",
+   "router_correct": "202/320",
+   "median_ms_per_clip": 102,
+   "missing": 0,
+   "examples_of_errors": [
+    [
+     "can you close safire",
+     "Can you close Sapphire?"
+    ],
+    [
+     "close the dialog",
+     "Close the dialogue."
+    ],
+    [
+     "send it to the dock",
+     "Send it to the doc."
+    ],
+    [
+     "maximise the window",
+     "Maximize the window."
+    ],
+    [
+     "open you tube",
+     "Open YouTube."
+    ],
+    [
+     "uh, open safire",
+     "Uh, open Sapphire."
+    ],
+    [
+     "minimise",
+     "Minimize."
+    ],
+    [
+     "can you close safire",
+     "Can you close Sapphire?"
+    ]
+   ]
+  },
+  "Parakeet TDT 0.6B v3": {
+   "wer_pct": 4.6,
+   "exact_transcripts": "280/320",
+   "router_correct": "191/320",
+   "median_ms_per_clip": 179,
+   "missing": 0,
+   "examples_of_errors": [
+    [
+     "can you close safire",
+     "Can you close Sapphire?"
+    ],
+    [
+     "close the dialog",
+     "Close the dialogue."
+    ],
+    [
+     "maximise the window",
+     "Maximize the window."
+    ],
+    [
+     "turn off the screen on the tv",
+     "Turn off the screen on the T V."
+    ],
+    [
+     "shut the tv off",
+     "Shut the T V off."
+    ],
+    [
+     "open you tube",
+     "Open YouTube."
+    ],
+    [
+     "uh, open safire",
+     "Uh open sapphire."
+    ],
+    [
+     "minimise",
+     "Minimize."
+    ]
+   ]
+  }
+ }
+}

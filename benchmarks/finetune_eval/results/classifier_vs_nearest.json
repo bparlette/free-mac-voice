@@ -1,0 +1,24 @@
+{
+ "heldout_rows": 404,
+ "examples": 177,
+ "negatives": 112,
+ "nearest_example (live)": {
+  "correct_pct": 70.1,
+  "threshold": 0.7450000000000003,
+  "false_accept_pct": 16.0
+ },
+ "classifier A (examples + negatives)": {
+  "correct_pct": 76.5,
+  "threshold": 0.05,
+  "false_accept_pct": 15.5,
+  "train_rows": 289,
+  "train_s": 0.1
+ },
+ "classifier B (+ other half of test set)": {
+  "correct_pct": 83.8,
+  "threshold": 0.05,
+  "false_accept_pct": 8.0,
+  "train_rows": 685,
+  "train_s": 0.1
+ }
+}

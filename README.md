@@ -551,6 +551,38 @@ Non-commands that the gate rejects cost about 0.55 s median. `tev1:4b` as the Ti
 Speaking sentence by sentence keeps the wait near 1.2 s for any length. **Implemented 2026-10-08** (`VOICE_TTS_STREAM`, replies of 160+ characters with more than one sentence).
 
 **Replay of logged utterances** (`finetune_eval/replay_logged_utterances.py`): only 59 unique real utterances were in the log (most rows are ambient). At the 0.82 threshold both embedding backends accepted 15 (14 of them the same ones; 13 of those with the same action) and agreed on the top action for 51 of 59. Mean cosine 0.754 (ONNX) vs 0.751 (Ollama). Small sample, but no sign the ONNX default behaves differently on real speech-to-text output.
+
+### K. New options researched 2026-10-08: embedding classifier, Apple's on-device model, newer speech recognizers
+
+**Tier 0.5a as a trained classifier** (`finetune_eval/bench_classifier.py`; same ONNX embeddings, held-out half, Tier 0 first, best result with <=16% of non-commands acted on):
+
+| Embedding tier | Commands correct | Non-commands acted on |
+|---|---|---|
+| Nearest example (live) | 70.1% | 16.0% |
+| **Softmax classifier on the same examples + 112 negatives** | **76.5%** | 15.5% |
+| Classifier + the other half of the intent set as extra training data | 83.8% | 8.0% |
+
+Training takes 0.1 s with numpy. The third row uses synthetic test-style data, so it is optimistic for real speech, but it shows that more labelled phrases are the lever.
+
+**Apple's on-device Foundation Model** (macOS 26.3 build; `model_size_eval/bench_apple_fm.py`, guided generation into a fixed answer list, greedy):
+
+| Use | Zero-shot | With 40 labelled examples in the instructions |
+|---|---|---|
+| Command gate: commands / non-commands accepted | 93.6% / 91.5% | 12.3% / 3.5% |
+| Router after Tier 0: correct / non-commands acted on | 67.2% / 78.0% | 52.0% / 18.5% |
+| Median latency (gate / router) | 191 / 644 ms | 339 / 842 ms |
+
+Not usable: it either accepts nearly everything or rejects nearly everything. The rebuilt model in macOS 27 was not tested (this Mac runs 26.3).
+
+**Speech recognizers** (`asr_eval/bench_asr.py`; 80 held-out commands x 4 Kokoro voices = 320 clips; synthetic, clean speech):
+
+| Recognizer | Word error rate | Exact transcripts | Router picks an acceptable action | Median per clip |
+|---|---|---|---|---|
+| Whisper base.en (live) | 5.0% | 279/320 | 197/320 | 156 ms |
+| **Apple SpeechAnalyzer** (built into macOS 26) | **3.1%** | **290/320** | **202/320** | **102 ms** |
+| Parakeet TDT 0.6B v3 (parakeet-mlx) | 4.6% | 280/320 | 191/320 | 179 ms |
+
+The router gets 220/320 right on the exact reference text, so on clean speech the recognizer costs at most 18-29 commands while the router itself loses 100: the router, not the recognizer, is the bottleneck. Many counted "errors" are spelling (maximise / maximize, T V). Real voice in a room with a TV is untested.
 <!-- AUTO:ledger-standings:END -->
 
 <details>
@@ -571,6 +603,7 @@ Speaking sentence by sentence keeps the wait near 1.2 s for any length. **Implem
 | 2026-10-08 | `tev1:0.8b` as action router (embedding shortlist + decision model) | Worse than embeddings alone; the API takes 2-26 options | `model_size_eval/` |
 | 2026-10-08 | Tier 0 regex tightening (simulated on the data first, then applied) | 43 -> 3 false triggers on 400 non-commands; 144 -> 119 real commands matched at Tier 0 (the other 25 were being mishandled there). End to end: wake-window false triggers 21 -> 13 of 80, correct commands unchanged | `pipeline_eval/`, `intent_eval/` |
 | 2026-10-08 | 8B instruct with / without the pre-filled answer start; pipeline with the planned live setup | 51/60 without (47/60 with); pipeline false triggers 21/80. **Applied to the live setup** (Tier 0.5b off, 8B instruct) | `model_size_eval/`, `pipeline_eval/` |
+| 2026-10-08 | Embedding classifier vs nearest example; Apple on-device model as gate/router; Whisper vs Apple SpeechAnalyzer vs Parakeet | Classifier 76.5% vs 70.1% correct at the same false accepts; Apple model unusable on macOS 26; SpeechAnalyzer lowest error (3.1%) and fastest; router, not recognizer, is the bottleneck | `finetune_eval/`, `model_size_eval/`, `asr_eval/` |
 | 2026-10-08 | Qwen3.5 0.8B / 2B and qwen3-vl 2B instruct | 2B instruct: 1.6 GB, 12/12 screen questions in 1.5 s, weak router. Qwen3.5 refused by Ollama's JSON mode | `model_size_eval/` |
 <!-- AUTO:ledger-timeline:END -->
 
@@ -616,7 +649,8 @@ Speaking sentence by sentence keeps the wait near 1.2 s for any length. **Implem
 <summary><b>What we will benchmark next (priority order)</b></summary>
 
 <!-- AUTO:ledger-backlog:START -->
-1. Move the command gate to `tev1:4b` (section J: wake-window correct 40 -> 52 of 80, false triggers 13 -> 9; +3.6 GB memory).
+1. Replace the nearest-example embedding tier with the trained classifier (section K: 70.1% -> 76.5% correct at the same false-accept level, more with more labelled data).
+2. Apple SpeechAnalyzer as the recognizer (section K: lower error and faster than Whisper base.en on synthetic speech); test on real voice first.
 3. Liquid d1 models and Amazon Strands Decider 2B: need a decision-capable runtime (llama.cpp development build) or the Strands Python stack.
 4. Real-audio false-wake test (hours of TV and podcasts) and the live ONNX-vs-Ollama comparison on real speech (`TIER05_EMBED_BACKEND=compare`); both need a working microphone.
 5. Compositor load at true idle: plain 1080p vs 4K-backed mode, wallpaper, Safari content (needs display changes and your OK).

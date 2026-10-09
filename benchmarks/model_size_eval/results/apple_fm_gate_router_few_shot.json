@@ -1,0 +1,18 @@
+{
+ "heldout_rows": 404,
+ "errors": 2,
+ "gate": {
+  "commands_accepted_pct": 12.3,
+  "non_commands_accepted_pct": 3.5,
+  "median_ms": 339
+ },
+ "router_alone": {
+  "correct_pct": 47.5,
+  "false_accept_pct": 18.0
+ },
+ "router_after_tier0": {
+  "correct_pct": 52.0,
+  "false_accept_pct": 18.5
+ },
+ "router_median_ms": 842
+}
