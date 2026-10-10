@@ -7,7 +7,7 @@
 [![ASR Engine](https://img.shields.io/badge/ASR-Phonon--2%20(164MB%20MLX)-orange.svg)](https://huggingface.co/FermionResearch/Phonon-2)
 [![TTS Engine](https://img.shields.io/badge/TTS-Kokoro--82M%20(Neural)-purple.svg)](docs/index.html)
 [![Hardware](https://img.shields.io/badge/accelerated-Metal%20GPU%20%2F%20MLX-green.svg)](https://developer.apple.com/metal/)
-[![Tests](https://img.shields.io/badge/tests-423%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-429%20passing-brightgreen.svg)](tests/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)](#privacy--local-by-default)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-full%20ledger-informational.svg)](benchmarks/README.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -773,6 +773,16 @@ Measured on Apple Silicon unified memory:
 
 ---
 
+## 🔭 Daily Tech Scout (optional)
+
+A small script looks for new tools and models that could improve the assistant on this Mac, once a day at 2 am, and writes a top-10 report to `~/.free-voice/scout/latest.md` (plus a notification). Each idea has a plain-English "what it is", "why it may help", the project's own description, a link, and which existing benchmark would test it.
+
+- Sources: GitHub search, Hugging Face trending models, Ollama's newest models, Hacker News (public pages only, no accounts or keys).
+- It filters for this project's areas (speech recognition, TTS, wake word, embeddings, decision models, small local LLMs/VLMs, Apple silicon) and flags anything above ~14B parameters as too big for 16 GB.
+- The local model (`OLLAMA_MODEL`, default `qwen3-vl:4b-instruct`) writes the summaries; **a 4B model can be wrong**, so the report always shows the project's own description next to it. Without Ollama it still runs with descriptions only.
+- It never installs, downloads or runs anything it finds, and it does not run benchmarks. Ideas are tested on request, with the existing scripts in `benchmarks/`.
+- Install or remove: `scripts/install_tech_scout.sh` / `scripts/install_tech_scout.sh --uninstall`. Run it by hand any time: `python3 scripts/tech_scout.py`.
+
 ## 🔒 Privacy & Local by Default
 
 - **Zero Audio Uploads:** Audio never leaves your Mac. Whisper and Ollama run 100% on your local GPU.
@@ -801,7 +811,7 @@ Control Samsung Smart TV power, inputs, volume, and playback over Wi-Fi:
 The test suite stubs all hardware (no mic, TV, or live Ollama instance required) for instant verification:
 
 ```bash
-# Run the full unit-test suite (423 tests, about 1-5 minutes):
+# Run the full unit-test suite (429 tests, about 1-5 minutes):
 python3 -m unittest discover -s tests
 
 # Run performance benchmarks:
